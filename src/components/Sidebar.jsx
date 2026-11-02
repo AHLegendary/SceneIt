@@ -2,7 +2,9 @@ import { PAGES } from '../lib/pages.js'
 
 // Left-hand navigation. Big tab labels; the active page gets the filled pill.
 
-export default function Sidebar({ current, onNavigate }) {
+export default function Sidebar({ current, onNavigate, signedIn = false }) {
+  // The Log in tab is only useful while logged out.
+  const pages = PAGES.filter((page) => page.id !== 'login' || !signedIn)
   return (
     <nav className="sidebar" aria-label="Main">
       <span className="logo">
@@ -10,7 +12,7 @@ export default function Sidebar({ current, onNavigate }) {
         <span className="logo__text">SceneIt</span>
       </span>
       <div className="sidebar__tabs">
-        {PAGES.map((page) => (
+        {pages.map((page) => (
           <button
             key={page.id}
             type="button"

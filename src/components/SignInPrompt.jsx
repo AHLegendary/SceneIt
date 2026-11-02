@@ -17,6 +17,9 @@ export function SignInPrompt() {
           Your ranked list, scores and recommendations are saved to your SceneIt account,
           so they follow you to any device. The leaderboard is open to everyone.
         </p>
+        <button type="button" className="btn" onClick={() => { window.location.hash = '/login' }}>
+          Log in
+        </button>
       </div>
     </section>
   )
