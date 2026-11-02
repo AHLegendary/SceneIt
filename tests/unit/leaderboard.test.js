@@ -24,7 +24,7 @@ const {
 // TMDb ids of a few catalog movies (see src/data/movies.json).
 const DUNE = 693134 // dune-part-two-2024
 const PAST_LIVES = 666277 // past-lives-2023
-const NOT_IN_CATALOG = 1
+const NOT_IN_CATALOG = 1 // shows up as 'tmdb-1'
 
 // Rows shaped like get_leaderboard's output. Supabase returns bigint and
 // numeric columns as numbers or strings depending on size, so mix both.
@@ -41,14 +41,19 @@ beforeEach(() => {
 })
 
 describe('rowsToLeaderboard', () => {
-  it('turns database rows into catalog movies with numeric stats', () => {
+  it('turns database rows into movies with numeric stats', () => {
     const rows = rowsToLeaderboard(WEEKLY)
-    expect(rows.map((r) => r.id)).toEqual(['dune-part-two-2024', 'past-lives-2023'])
-    expect(rows[1]).toMatchObject({ title: 'Past Lives', score: 7.5, rankers: 1 })
+    expect(rows.map((r) => r.id)).toEqual(['dune-part-two-2024', 'tmdb-1', 'past-lives-2023'])
+    expect(rows[2]).toMatchObject({ title: 'Past Lives', score: 7.5, rankers: 1, rank: 3 })
   })
 
-  it('skips movies missing from the catalog and keeps ranks 1, 2, 3...', () => {
-    expect(rowsToLeaderboard(WEEKLY).map((r) => r.rank)).toEqual([1, 2])
+  it('uses the database title, year and poster for movies outside the catalog', () => {
+    expect(rowsToLeaderboard(WEEKLY)[1]).toMatchObject({ title: 'Mystery', year: 2020, poster_path: null, score: 8, rankers: 2 })
+  })
+
+  it('skips rows it cannot build a movie for and keeps ranks 1, 2, 3...', () => {
+    const rows = rowsToLeaderboard([{ movie_id: null, title: 'Broken' }, ...WEEKLY])
+    expect(rows.map((r) => r.rank)).toEqual([1, 2, 3])
   })
 
   it('handles an empty or missing result', () => {
@@ -64,7 +69,7 @@ describe('fetchLeaderboard', () => {
     expect(db.calls).toEqual([
       { name: 'get_leaderboard', args: { p_period: 'monthly', p_category: 'watched', p_limit: 10 } },
     ])
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
   })
 
   it('defaults to this week, highest ranked', async () => {
@@ -89,7 +94,7 @@ describe('fetchCommunityStats', () => {
     db.boards.weekly = WEEKLY
     db.boards.monthly = [WEEKLY[2]]
     const stats = await fetchCommunityStats('past-lives-2023')
-    expect(stats.weekly).toEqual({ rank: 2, score: 7.5, rankers: 1 })
+    expect(stats.weekly).toEqual({ rank: 3, score: 7.5, rankers: 1 })
     expect(stats.monthly).toEqual({ rank: 1, score: 7.5, rankers: 1 })
     expect(db.calls.every((c) => c.args.p_limit === 100)).toBe(true)
   })

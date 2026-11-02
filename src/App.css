@@ -953,3 +953,7 @@
   .logo__text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .sidebar__tabs { gap: 2px; }
 }
+
+/* live search */
+.results.is-stale { opacity: 0.55; transition: opacity 0.15s; }
+.dialog__notice { margin: 0 0 8px; font-size: 13px; }

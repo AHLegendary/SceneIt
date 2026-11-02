@@ -1,7 +1,8 @@
-// Frontend data layer for movies. UI components call these instead of fetch().
+// Frontend data layer for our movie API (api/movies/*). UI components call
+// these instead of fetch().
 
-async function getJson(url) {
-  const response = await fetch(url);
+async function getJson(url, options) {
+  const response = await (options ? fetch(url, options) : fetch(url));
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(body.error || 'Something went wrong, try again later.');
@@ -16,5 +17,16 @@ export async function searchMovies(query) {
 
 export async function getMovie(tmdbId) {
   const { movie } = await getJson(`/api/movies/${encodeURIComponent(tmdbId)}`);
+  return movie;
+}
+
+// Makes sure a movie is in the database so it can be ranked. The server
+// checks the access token, looks the movie up on TMDb and saves it.
+// Returns the saved row ({ tmdb_id, title, year, ... }).
+export async function saveMovie(tmdbId, accessToken) {
+  const { movie } = await getJson(`/api/movies/${encodeURIComponent(tmdbId)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   return movie;
 }
