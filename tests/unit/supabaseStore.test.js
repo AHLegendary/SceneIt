@@ -10,6 +10,17 @@ const db = vi.hoisted(() => ({
   failSignOut: false,
   rpcCalls: [],
   authCallback: null,
+  saveCalls: [],
+  failSaveMovie: false,
+}))
+
+// Fake API client: records which movies the store asked the server to save.
+vi.mock('../../src/lib/movies.js', () => ({
+  saveMovie: async (tmdbId, token) => {
+    db.saveCalls.push({ tmdbId, token })
+    if (db.failSaveMovie) throw new Error('server down')
+    return { tmdb_id: tmdbId }
+  },
 }))
 
 vi.mock('../../src/lib/supabase.js', () => {
@@ -38,6 +49,7 @@ vi.mock('../../src/lib/supabase.js', () => {
         return db.failRpc ? { data: null, error: { message: 'boom' } } : { data: null, error: null }
       },
       auth: {
+        getSession: async () => ({ data: { session: { access_token: 'token-123' } }, error: null }),
         onAuthStateChange: (callback) => {
           db.authCallback = callback
           return { data: { subscription: { unsubscribe() {} } } }
@@ -62,6 +74,9 @@ const tierIds = (tiers) => tiers.map((tier) => tier.map((m) => m.id))
 const DUNE = 693134 // dune-part-two-2024
 const PAST_LIVES = 666277 // past-lives-2023
 const SPIDER_VERSE = 569094 // spider-man-across-the-spider-verse-2023
+// A movie outside the catalog, as the joined `movies` row returns it.
+const PADDINGTON = 346648 // Paddington 2, not in the catalog
+const PADDINGTON_ROW = { tmdb_id: PADDINGTON, title: 'Paddington 2', year: 2017, poster_path: '/a.jpg', genres: ['Drama'], overview: '' }
 
 let store
 
@@ -77,7 +92,16 @@ async function logIn() {
 }
 
 beforeEach(async () => {
-  Object.assign(db, { rows: [], username: 'reil', failLoad: false, failRpc: false, failSignOut: false, rpcCalls: [] })
+  Object.assign(db, {
+    rows: [],
+    username: 'reil',
+    failLoad: false,
+    failRpc: false,
+    failSignOut: false,
+    rpcCalls: [],
+    saveCalls: [],
+    failSaveMovie: false,
+  })
   await freshStore()
 })
 
@@ -94,7 +118,16 @@ describe('rowsToTiers', () => {
     ])
   })
 
-  it('skips movies that are not in the catalog and closes the gap', () => {
+  it('builds movies outside the catalog from the joined movies row', () => {
+    const tiers = store.rowsToTiers([
+      { movie_id: DUNE, position: 0 },
+      { movie_id: PADDINGTON, position: 1, movies: PADDINGTON_ROW },
+    ])
+    expect(tierIds(tiers)).toEqual([['dune-part-two-2024'], ['tmdb-346648']])
+    expect(tiers[1][0]).toMatchObject({ title: 'Paddington 2', year: 2017, genres: ['Drama'] })
+  })
+
+  it('skips rows it cannot build a movie for and closes the gap', () => {
     const tiers = store.rowsToTiers([
       { movie_id: DUNE, position: 0 },
       { movie_id: 999999999, position: 1 },
@@ -211,10 +244,44 @@ describe('placeMovie', () => {
     expect(db.rpcCalls).toEqual([])
   })
 
-  it('refuses movies that are not in the catalog', async () => {
+  it('refuses movies it has never seen', async () => {
     await logIn()
     await expect(store.placeMovie('not-a-movie', { index: 0 })).rejects.toThrow('Unknown movie')
     expect(db.rpcCalls).toEqual([])
+  })
+
+  it('does not ask the server to save catalog movies', async () => {
+    await logIn()
+    await store.placeMovie('dune-part-two-2024', { index: 0 })
+    expect(db.saveCalls).toEqual([])
+  })
+
+  it('saves a searched movie through the API first, with the access token', async () => {
+    await logIn()
+    const local = await import('../../src/lib/localStore.js')
+    local.movieFromDb(PADDINGTON_ROW) // what search does with an API result
+    await store.placeMovie('tmdb-346648', { index: 0 })
+    expect(db.saveCalls).toEqual([{ tmdbId: PADDINGTON, token: 'token-123' }])
+    expect(db.rpcCalls[0].args.p_movie_id).toBe(PADDINGTON)
+    // Second time it's known to be saved.
+    await store.placeMovie('tmdb-346648', { index: 0 })
+    expect(db.saveCalls).toHaveLength(1)
+  })
+
+  it('does not rank a searched movie the server could not save', async () => {
+    await logIn()
+    const local = await import('../../src/lib/localStore.js')
+    local.movieFromDb(PADDINGTON_ROW)
+    db.failSaveMovie = true
+    await expect(store.placeMovie('tmdb-346648', { index: 0 })).rejects.toThrow(store.SAVE_ERROR)
+    expect(db.rpcCalls).toEqual([])
+  })
+
+  it('treats movies loaded from the database as already saved', async () => {
+    db.rows = [{ movie_id: PADDINGTON, position: 0, movies: PADDINGTON_ROW }]
+    await logIn()
+    await store.placeMovie('tmdb-346648', { index: 0 })
+    expect(db.saveCalls).toEqual([])
   })
 })
 

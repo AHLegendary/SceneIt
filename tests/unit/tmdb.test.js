@@ -43,7 +43,7 @@
   });
 
   describe('toMovie', () => {
-    it('builds a poster URL and extracts genre names', () => {
+    it('matches the movies table: year, poster path and genre names', () => {
       expect(
         toMovie({
           id: 27205,
@@ -56,19 +56,26 @@
       ).toEqual({
         tmdb_id: 27205,
         title: 'Inception',
-        release_date: '2010-07-15',
-        poster_url: 'https://image.tmdb.org/t/p/w500/abc.jpg',
+        year: 2010,
+        poster_path: '/abc.jpg',
         genres: ['Action'],
         overview: 'Dreams.',
       });
+    });
+
+    it('names genre ids from search results', () => {
+      expect(toMovie({ id: 3, title: 'X', genre_ids: [878, 18, 424242] }).genres).toEqual([
+        'Science Fiction',
+        'Drama',
+      ]);
     });
 
     it('uses safe defaults for missing optional fields', () => {
       expect(toMovie({ id: 1, title: 'Unknown' })).toEqual({
         tmdb_id: 1,
         title: 'Unknown',
-        release_date: null,
-        poster_url: null,
+        year: null,
+        poster_path: null,
         genres: [],
         overview: '',
       });
@@ -185,7 +192,8 @@
       expect(res.body.results[0]).toMatchObject({
         tmdb_id: 1,
         title: 'Up',
-        poster_url: 'https://image.tmdb.org/t/p/w500/up.jpg',
+        year: 2009,
+        poster_path: '/up.jpg',
       });
 
       const [requestUrl] = fetch.mock.calls[0];
@@ -249,9 +257,9 @@
   });
 
   describe('GET /api/movies/[id]', () => {
-    it('returns 405 for non-GET requests without calling fetch', async () => {
+    it('returns 405 for methods other than GET and POST without calling fetch', async () => {
       const res = mockRes();
-      await detailsHandler({ method: 'POST', query: { id: '27205' } }, res);
+      await detailsHandler({ method: 'DELETE', query: { id: '27205' } }, res);
 
       expect(res.statusCode).toBe(405);
       expect(fetch).not.toHaveBeenCalled();

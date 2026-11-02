@@ -7,11 +7,12 @@
 //   * writes (placeMovie, removeMovie) call the database, then reload the copy
 //   * subscribe() tells React when the copy changes
 //
-// Movie ids: the UI uses catalog ids like "dune-part-two-2024"; the database
-// uses TMDb ids (693134). We convert at this boundary so no component has to
-// care. Both ids live in src/data/movies.json.
+// Movie ids: the UI uses ids like "dune-part-two-2024" (catalog) or
+// "tmdb-12345" (anything else, see localStore.js); the database uses TMDb
+// ids. We convert at this boundary so no component has to care.
 
-import { getCatalog, getMovie } from './localStore.js'
+import { getMovie, getMovieByTmdbId, isCatalogMovie, movieFromDb } from './localStore.js'
+import { saveMovie } from './movies.js'
 import { supabase } from './supabase.js'
 
 export const LOAD_ERROR = "Couldn't load your list. Check your connection and try again."
@@ -19,7 +20,9 @@ export const SAVE_ERROR = "Couldn't save your ranking. Check your connection and
 export const REMOVE_ERROR = "Couldn't remove that movie. Check your connection and try again."
 export const SIGN_OUT_ERROR = "Couldn't log you out. Try again."
 
-const BY_TMDB = new Map(getCatalog().map((movie) => [movie.tmdb_id, movie]))
+// TMDb ids known to be in the `movies` table: the seeded catalog, plus
+// anything we've loaded from or saved to the database this session.
+const savedMovies = new Set()
 
 // status:
 //   'loading'    checking for a saved session, or loading the list after login
@@ -64,14 +67,16 @@ export function isInList(id) {
   return state.tiers.some((tier) => tier.some((movie) => movie.id === id))
 }
 
-// Turns rankings rows ({ movie_id, position }) into tiers of catalog movies.
-// Rows sharing a position are a tie. Movies missing from the catalog are
-// skipped, and empty tiers dropped, so the result is always dense.
+// Turns rankings rows ({ movie_id, position, movies: {...} }) into tiers of
+// movies. Rows sharing a position are a tie. The joined `movies` row covers
+// movies outside the catalog; rows we can't build a movie for are skipped,
+// and empty tiers dropped, so the result is always dense.
 export function rowsToTiers(rows) {
   const byPosition = new Map()
   for (const row of rows ?? []) {
-    const movie = BY_TMDB.get(row.movie_id)
+    const movie = getMovieByTmdbId(row.movie_id) || movieFromDb({ ...row.movies, tmdb_id: row.movie_id })
     if (!movie) continue
+    savedMovies.add(movie.tmdb_id)
     if (!byPosition.has(row.position)) byPosition.set(row.position, [])
     byPosition.get(row.position).push(movie)
   }
@@ -87,7 +92,7 @@ export async function loadMyList() {
   if (!user) return
   const { data, error } = await supabase
     .from('rankings')
-    .select('movie_id, position')
+    .select('movie_id, position, movies(tmdb_id, title, year, poster_path, genres, overview)')
     .eq('user_id', user.id)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
@@ -147,6 +152,17 @@ function requireMovie(id) {
   return movie
 }
 
+// Movies found through live search aren't in the database yet. Ask the API
+// to add it (rankings.movie_id has to point at a row in `movies`).
+async function ensureSaved(movie) {
+  if (isCatalogMovie(movie) || savedMovies.has(movie.tmdb_id)) return
+  const { data } = await supabase.auth.getSession()
+  const token = data?.session?.access_token
+  if (!token) throw new Error('Log in to rank movies.')
+  await saveMovie(movie.tmdb_id, token)
+  savedMovies.add(movie.tmdb_id)
+}
+
 // Puts a movie where head-to-head placement landed it, moving it if it was
 // already ranked (that's how reranking saves). Same arguments as before:
 //   tied = false: as its own tier at `index` (0 = best)
@@ -157,6 +173,11 @@ export async function placeMovie(id, { index, tied = false }) {
   const movie = requireMovie(id)
   requireSignedIn()
   const position = Math.max(0, Math.min(Number.isFinite(index) ? index : Infinity, state.tiers.length))
+  try {
+    await ensureSaved(movie)
+  } catch {
+    throw new Error(SAVE_ERROR)
+  }
   const { error } = await supabase.rpc('save_ranking', {
     p_movie_id: movie.tmdb_id,
     p_position: position,

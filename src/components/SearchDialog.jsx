@@ -1,19 +1,47 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Poster from './Poster.jsx'
-import { getSuggestions, posterUrl, searchMovies } from '../lib/localStore.js'
+import { getSuggestions, movieFromDb, posterUrl, searchMovies as searchCatalog } from '../lib/localStore.js'
+import { searchMovies as searchTmdb } from '../lib/movies.js'
 import { useMyList } from '../lib/useMyList.js'
 
-// Search the local movie catalog and pick a movie to rank.
+const DEBOUNCE_MS = 300
+const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
+
+// Search every movie on TMDb (through our API) and pick one to rank.
+// Typing waits briefly before searching so we don't send a request per key.
+// If the API fails, it falls back to the built-in catalog.
 // Esc or clicking outside closes it.
 export default function SearchDialog({ onClose, onPick, onOpen }) {
   const [query, setQuery] = useState('')
   const list = useMyList()
   const input = useRef(null)
   const titleId = useId()
+  // { query, results, error } for the latest finished search
+  const [live, setLive] = useState(null)
 
   const inList = new Set(list.map((m) => m.id))
   const trimmed = query.trim()
-  const results = trimmed ? searchMovies(trimmed) : getSuggestions()
+
+  useEffect(() => {
+    if (!trimmed) return undefined
+    let current = true // ignore answers for an older query
+    const timer = setTimeout(() => {
+      searchTmdb(trimmed).then(
+        (rows) => current && setLive({ query: trimmed, results: rows.map(movieFromDb).filter(Boolean), error: null }),
+        () => current && setLive({ query: trimmed, results: searchCatalog(trimmed), error: LIVE_ERROR }),
+      )
+    }, DEBOUNCE_MS)
+    return () => {
+      current = false
+      clearTimeout(timer)
+    }
+  }, [trimmed])
+
+  const done = trimmed && live?.query === trimmed ? live : null
+  const searching = Boolean(trimmed) && !done
+  // While a search is running, keep showing the previous results instead of
+  // flashing an empty list.
+  const results = !trimmed ? getSuggestions() : done ? done.results : live?.results ?? []
 
   useEffect(() => {
     input.current?.focus()
@@ -60,17 +88,25 @@ export default function SearchDialog({ onClose, onPick, onOpen }) {
         </label>
 
         <p className="dialog__section" aria-live="polite">
-          {trimmed
-            ? results.length
-              ? `${results.length} ${results.length === 1 ? 'result' : 'results'}`
-              : ''
-            : 'Popular this week'}
+          {!trimmed
+            ? 'Popular picks'
+            : searching
+              ? 'Searching…'
+              : results.length
+                ? `${results.length} ${results.length === 1 ? 'result' : 'results'}`
+                : ''}
         </p>
 
-        {trimmed && results.length === 0 ? (
+        {done?.error && (
+          <p className="notice notice--error dialog__notice" role="alert">
+            <span>{done.error}</span>
+          </p>
+        )}
+
+        {done && results.length === 0 ? (
           <p className="dialog__empty">No movies match “{trimmed}”. Try another title.</p>
         ) : (
-          <ul className="results">
+          <ul className={`results${searching ? ' is-stale' : ''}`}>
             {results.map((movie) => {
               const added = inList.has(movie.id)
               return (
@@ -81,7 +117,7 @@ export default function SearchDialog({ onClose, onPick, onOpen }) {
                       {movie.title}
                     </button>
                     <span className="row__meta">
-                      {movie.year} · {movie.genres.join(', ')}
+                      {[movie.year, movie.genres?.slice(0, 2).join(', ')].filter(Boolean).join(' · ')}
                     </span>
                   </div>
                   <button

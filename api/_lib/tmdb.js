@@ -1,6 +1,5 @@
 // Server-only TMDb helpers. Never import this file from src/ (it reads a secret).
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const POSTER_BASE = 'https://image.tmdb.org/t/p/w500';
 
 export async function tmdbFetch(path, params = {}) {
   const token = process.env.TMDB_READ_TOKEN;
@@ -29,15 +28,28 @@ export async function tmdbFetch(path, params = {}) {
   return response.json();
 }
 
-// Converts a raw TMDb movie into the shape of our `movies` table.
-// Search results only have genre_ids; the details endpoint has full genre objects.
+// TMDb's movie genre ids (GET /genre/movie/list). Search results only carry
+// genre_ids, so we name them here instead of making another request.
+const GENRE_NAMES = {
+  28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+  99: 'Documentary', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+  27: 'Horror', 10402: 'Music', 9648: 'Mystery', 10749: 'Romance',
+  878: 'Science Fiction', 10770: 'TV Movie', 53: 'Thriller', 10752: 'War', 37: 'Western',
+};
+
+// Converts a raw TMDb movie (from search or details) into the shape of our
+// `movies` table, so it can be shown and saved as is.
 export function toMovie(raw) {
+  const year = parseInt(String(raw.release_date ?? '').slice(0, 4), 10);
+  const genres = Array.isArray(raw.genres)
+    ? raw.genres.map((genre) => genre.name)
+    : (raw.genre_ids ?? []).map((id) => GENRE_NAMES[id]).filter(Boolean);
   return {
     tmdb_id: raw.id,
     title: raw.title,
-    release_date: raw.release_date || null,
-    poster_url: raw.poster_path ? POSTER_BASE + raw.poster_path : null,
-    genres: Array.isArray(raw.genres) ? raw.genres.map((genre) => genre.name) : [],
+    year: Number.isFinite(year) ? year : null,
+    poster_path: raw.poster_path || null,
+    genres,
     overview: raw.overview || '',
   };
 }

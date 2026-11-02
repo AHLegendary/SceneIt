@@ -1,12 +1,18 @@
-// Local movie catalog. UI components call these instead of reading src/data
-// directly. The signed-in user's ranked list lives in supabaseStore.js and
-// the leaderboard in leaderboard.js; this file will shrink further once
-// search comes from the API.
+// Movie lookup for the UI. Two kinds of movies:
+//   * the 60-movie catalog in src/data/movies.json, with full details, ids
+//     like "dune-part-two-2024", used for suggestions and For You
+//   * any other movie, found through live search or loaded from the
+//     database, with id "tmdb-<TMDb id>" and only the basics (title, year,
+//     poster, genres, overview)
+// movieFromDb turns a database or API movie into one of these, preferring
+// the catalog version, so the same movie always gets the same id and object.
 
 import MOVIES from '../data/movies.json'
 
 const POSTER_BASE = 'https://image.tmdb.org/t/p/'
 const BY_ID = new Map(MOVIES.map((m) => [m.id, m]))
+const BY_TMDB = new Map(MOVIES.filter((m) => m.tmdb_id).map((m) => [m.tmdb_id, m]))
+const EXTRA = new Map() // id -> movie, for movies outside the catalog
 
 // ------------------------------------------------------------------ catalog
 
@@ -16,7 +22,46 @@ export function getCatalog() {
 }
 
 export function getMovie(id) {
-  return BY_ID.get(id) || null
+  return BY_ID.get(id) || EXTRA.get(id) || null
+}
+
+export function getMovieByTmdbId(tmdbId) {
+  return BY_TMDB.get(tmdbId) || EXTRA.get(`tmdb-${tmdbId}`) || null
+}
+
+export function isCatalogMovie(movie) {
+  return Boolean(movie && BY_ID.get(movie.id) === movie)
+}
+
+// Movie object for a row shaped like the `movies` table (also what the API
+// returns): { tmdb_id, title, year, poster_path, genres, overview }.
+// Returns the catalog movie when there is one, otherwise a remembered
+// "tmdb-<id>" movie so getMovie(id) finds it later. Returns null for rows
+// without a usable tmdb_id or title.
+export function movieFromDb(row) {
+  const tmdbId = Number(row?.tmdb_id)
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null
+  const known = getMovieByTmdbId(tmdbId)
+  if (known) {
+    // The leaderboard only returns basics; fill gaps when a fuller row arrives.
+    if (!BY_ID.has(known.id)) {
+      if (!known.genres.length && Array.isArray(row.genres)) known.genres = row.genres
+      if (!known.overview && row.overview?.trim()) known.overview = row.overview.trim()
+    }
+    return known
+  }
+  if (!row.title) return null
+  const movie = {
+    id: `tmdb-${tmdbId}`,
+    tmdb_id: tmdbId,
+    title: row.title,
+    year: Number.isFinite(row.year) ? row.year : null,
+    genres: Array.isArray(row.genres) ? row.genres : [],
+    poster_path: row.poster_path || null,
+    overview: row.overview?.trim() || null,
+  }
+  EXTRA.set(movie.id, movie)
+  return movie
 }
 
 // Full TMDb image URL for a path like "/abc.jpg", or null.
