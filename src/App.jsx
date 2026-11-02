@@ -4,6 +4,7 @@ import MovieDetails from './components/MovieDetails.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
 import AccountBadge from './components/AccountBadge.jsx'
+import LoginPage from './components/auth/LoginPage.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
@@ -67,13 +68,18 @@ function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // Once logged in there's nothing to do on the login page.
+  useEffect(() => {
+    if (signedIn && page === 'login') navigate('my-list')
+  }, [signedIn, page])
+
   function navigate(id) {
     window.location.hash = `/${id}`
   }
 
   return (
     <div className="app">
-      <Sidebar current={page} onNavigate={navigate} />
+      <Sidebar current={page} onNavigate={navigate} signedIn={signedIn} />
       <main className="main">
         <div className="topbar">
           <AccountBadge account={account} />
@@ -84,6 +90,8 @@ function App() {
           <SignInPrompt />
         ) : !PUBLIC_PAGES.has(page) && account.status === 'error' ? (
           <PageStatus error onRetry={loadMyList}>{account.error}</PageStatus>
+        ) : page === 'login' ? (
+          <LoginPage onSuccess={() => navigate('my-list')} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (
