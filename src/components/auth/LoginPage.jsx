@@ -4,6 +4,9 @@ import { isEmail, validateLogin, validateSignUp } from '../../lib/validation.js'
 import './LoginPage.css'
 
 const NETWORK_ERROR = "Couldn't reach SceneIt. Check your connection and try again."
+const SERVER_ERROR = 'Something went wrong on our end. Try again in a moment, or log in with your email.'
+const DEV_API_MISSING =
+  'Username login needs the API server. Log in with your email, or run the app with "npx vercel dev".'
 
 export default function LoginPage({ onSuccess }) {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
@@ -52,17 +55,14 @@ export default function LoginPage({ onSuccess }) {
       return
     }
     if (!response.ok) {
-      setFormError(
-        response.status === 404
-          ? 'Username login needs the API server. Log in with your email, or run the app with "npx vercel dev".'
-          : NETWORK_ERROR,
-      )
+      // 404 means the function isn't running: only expected in local dev without vercel dev.
+      setFormError(response.status === 404 && import.meta.env.DEV ? DEV_API_MISSING : SERVER_ERROR)
       return
     }
     const { session } = await response.json()
     const { data, error } = await supabase.auth.setSession(session)
     if (error) {
-      setFormError(NETWORK_ERROR)
+      setFormError(SERVER_ERROR)
       return
     }
     onSuccess?.(data.session)

@@ -27,6 +27,12 @@ export default async function handler(req, res) {
   const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !publishableKey || !serviceKey) {
+    const missing = [
+      !url && 'VITE_SUPABASE_URL',
+      !publishableKey && 'VITE_SUPABASE_PUBLISHABLE_KEY',
+      !serviceKey && 'SUPABASE_SERVICE_ROLE_KEY',
+    ].filter(Boolean)
+    console.error('Login: missing env vars:', missing.join(', '))
     return res.status(500).json({ error: 'server_not_configured' })
   }
 
@@ -40,22 +46,28 @@ export default async function handler(req, res) {
       .select('id')
       .ilike('username', username.replace(/_/g, '\\_'))
       .maybeSingle()
-    if (profileError) return res.status(500).json({ error: 'lookup_failed' })
+    if (profileError) {
+      console.error('Login: profile lookup failed:', profileError.message)
+      return res.status(500).json({ error: 'lookup_failed' })
+    }
     if (!profile) return res.status(401).json(BAD_CREDENTIALS)
 
     const { data: found, error: userError } = await admin.auth.admin.getUserById(profile.id)
     const email = found?.user?.email
+    if (userError) console.error('Login: auth user lookup failed:', userError.message)
     if (userError || !email) return res.status(401).json(BAD_CREDENTIALS)
 
     const anon = createClient(url, publishableKey, noSession)
     const { data, error } = await anon.auth.signInWithPassword({ email, password })
+    if (error && error.status !== 400) console.error('Login: sign-in failed:', error.message)
     if (error || !data.session) {
       return res.status(error?.status === 400 ? 401 : 502).json(error?.status === 400 ? BAD_CREDENTIALS : { error: 'auth_unavailable' })
     }
 
     const { access_token, refresh_token } = data.session
     return res.status(200).json({ session: { access_token, refresh_token } })
-  } catch {
+  } catch (error) {
+    console.error('Login: unexpected error:', error.message)
     return res.status(502).json({ error: 'auth_unavailable' })
   }
 }
