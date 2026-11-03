@@ -36,3 +36,9 @@ export function toProfileUpdate({ bio, pronouns, isPublic }) {
     is_public: isPublic,
   }
 }
+
+// Escapes LIKE wildcards so a username is matched literally by ilike.
+// "_" is a wildcard in LIKE patterns and is allowed in usernames.
+export function escapeLike(text) {
+  return text.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
