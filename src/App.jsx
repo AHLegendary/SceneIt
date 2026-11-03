@@ -12,6 +12,7 @@ import { PAGES, PUBLIC_PAGES } from './lib/pages.js'
 import { loadMyList } from './lib/supabaseStore.js'
 import { useAccount } from './lib/useMyList.js'
 import ForYouPage from './pages/ForYouPage.jsx'
+import FriendsPage from './pages/FriendsPage.jsx'
 import LeaderboardPage from './pages/LeaderboardPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
 
@@ -96,6 +97,8 @@ function App() {
           <MyListPage onAdd={openSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (
           <ForYouPage onOpen={openDetails} onAdd={openSearch} />
+        ) : page === 'friends' ? (
+          <FriendsPage />
         ) : (
           <LeaderboardPage onOpen={openDetails} />
         )}
