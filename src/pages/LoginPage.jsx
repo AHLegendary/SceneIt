@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase.js'
-import { isEmail, validateLogin, validateSignUp } from '../../lib/validation.js'
+import { supabase } from '../lib/supabase.js'
+import { isEmail, validateLogin, validateSignUp } from '../lib/validation.js'
 import './LoginPage.css'
 
 const NETWORK_ERROR = "Couldn't reach SceneIt. Check your connection and try again."
