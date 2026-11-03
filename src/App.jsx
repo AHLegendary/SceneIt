@@ -4,7 +4,6 @@ import MovieDetails from './components/MovieDetails.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
 import AccountBadge from './components/AccountBadge.jsx'
-import LoginPage from './components/auth/LoginPage.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
@@ -14,7 +13,9 @@ import { useAccount } from './lib/useMyList.js'
 import ForYouPage from './pages/ForYouPage.jsx'
 import FriendsPage from './pages/FriendsPage.jsx'
 import LeaderboardPage from './pages/LeaderboardPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
+import ProfilePage from './pages/ProfilePage.jsx'
 
 const DEFAULT_PAGE = 'leaderboard'
 
@@ -80,7 +81,7 @@ function App() {
 
   return (
     <div className="app">
-      <Sidebar current={page} onNavigate={navigate} signedIn={signedIn} />
+      <Sidebar current={page} onNavigate={navigate} signedIn={signedIn} username={account.username} />
       <main className="main">
         <div className="topbar">
           <AccountBadge account={account} />
@@ -93,6 +94,8 @@ function App() {
           <PageStatus error onRetry={loadMyList}>{account.error}</PageStatus>
         ) : page === 'login' ? (
           <LoginPage onSuccess={() => navigate('my-list')} />
+        ) : page === 'profile' ? (
+          <ProfilePage account={account} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (

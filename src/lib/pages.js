@@ -5,6 +5,8 @@ export const PAGES = [
   { id: 'for-you', label: 'For You' },
   { id: 'friends', label: 'Friends' },
   { id: 'login', label: 'Log in' },
+  // Shown only when logged in; the tab label is the user's username.
+  { id: 'profile', label: 'Profile' },
 ]
 
 // Pages anyone can see without logging in. Everything else needs an account.

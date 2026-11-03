@@ -1,0 +1,103 @@
+.profile__name {
+  overflow-wrap: anywhere;
+}
+
+.profile__form {
+  display: grid;
+  gap: 22px;
+  max-width: 36rem;
+  padding: 28px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.profile__field {
+  display: grid;
+  gap: 6px;
+}
+
+.profile__field label,
+.profile__label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.profile__field input,
+.profile__field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  resize: vertical;
+}
+
+.profile__field input::placeholder,
+.profile__field textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.profile__field input[aria-invalid='true'],
+.profile__field textarea[aria-invalid='true'] {
+  border-color: #b3261e;
+}
+
+.profile__field .seg {
+  justify-self: start;
+}
+
+.profile__hint,
+.profile__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.profile__error {
+  color: #b3261e;
+}
+
+.profile__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile__notice {
+  font-size: 14px;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.profile__alert {
+  padding: 12px 14px;
+  color: #b3261e;
+  background: #fdecea;
+  border-left: 4px solid #b3261e;
+  border-radius: var(--r-sm);
+}
+
+.profile__link {
+  padding: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.profile__form :focus-visible,
+.profile__alert :focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}

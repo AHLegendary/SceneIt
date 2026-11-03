@@ -3,11 +3,15 @@ import { useFriendGroups } from '../lib/useFriends.js'
 
 // Left-hand navigation. Big tab labels; the active page gets the filled pill.
 // The Friends tab shows how many friend requests are waiting.
+// Log in is for logged-out users; Profile (labelled with the username) is for logged-in ones.
 
-export default function Sidebar({ current, onNavigate, signedIn = false }) {
+export default function Sidebar({ current, onNavigate, signedIn = false, username = null }) {
   const requests = useFriendGroups().incoming.length
-  // The Log in tab is only useful while logged out.
-  const pages = PAGES.filter((page) => page.id !== 'login' || !signedIn)
+  const pages = PAGES.filter((page) => {
+    if (page.id === 'login') return !signedIn
+    if (page.id === 'profile') return signedIn
+    return true
+  })
   return (
     <nav className="sidebar" aria-label="Main">
       <span className="logo">
@@ -23,7 +27,16 @@ export default function Sidebar({ current, onNavigate, signedIn = false }) {
             aria-current={current === page.id ? 'page' : undefined}
             onClick={() => onNavigate(page.id)}
           >
-            {page.label}
+            {page.id === 'profile' ? (
+              <span
+                title={username ?? undefined}
+                style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                {username ?? page.label}
+              </span>
+            ) : (
+              page.label
+            )}
             {page.id === 'friends' && requests > 0 && (
               <span className="sidebar__badge" aria-label={`${requests} friend ${requests === 1 ? 'request' : 'requests'}`}>
                 {requests}
