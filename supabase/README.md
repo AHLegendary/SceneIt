@@ -1,11 +1,12 @@
 # Database (Supabase)
 
 - `migrations/20261031000000_init_schema.sql`: tables, RLS policies, and database functions
+- `migrations/20261102000000_friend_requests.sql`: `get_friendships` and `send_friend_request`
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
 
-1. Open the Supabase dashboard, go to **SQL Editor**, paste the migration file, and run it.
+1. Open the Supabase dashboard, go to **SQL Editor**, paste each migration file (oldest first) that hasn't been run yet, and run it.
 2. Paste `seed.sql` and run it. It's safe to run again.
 3. Under **Authentication → Providers → Email**, leave email signups on. For testing, you can turn off "Confirm email" so new accounts can log in right away.
 
@@ -49,7 +50,21 @@ await supabase.rpc('get_leaderboard', { p_period: 'weekly', p_category: 'highest
 
 // Search usernames when adding a friend (returns only id and username)
 await supabase.rpc('search_users', { q: 'rei' })
+
+// Friend requests. Use src/lib/friends.js from the UI instead of calling these.
+// Your requests and friends, with usernames (even for private profiles):
+//   [{ user_id, username, direction: 'incoming' | 'outgoing' | 'friends', created_at }]
+await supabase.rpc('get_friendships')
+// Send a request. If they already asked you, this accepts it instead.
+// Returns 'sent' | 'accepted' | 'already_sent' | 'already_friends'.
+await supabase.rpc('send_friend_request', { p_user_id: otherUserId })
+// Accept: update the row's status (RLS only lets the addressee do this).
+await supabase.from('friendships').update({ status: 'accepted' })
+  .eq('requester_id', otherUserId).eq('addressee_id', myId)
+// Decline, cancel, or unfriend: delete the row (either person can).
 ```
+
+Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.
 
 Scores and leaderboards are calculated when you ask for them, not stored. `get_leaderboard` uses the same 10-to-1 formula as `src/features/ranking/scores.js`.
 
