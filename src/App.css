@@ -957,3 +957,11 @@
 /* live search */
 .results.is-stale { opacity: 0.55; transition: opacity 0.15s; }
 .dialog__notice { margin: 0 0 8px; font-size: 13px; }
+
+/* My List score filter */
+.listfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 14px; }
+.listfilter__range { font-size: 13px; font-weight: 600; color: var(--ink-3); }
+@media (max-width: 520px) {
+  .listfilter .seg { display: grid; grid-template-columns: 1fr 1fr; width: 100%; overflow: visible; border-radius: var(--r-md); }
+  .listfilter .seg__opt { border-radius: calc(var(--r-md) - 4px); }
+}

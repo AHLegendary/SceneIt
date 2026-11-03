@@ -1,13 +1,22 @@
 import { useState } from 'react'
 import Poster from '../components/Poster.jsx'
 import { tierRanks } from '../features/ranking/binaryInsertion.js'
-import { moviesUntilScores, SCORE_UNLOCK, scoreTiers } from '../features/ranking/scores.js'
+import Segmented from '../components/Segmented.jsx'
+import {
+  categoryOf,
+  countByCategory,
+  moviesUntilScores,
+  SCORE_CATEGORIES,
+  SCORE_UNLOCK,
+  scoreTiers,
+} from '../features/ranking/scores.js'
 import { posterUrl } from '../lib/localStore.js'
 import { removeMovie } from '../lib/supabaseStore.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
 // The signed-in user's ranked list. Starts empty; "Rank a movie" opens search.
-// Tied movies share a rank. Scores appear once 10+ movies are ranked.
+// Tied movies share a rank. Scores appear once 10+ movies are ranked, and
+// with them a filter by score category (Loved it / It was okay / Not a fan).
 // highlightId briefly marks the movie that was just ranked.
 export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const tiers = useMyTiers()
@@ -17,6 +26,17 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const toUnlock = moviesUntilScores(count)
   const [removing, setRemoving] = useState(null) // id of the movie being removed
   const [removeError, setRemoveError] = useState(null)
+  const [filter, setFilter] = useState('all')
+  // No scores (under 10 movies) means no categories, so show everything.
+  const activeFilter = scores ? filter : 'all'
+  const counts = countByCategory(scores)
+  const filterOptions = [
+    { id: 'all', label: `All · ${count}` },
+    ...SCORE_CATEGORIES.map((c) => ({ id: c.id, label: `${c.label} · ${counts[c.id]}` })),
+  ]
+  const category = SCORE_CATEGORIES.find((c) => c.id === activeFilter)
+  const shows = (movie) => activeFilter === 'all' || categoryOf(scores.get(movie.id)) === activeFilter
+  const shownCount = activeFilter === 'all' ? count : counts[activeFilter]
 
   async function remove(movie) {
     setRemoving(movie.id)
@@ -74,7 +94,19 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         </div>
       )}
 
-      {count === 0 ? (
+      {scores && (
+        <div className="listfilter">
+          <Segmented label="Filter by how much you liked it" options={filterOptions} value={activeFilter} onChange={setFilter} />
+          {category && <span className="listfilter__range">Scores {category.range}</span>}
+        </div>
+      )}
+
+      {count > 0 && shownCount === 0 ? (
+        <div className="notice" role="status">
+          <span>No movies in “{category.label}” yet.</span>
+          <button type="button" className="row__btn" onClick={() => setFilter('all')}>Show all</button>
+        </div>
+      ) : count === 0 ? (
         <div className="empty">
           <div className="empty__stack" aria-hidden="true">
             <span /><span /><span />
@@ -92,6 +124,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         <ol className="board">
           {tiers.map((tier, t) =>
             tier.map((movie, k) => {
+              if (!shows(movie)) return null
               const isTied = tier.length > 1
               const classes = ['row', 'row--mine', 'row--link']
               if (isTied) classes.push('is-tied')
