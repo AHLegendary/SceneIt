@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moviesUntilScores, scoreTiers, SCORE_UNLOCK } from '../../src/features/ranking/scores.js'
+import { categoryOf, countByCategory, moviesUntilScores, scoreTiers, SCORE_UNLOCK } from '../../src/features/ranking/scores.js'
 
 // n singleton tiers: [[m0], [m1], ...]
 const singles = (n) => Array.from({ length: n }, (_, i) => [{ id: `m${i}` }])
@@ -62,5 +62,29 @@ describe('moviesUntilScores', () => {
     expect(moviesUntilScores(7)).toBe(3)
     expect(moviesUntilScores(10)).toBe(0)
     expect(moviesUntilScores(40)).toBe(0)
+  })
+})
+
+describe('score categories', () => {
+  it('puts scores in the right category at the edges', () => {
+    expect(categoryOf(10)).toBe('loved')
+    expect(categoryOf(6)).toBe('loved')
+    expect(categoryOf(5.9)).toBe('okay')
+    expect(categoryOf(4)).toBe('okay')
+    expect(categoryOf(3.9)).toBe('meh')
+    expect(categoryOf(1)).toBe('meh')
+  })
+
+  it('counts movies per category, with ties counted once each', () => {
+    const tiers = Array.from({ length: 10 }, (_, i) => [{ id: `m${i}` }])
+    tiers[0].push({ id: 'tied' }) // 11 movies, the top two tied
+    const counts = countByCategory(scoreTiers(tiers))
+    expect(counts.loved + counts.okay + counts.meh).toBe(11)
+    // Scores: 9.6 (tied pair), 8.2, 7.3, 6.4 | 5.5, 4.6 | 3.7, 2.8, 1.9, 1.0
+    expect(counts).toEqual({ loved: 5, okay: 2, meh: 4 })
+  })
+
+  it('is all zeros when scores are still locked', () => {
+    expect(countByCategory(null)).toEqual({ loved: 0, okay: 0, meh: 0 })
   })
 })

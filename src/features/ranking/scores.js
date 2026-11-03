@@ -32,3 +32,24 @@ export function scoreTiers(tiers, unlockAt = SCORE_UNLOCK) {
 export function moviesUntilScores(count, unlockAt = SCORE_UNLOCK) {
   return Math.max(0, unlockAt - count)
 }
+
+// Score categories for filtering a ranked list. Scores come from position,
+// so these are relative: about the top 44% of a list is "Loved it", the next
+// 22% "It was okay" and the bottom 33% "Not a fan".
+export const SCORE_CATEGORIES = [
+  { id: 'loved', label: 'Loved it', range: '6.0–10', min: 6 },
+  { id: 'okay', label: 'It was okay', range: '4.0–5.9', min: 4 },
+  { id: 'meh', label: 'Not a fan', range: '0.0–3.9', min: -Infinity },
+]
+
+// Category id for a score: 'loved' (6+), 'okay' (4 to 5.9) or 'meh' (under 4).
+export function categoryOf(score) {
+  return SCORE_CATEGORIES.find((c) => score >= c.min).id
+}
+
+// Map of category id -> number of movies in it, from scoreTiers' result.
+export function countByCategory(scores) {
+  const counts = Object.fromEntries(SCORE_CATEGORIES.map((c) => [c.id, 0]))
+  for (const score of scores?.values() ?? []) counts[categoryOf(score)] += 1
+  return counts
+}
