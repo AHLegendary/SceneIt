@@ -3,6 +3,7 @@ import {
   BIO_MAX,
   PRONOUNS_MAX,
   charCount,
+  escapeLike,
   toProfileUpdate,
   validateBio,
   validateProfile,
@@ -67,5 +68,16 @@ describe('toProfileUpdate', () => {
       pronouns: null,
       is_public: true,
     })
+  })
+})
+
+describe('escapeLike', () => {
+  it('escapes underscores, percent signs, and backslashes', () => {
+    expect(escapeLike('a_b')).toBe('a\\_b')
+    expect(escapeLike('50%')).toBe('50\\%')
+    expect(escapeLike('a\\b')).toBe('a\\\\b')
+  })
+  it('leaves plain usernames alone', () => {
+    expect(escapeLike('reil99')).toBe('reil99')
   })
 })

@@ -19,3 +19,18 @@ export async function saveProfile(userId, update) {
   if (error) throw error
   return data
 }
+
+import { escapeLike } from './profileValidation.js'
+
+// Another user's profile by username (any capitalization). Returns null when
+// there's no row the current user is allowed to see: the username doesn't
+// exist, or the profile is private and they aren't friends. RLS decides.
+export async function fetchProfileByUsername(username) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, bio, pronouns, is_public')
+    .ilike('username', escapeLike(username))
+    .maybeSingle()
+  if (error) throw error
+  return data
+}

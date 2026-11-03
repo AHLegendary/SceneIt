@@ -8,6 +8,7 @@ import {
   sendFriendRequest,
   SEND_RESULTS,
 } from '../lib/friends.js'
+import { userHref } from '../lib/route.js'
 import { useFriendGroups, useFriends } from '../lib/useFriends.js'
 
 const SEARCH_DELAY_MS = 250
@@ -238,7 +239,7 @@ function FriendRow({ user, meta, children }) {
     <li className="frow">
       <span className="frow__avatar" aria-hidden="true">{user.username.charAt(0).toUpperCase()}</span>
       <span className="frow__info">
-        <span className="frow__name">{user.username}</span>
+        <a className="frow__name frow__link" href={userHref(user.username)}>{user.username}</a>
         {meta && <span className="frow__meta">{meta}</span>}
       </span>
       <span className="frow__actions">{children}</span>

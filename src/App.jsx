@@ -7,7 +7,8 @@ import AccountBadge from './components/AccountBadge.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
-import { PAGES, PUBLIC_PAGES } from './lib/pages.js'
+import { PUBLIC_PAGES } from './lib/pages.js'
+import { parseHash } from './lib/route.js'
 import { loadMyList } from './lib/supabaseStore.js'
 import { useAccount } from './lib/useMyList.js'
 import ForYouPage from './pages/ForYouPage.jsx'
@@ -16,20 +17,13 @@ import LeaderboardPage from './pages/LeaderboardPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
-
-const DEFAULT_PAGE = 'leaderboard'
-
-// Pages live in the URL hash (#/my-list) so refresh and back/forward work
-// without a router or any server config on Vercel.
-function pageFromHash() {
-  const id = window.location.hash.replace(/^#\/?/, '')
-  return PAGES.some((p) => p.id === id) ? id : DEFAULT_PAGE
-}
+import UserProfilePage from './pages/UserProfilePage.jsx'
 
 function App() {
   const account = useAccount()
   const signedIn = account.status === 'ready'
-  const [page, setPage] = useState(pageFromHash)
+  const [route, setRoute] = useState(() => parseHash(window.location.hash))
+  const page = route.page
   const [searchOpen, setSearchOpen] = useState(false)
   const openSearch = useCallback(() => setSearchOpen(true), [])
   const closeSearch = useCallback(() => setSearchOpen(false), [])
@@ -65,7 +59,7 @@ function App() {
   }
 
   useEffect(() => {
-    const onHash = () => setPage(pageFromHash())
+    const onHash = () => setRoute(parseHash(window.location.hash))
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -96,6 +90,8 @@ function App() {
           <LoginPage onSuccess={() => navigate('my-list')} />
         ) : page === 'profile' ? (
           <ProfilePage account={account} />
+        ) : page === 'user' ? (
+          <UserProfilePage username={route.username} account={account} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (
