@@ -2,6 +2,7 @@
 
 - `migrations/20261031000000_init_schema.sql`: tables, RLS policies, and database functions
 - `migrations/20261102000000_friend_requests.sql`: `get_friendships` and `send_friend_request`
+- `migrations/20261103000000_ranking_categories.sql`: `rankings.category` (loved / okay / meh), category-aware `save_ranking` and leaderboard scores
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -25,7 +26,7 @@ npx supabase db reset   # reruns all migrations and seed.sql
 |---|---|---|---|
 | `profiles` | username, bio, pronouns, `is_public`, `top_movies` (max 3) | everyone if public; otherwise the owner and friends | the owner (`update` only; rows are created by the signup trigger) |
 | `movies` | TMDb cache keyed by `tmdb_id` | everyone | server only (service role key) and the seed file |
-| `rankings` | `(user_id, movie_id, position)`. `position` is the tier index, 0 = best, and ties share a position | same as the owner's profile | the owner, through `save_ranking` / `remove_ranking` |
+| `rankings` | `(user_id, movie_id, position, category)`. `position` is the tier index, 0 = best, and ties share a position. `category` is `loved`, `okay` or `meh`, and the list is always ordered loved → okay → meh | same as the owner's profile | the owner, through `save_ranking` / `remove_ranking` |
 | `watchlist` | `(user_id, movie_id, added_at)` | same as the owner's profile | the owner |
 | `friendships` | `requester_id → addressee_id`, `pending` or `accepted` | the two people involved | requester inserts, addressee accepts, either one deletes |
 
@@ -39,7 +40,8 @@ RLS is on for every table. Passwords are stored only in Supabase Auth.
 await supabase.auth.signUp({ email, password, options: { data: { username } } })
 
 // Place or rerank a movie. Works the same as placeMovie() in src/lib/localStore.js.
-await supabase.rpc('save_ranking', { p_movie_id: 693134, p_position: 2, p_tied: false })
+// p_position is inside the category (0 = best "okay" movie), not the whole list.
+await supabase.rpc('save_ranking', { p_movie_id: 693134, p_category: 'okay', p_position: 2, p_tied: false })
 await supabase.rpc('remove_ranking', { p_movie_id: 693134 })
 
 // My list, best first (rows that share a position are ties)

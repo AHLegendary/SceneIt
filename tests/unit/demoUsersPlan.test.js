@@ -51,6 +51,19 @@ describe('rankings', () => {
     }
   })
 
+  it('keeps categories in blocks (loved, okay, meh) with ties never split', () => {
+    const order = { loved: 0, okay: 1, meh: 2 }
+    for (const user of plan.users) {
+      const cats = user.rankings.map((r) => r.category)
+      for (const c of cats) expect(order).toHaveProperty(c)
+      for (let i = 1; i < cats.length; i++) {
+        expect(order[cats[i]]).toBeGreaterThanOrEqual(order[cats[i - 1]])
+        if (user.rankings[i].position === user.rankings[i - 1].position) expect(cats[i]).toBe(cats[i - 1])
+      }
+      expect(cats[0]).toBe('loved')
+    }
+  })
+
   it('dates every ranking within the last month, with some this week', () => {
     const all = plan.users.flatMap((u) => u.rankings).map((r) => Date.parse(r.created_at))
     for (const t of all) {
