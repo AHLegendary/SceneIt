@@ -9,8 +9,7 @@
 //   * TMDb's recommendations for a handful of the user's top and bottom
 //     movies (pickSeeds -> /api/movies/recommendations -> mergeTmdbRecs),
 //     which reaches any movie on TMDb, not just the catalog
-//   * friends' ranked lists (friendSignals): movies a friend put in their
-//     top half
+//   * friends' ranked lists (friendSignals): movies a friend loved
 //
 // Friends' opinions are added on top: a movie a friend ranked high gains,
 // one they ranked low loses, scaled by how close their taste is to yours
@@ -21,8 +20,15 @@
 // genres. Links come from TMDb responses and from the catalog's `similar`
 // field (filled by npm run movie-data), so scoring still works offline.
 //
+// How much a ranked movie counts comes from the category the user put it in
+// (rankWeights): "Loved it" pulls toward similar movies, "Not a fan" pushes
+// away, "It was okay" barely matters. Position inside the category fine-
+// tunes it.
+//
 // Pure functions: no React, no storage, no fetching. Recommendations unlock
 // at 15 ranked movies, matching the design doc.
+
+import { isCategory, SCORE_CATEGORIES, tiersInCategory } from '../ranking/scores.js'
 
 export const RECS_UNLOCK = 15
 const SIMILAR_WEIGHT = 1
@@ -47,14 +53,50 @@ export function positionWeights(tiers) {
   return weights
 }
 
-// Which ranked movies to ask TMDb about: the top `top` and, when the list is
-// long enough to have real dislikes, the bottom `bottom`. Only movies with a
+// Weight range per category: [worst in the category, best in the category].
+export const CATEGORY_WEIGHTS = {
+  loved: [0.5, 1],
+  okay: [-0.2, 0.2],
+  meh: [-1, -0.5],
+}
+
+// Weight of each ranked movie, -1 to +1, from its category and its place
+// inside that category: the best "Loved it" movie is +1, the worst "Not a
+// fan" is -1, and "It was okay" stays near 0. A movie alone in its category
+// gets the middle of the range; tied movies share a weight.
+// Lists without categories (hand-built ones) fall back to positionWeights.
+export function rankWeights(tiers) {
+  const hasCategories = tiers.some((tier) => tier.some((m) => isCategory(m?.category)))
+  if (!hasCategories) return positionWeights(tiers)
+  const weights = new Map()
+  for (const { id } of SCORE_CATEGORIES) {
+    const [low, high] = CATEGORY_WEIGHTS[id]
+    const group = tiersInCategory(tiers, id)
+    const count = group.reduce((n, tier) => n + tier.length, 0)
+    let start = 0
+    for (const tier of group) {
+      const middle = start + (tier.length - 1) / 2
+      const fromTop = count > 1 ? 1 - middle / (count - 1) : 0.5
+      for (const movie of tier) weights.set(movie.id, low + (high - low) * fromTop)
+      start += tier.length
+    }
+  }
+  return weights
+}
+
+// Movies at or above this weight count as favorites: "Loved it" ones.
+const FAVORITE_WEIGHT = CATEGORY_WEIGHTS.loved[0]
+// Movies at or below this weight are real dislikes: "Not a fan" ones.
+const DISLIKE_WEIGHT = CATEGORY_WEIGHTS.meh[1]
+
+// Which ranked movies to ask TMDb about: the top `top` movies with a positive
+// weight (loved first) and the bottom `bottom` real dislikes ("Not a fan"). Only movies with a
 // TMDb id count. Returns { likes, dislikes }, each a list of movies.
 export function pickSeeds(tiers, { top = 8, bottom = 4 } = {}) {
-  const weights = positionWeights(tiers)
+  const weights = rankWeights(tiers)
   const ranked = tiers.flat().filter((m) => Number.isInteger(m.tmdb_id) && m.tmdb_id > 0)
   const likes = ranked.filter((m) => weights.get(m.id) > 0).slice(0, top)
-  const dislikes = ranked.filter((m) => weights.get(m.id) < 0).slice(-bottom).reverse()
+  const dislikes = ranked.filter((m) => weights.get(m.id) <= DISLIKE_WEIGHT).slice(-bottom).reverse()
   return { likes, dislikes: bottom > 0 ? dislikes : [] }
 }
 
@@ -122,16 +164,15 @@ export function relatedness(a, b, links) {
 const FRIEND_BASE = 0.25
 // Shared movies needed before the similarity is trusted halfway.
 const FRIEND_SHRINK = 5
-// A friend's favorite (weight +1, affinity 1) is worth this much score, about
-// as much as a strong TMDb link to one of your own favorites.
-export const FRIEND_WEIGHT = 1
+// Weight of the friends part of the score (see SCORE_WEIGHTS below).
+export const FRIEND_WEIGHT = 0.8
 
 // Taste similarity of two ranked lists, -1 to 1: cosine of their position
 // weights over the movies both ranked, shrunk toward 0 when they share
 // only a few. Returns { similarity, shared }.
 export function tasteSimilarity(myTiers, theirTiers) {
-  const mine = positionWeights(myTiers)
-  const theirs = positionWeights(theirTiers)
+  const mine = rankWeights(myTiers)
+  const theirs = rankWeights(theirTiers)
   let dot = 0
   let a2 = 0
   let b2 = 0
@@ -159,7 +200,7 @@ export function friendAffinity(similarity) {
 //   friends  [{ id, username, tiers }]
 // Returns { friends: [{ id, username, affinity, shared }], opinions, candidates }
 // where opinions maps movie id -> [{ username, weight, affinity }] and
-// candidates are the movies friends ranked in their top half.
+// candidates are the movies friends loved.
 export function friendSignals(myTiers, friends = []) {
   const opinions = new Map()
   const candidates = new Map()
@@ -170,75 +211,137 @@ export function friendSignals(myTiers, friends = []) {
     const affinity = friendAffinity(similarity)
     summary.push({ id: friend.id, username: friend.username, affinity, shared })
     if (!affinity) continue
-    const weights = positionWeights(friend.tiers)
+    const weights = rankWeights(friend.tiers)
     for (const movie of friend.tiers.flat()) {
       const weight = weights.get(movie.id)
       if (!opinions.has(movie.id)) opinions.set(movie.id, [])
       opinions.get(movie.id).push({ username: friend.username, weight, affinity })
-      if (weight > 0) candidates.set(movie.id, movie)
+      if (weight >= FAVORITE_WEIGHT) candidates.set(movie.id, movie)
     }
   }
   return { friends: summary, opinions, candidates: [...candidates.values()] }
 }
 
 // ------------------------------------------------------------------ scoring
+//
+// A candidate's score has four parts, each kept between -1 and 1 so none can
+// drown out the others however long the lists get:
+//   links    TMDb links to your ranked movies, weighted by category, then
+//            squashed (saturate) so three links aren't worth 3x one
+//   genres   average genre overlap with your ranked movies, weighted by
+//            category (an average, so a 60-movie list counts the same as 15)
+//   friends  friends' opinions, squashed the same way as links
+//   quality  how well rated the movie is on TMDb/IMDb, a small nudge that
+//            mostly breaks ties; it never recommends a movie on its own
+export const SCORE_WEIGHTS = { links: 1, genres: 0.6, friends: FRIEND_WEIGHT, quality: 0.15 }
+// The personal parts (links + genres + friends) must beat this to show.
+const MIN_SIGNAL = 0.02
+// Bayesian average: ratings with few votes are pulled toward PRIOR_MEAN.
+const PRIOR_MEAN = 6.5
+const PRIOR_VOTES = 500
+
+// Squashes any number into -1..1: about 0.63 for 1, 0.86 for 2, 0.95 for 3.
+export function saturate(x) {
+  return Math.sign(x) * (1 - Math.exp(-Math.abs(x)))
+}
+
+// How well rated a movie is, -1 to 1, from TMDb (tmdb_rating, tmdb_votes) or
+// the catalog's IMDb rating. 0 when there's no rating. A 6.5 is 0, 8.5+ is 1.
+export function qualityPrior(movie) {
+  const rating = movie?.tmdb_rating ?? movie?.ratings?.imdb
+  const votes = movie?.tmdb_votes ?? movie?.ratings?.imdb_votes ?? 0
+  if (!Number.isFinite(rating) || rating <= 0) return 0
+  const shrunk = (votes * rating + PRIOR_VOTES * PRIOR_MEAN) / (votes + PRIOR_VOTES)
+  return Math.max(-1, Math.min(1, (shrunk - PRIOR_MEAN) / 2))
+}
+
+function genreOverlap(a, b) {
+  const ga = new Set(a.genres ?? [])
+  const gb = new Set(b.genres ?? [])
+  const shared = [...ga].filter((g) => gb.has(g)).length
+  const union = new Set([...ga, ...gb]).size
+  return union ? shared / union : 0
+}
 
 // Scores every unranked candidate.
 //   links    the map from mergeTmdbRecs (optional)
 //   friends  the result of friendSignals (optional)
-// Returns [{ movie, score, because, becauseFriend, friendScore, fans }]
+// Returns [{ movie, score, parts, because, becauseFriend, friendScore, fans }]
 // sorted best first:
+//   parts          { links, genres, friends, quality }, each -1..1, unweighted
 //   because        the ranked movie that helped most (null if none did)
 //   becauseFriend  username of the friend whose opinion helped most, when it
 //                  outweighed every one of your own movies
-//   friendScore    friends' part of the score
-//   fans           usernames of friends who ranked it in their top half,
-//                  biggest influence first
-// Only movies with a positive score are returned, and each movie at most once.
+//   friendScore    friends' weighted part of the score
+//   fans           usernames of friends who loved it, biggest influence first
+// Only movies with a real personal signal are returned, each at most once.
 export function scoreCandidates(tiers, candidates, { links, friends } = {}) {
   const ranked = tiers.flat()
   const rankedIds = new Set(ranked.map((m) => m.id))
-  const weights = positionWeights(tiers)
+  const weights = rankWeights(tiers)
+  const totalWeight = ranked.reduce((sum, r) => sum + Math.abs(weights.get(r.id) ?? 0), 0)
   const results = []
   const seen = new Set()
 
   for (const movie of candidates) {
     if (rankedIds.has(movie.id) || seen.has(movie.id)) continue
     seen.add(movie.id)
-    let score = 0
+    let linkSum = 0
+    let genreSum = 0
     let because = null
     let best = 0
     for (const r of ranked) {
-      const contribution = weights.get(r.id) * relatedness(r, movie, links)
-      score += contribution
+      const w = weights.get(r.id)
+      const link = linkStrength(r, movie, links)
+      const genre = genreOverlap(r, movie)
+      linkSum += w * SIMILAR_WEIGHT * link
+      genreSum += w * genre
+      const contribution = w * relatedness(r, movie, links)
       if (contribution > best) {
         best = contribution
         because = r
       }
     }
 
-    let friendScore = 0
+    let friendSum = 0
     let becauseFriend = null
     const fans = []
     for (const o of friends?.opinions.get(movie.id) ?? []) {
-      const contribution = FRIEND_WEIGHT * o.affinity * o.weight
-      friendScore += contribution
-      if (o.weight > 0) fans.push({ username: o.username, contribution })
-      if (contribution > best) {
-        best = contribution
+      const contribution = o.affinity * o.weight
+      friendSum += contribution
+      if (o.weight >= FAVORITE_WEIGHT) fans.push({ username: o.username, contribution })
+      if (FRIEND_WEIGHT * contribution > best) {
+        best = FRIEND_WEIGHT * contribution
         becauseFriend = o.username
       }
     }
-    score += friendScore
     fans.sort((a, b) => b.contribution - a.contribution)
 
-    if (score > 0) {
-      results.push({ movie, score, because, becauseFriend, friendScore, fans: fans.map((f) => f.username) })
+    const parts = {
+      links: saturate(linkSum),
+      genres: totalWeight ? genreSum / totalWeight : 0,
+      friends: saturate(friendSum),
+      quality: qualityPrior(movie),
     }
+    const personal =
+      SCORE_WEIGHTS.links * parts.links + SCORE_WEIGHTS.genres * parts.genres + SCORE_WEIGHTS.friends * parts.friends
+    if (personal <= MIN_SIGNAL) continue
+    const score = personal + SCORE_WEIGHTS.quality * parts.quality
+    results.push({
+      movie,
+      score,
+      parts,
+      because,
+      becauseFriend,
+      friendScore: FRIEND_WEIGHT * parts.friends,
+      fans: fans.map((f) => f.username),
+    })
   }
 
-  // Ties broken by title so the order is stable between renders.
-  return results.sort((a, b) => b.score - a.score || a.movie.title.localeCompare(b.movie.title))
+  // Ties: better rated first, then title so the order is stable between renders.
+  return results.sort(
+    (a, b) => b.score - a.score || b.parts.quality - a.parts.quality || a.movie.title.localeCompare(b.movie.title),
+  )
 }
 
 // The recommendations page: a top-picks row, a "your friends loved these"
@@ -275,8 +378,11 @@ export function buildRecommendations(
   if (top.length) rows.push({ id: 'top', title: 'Top picks for you', items: top })
   if (fromFriends.length) rows.push({ id: 'friends', title: 'Your friends loved these', items: fromFriends })
 
-  // Favorites = the user's top-ranked movies, best first.
-  for (const fav of tiers.flat().slice(0, becauseRows)) {
+  // Favorites = the user's best "Loved it" movies (or top movies, for lists
+  // without categories), best first.
+  const myWeights = rankWeights(tiers)
+  const favorites = tiers.flat().filter((m) => myWeights.get(m.id) >= FAVORITE_WEIGHT)
+  for (const fav of favorites.slice(0, becauseRows)) {
     // Movies TMDb links to this favorite first, then genre relatives.
     const linked = scored.filter((s) => linkStrength(fav, s.movie, links) > 0)
     const genreOnly = scored.filter((s) => !linkStrength(fav, s.movie, links) && relatedness(fav, s.movie, links) > 0)

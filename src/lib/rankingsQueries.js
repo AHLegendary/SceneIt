@@ -23,7 +23,7 @@ export async function fetchTiersForUsers(userIds) {
   if (!ids.length) return new Map()
   const { data, error } = await supabase
     .from('rankings')
-    .select('user_id, movie_id, position, movies(tmdb_id, title, year, poster_path, genres, overview)')
+    .select('user_id, movie_id, position, category, movies(tmdb_id, title, year, poster_path, genres, overview)')
     .in('user_id', ids)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
