@@ -158,3 +158,24 @@
   display: inline-block;
   margin-bottom: 10px;
 }
+
+/* ---------------------------------------------------------- top movies */
+.topmovies {
+  display: grid;
+  gap: 14px;
+  max-width: 36rem;
+  margin-top: 28px;
+}
+
+.topmovies__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topmovies__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
