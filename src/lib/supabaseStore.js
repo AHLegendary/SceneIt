@@ -11,6 +11,7 @@
 // "tmdb-12345" (anything else, see localStore.js); the database uses TMDb
 // ids. We convert at this boundary so no component has to care.
 
+import { isCategory, tiersInCategory } from '../features/ranking/scores.js'
 import { getMovie, getMovieByTmdbId, isCatalogMovie, movieFromDb } from './localStore.js'
 import { saveMovie } from './movies.js'
 import { supabase } from './supabase.js'
@@ -67,15 +68,17 @@ export function isInList(id) {
   return state.tiers.some((tier) => tier.some((movie) => movie.id === id))
 }
 
-// Turns rankings rows ({ movie_id, position, movies: {...} }) into tiers of
-// movies. Rows sharing a position are a tie. The joined `movies` row covers
+// Turns rankings rows ({ movie_id, position, category, movies: {...} }) into
+// tiers of movies. Rows sharing a position are a tie. Each movie in the result
+// is a copy carrying its `category` ('loved' | 'okay' | 'meh'). The joined `movies` row covers
 // movies outside the catalog; rows we can't build a movie for are skipped,
 // and empty tiers dropped, so the result is always dense.
 export function rowsToTiers(rows) {
   const byPosition = new Map()
   for (const row of rows ?? []) {
-    const movie = getMovieByTmdbId(row.movie_id) || movieFromDb({ ...row.movies, tmdb_id: row.movie_id })
-    if (!movie) continue
+    const found = getMovieByTmdbId(row.movie_id) || movieFromDb({ ...row.movies, tmdb_id: row.movie_id })
+    if (!found) continue
+    const movie = { ...found, category: row.category ?? null }
     savedMovies.add(movie.tmdb_id)
     if (!byPosition.has(row.position)) byPosition.set(row.position, [])
     byPosition.get(row.position).push(movie)
@@ -92,7 +95,7 @@ export async function loadMyList() {
   if (!user) return
   const { data, error } = await supabase
     .from('rankings')
-    .select('movie_id, position, movies(tmdb_id, title, year, poster_path, genres, overview)')
+    .select('movie_id, position, category, movies(tmdb_id, title, year, poster_path, genres, overview)')
     .eq('user_id', user.id)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
@@ -164,15 +167,20 @@ async function ensureSaved(movie) {
 }
 
 // Puts a movie where head-to-head placement landed it, moving it if it was
-// already ranked (that's how reranking saves). Same arguments as before:
-//   tied = false: as its own tier at `index` (0 = best)
-//   tied = true:  into the existing tier at `index`
+// already ranked (that's how reranking saves). The placement is inside the
+// movie's category, the same list CompareView compared it against:
+//   category: 'loved' | 'okay' | 'meh'
+//   tied = false: as its own tier at `index` (0 = best in that category)
+//   tied = true:  into the category's existing tier at `index`
+// The database keeps the whole list ordered loved -> okay -> not a fan.
 // Throws an Error with a user-facing message if the save fails; the list
 // is left as it was.
-export async function placeMovie(id, { index, tied = false }) {
+export async function placeMovie(id, { category, index, tied = false }) {
   const movie = requireMovie(id)
   requireSignedIn()
-  const position = Math.max(0, Math.min(Number.isFinite(index) ? index : Infinity, state.tiers.length))
+  if (!isCategory(category)) throw new Error(`Unknown category: ${category}`)
+  const categoryTiers = tiersInCategory(state.tiers, category).length
+  const position = Math.max(0, Math.min(Number.isFinite(index) ? index : Infinity, categoryTiers))
   try {
     await ensureSaved(movie)
   } catch {
@@ -180,6 +188,7 @@ export async function placeMovie(id, { index, tied = false }) {
   }
   const { error } = await supabase.rpc('save_ranking', {
     p_movie_id: movie.tmdb_id,
+    p_category: category,
     p_position: position,
     p_tied: Boolean(tied),
   })

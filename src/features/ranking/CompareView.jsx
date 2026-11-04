@@ -15,7 +15,14 @@ import {
   TIE,
   tierRanks,
 } from './binaryInsertion.js'
-import { moviesUntilScores, scoreTiers } from './scores.js'
+import {
+  categoryOffset,
+  getCategory,
+  moviesUntilScores,
+  SCORE_CATEGORIES,
+  scoreTiers,
+  tiersInCategory,
+} from './scores.js'
 
 // Rank of a movie in a list of tiers, or null if it isn't there.
 function rankOf(tiers, id) {
@@ -24,41 +31,57 @@ function rankOf(tiers, id) {
   return at === -1 ? null : ranks[at]
 }
 
-// Full-screen head-to-head flow for placing one movie in My List: a newly
-// watched movie, or one being reranked. The list is only saved once the last
-// comparison is answered, so closing early leaves the ranking untouched.
-// If the save fails, the result screen says so and offers a retry.
+// Full-screen flow for placing one movie in My List: a newly watched movie,
+// or one being reranked. First the user says how they felt about it (Loved
+// it / It was okay / Not a fan), then head-to-head comparisons place it among
+// the movies already in that category. A category with nothing in it yet
+// needs no comparisons. The list is only saved once the last comparison is
+// answered, so closing early leaves the ranking untouched. If the save fails,
+// the result screen says so and offers a retry.
 export default function CompareView({ movie, rerank = false, onClose, onRankAnother, onSeeList }) {
   // Snapshot the list once. When reranking, the movie is compared against
   // everything except itself.
   const [setup] = useState(() => {
     const current = getMyTiers()
     const others = current.map((tier) => tier.filter((m) => m.id !== movie.id)).filter((tier) => tier.length)
-    return { oldRank: rerank ? rankOf(current, movie.id) : null, start: startInsertion(others, movie) }
+    const previous = current.flat().find((m) => m.id === movie.id)
+    return { oldRank: rerank ? rankOf(current, movie.id) : null, oldCategory: previous?.category ?? null, others }
   })
-  const [history, setHistory] = useState([setup.start])
+  const [category, setCategory] = useState(null)
+  // Insertion states inside the chosen category; empty until one is picked.
+  const [history, setHistory] = useState([])
   const saveStarted = useRef(false)
   // 'saving' | 'saved' | 'failed'
   const [saveStatus, setSaveStatus] = useState('saving')
   const titleId = useId()
 
-  const state = history[history.length - 1]
-  const done = isDone(state)
-  const opponent = nextOpponent(state)
+  const state = history[history.length - 1] ?? null
+  const done = state !== null && isDone(state)
+  const opponent = state && !done ? nextOpponent(state) : null
+
+  function pickCategory(id) {
+    setCategory(id)
+    setHistory([startInsertion(tiersInCategory(setup.others, id), movie)])
+  }
 
   function choose(choice) {
-    if (done) return
+    if (!state || done) return
     setHistory((h) => [...h, answer(h[h.length - 1], choice)])
   }
 
+  // Undo the last comparison, or go back to the category question.
   function undo() {
-    setHistory((h) => (h.length > 1 ? h.slice(0, -1) : h))
+    if (history.length > 1) setHistory((h) => h.slice(0, -1))
+    else {
+      setCategory(null)
+      setHistory([])
+    }
   }
 
   async function save() {
     setSaveStatus('saving')
     try {
-      await placeMovie(movie.id, finalPlacement(state))
+      await placeMovie(movie.id, { category, ...finalPlacement(state) })
       setSaveStatus('saved')
     } catch {
       setSaveStatus('failed')
@@ -77,6 +100,10 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
     const onKey = (e) => {
       if (e.key === 'Escape') onClose()
       else if (done) return
+      else if (!category) {
+        const picked = SCORE_CATEGORIES[Number(e.key) - 1]
+        if (picked) pickCategory(picked.id)
+      }
       else if (e.key === 'ArrowLeft') choose(NEW)
       else if (e.key === 'ArrowRight') choose(OPPONENT)
       else if (e.key === 'ArrowDown' || e.key === '=') choose(TIE)
@@ -90,6 +117,70 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
     }
   })
 
+  // The whole list with the movie placed: its spot inside the category,
+  // shifted down past the better categories.
+  function placedTiers() {
+    const { index, tied } = finalPlacement(state)
+    const offset = categoryOffset(setup.others, category)
+    return applyPlacement(setup.others, { ...movie, category }, { index: offset + index, tied })
+  }
+
+  let body
+  if (!category) {
+    body = (
+      <FeelingStep
+        titleId={titleId}
+        movie={movie}
+        rerank={rerank}
+        current={setup.oldCategory}
+        onPick={pickCategory}
+      />
+    )
+  } else if (done) {
+    body = (
+      <Placed
+        titleId={titleId}
+        movie={movie}
+        category={category}
+        tiers={placedTiers()}
+        tied={finalPlacement(state).tied}
+        oldRank={setup.oldRank}
+        saveStatus={saveStatus}
+        onRetry={save}
+        onRankAnother={onRankAnother}
+        onSeeList={onSeeList}
+      />
+    )
+  } else {
+    body = (
+      <>
+        <header className="compare__head">
+          <h2 className="compare__title" id={titleId}>Which did you like more?</h2>
+          <p className="compare__progress" aria-live="polite">
+            {getCategory(category).label} · Comparison {state.comparisons + 1} of up to {maxComparisons(state.tiers.length)}
+          </p>
+        </header>
+
+        <div className="duel">
+          <PickCard movie={movie} badge={rerank ? 'Reranking' : 'Just watched'} onPick={() => choose(NEW)} hint="←" />
+          <span className="duel__vs" aria-hidden="true">vs</span>
+          <PickCard key={opponent.id} movie={opponent} onPick={() => choose(OPPONENT)} hint="→" />
+        </div>
+
+        <footer className="compare__foot">
+          <button type="button" className="ghost" onClick={undo}>
+            {history.length > 1 ? 'Undo' : 'Back'}
+          </button>
+          <button type="button" className="ghost ghost--tie" onClick={() => choose(TIE)}>
+            It's a tie
+            <kbd className="pick__key" aria-hidden="true">↓</kbd>
+          </button>
+          <span className="compare__keys">Tap a poster, or use ← →</span>
+        </footer>
+      </>
+    )
+  }
+
   return (
     <div className="overlay overlay--solid">
       <div className="compare" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -98,46 +189,37 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
             <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
           </svg>
         </button>
+        {body}
+      </div>
+    </div>
+  )
+}
 
-        {done ? (
-          <Placed
-            titleId={titleId}
-            movie={movie}
-            tiers={applyPlacement(state.tiers, movie, finalPlacement(state))}
-            tied={finalPlacement(state).tied}
-            oldRank={setup.oldRank}
-            saveStatus={saveStatus}
-            onRetry={save}
-            onRankAnother={onRankAnother}
-            onSeeList={onSeeList}
-          />
-        ) : (
-          <>
-            <header className="compare__head">
-              <h2 className="compare__title" id={titleId}>Which did you like more?</h2>
-              <p className="compare__progress" aria-live="polite">
-                Comparison {state.comparisons + 1} of up to {maxComparisons(state.tiers.length)}
-              </p>
-            </header>
-
-            <div className="duel">
-              <PickCard movie={movie} badge={rerank ? 'Reranking' : 'Just watched'} onPick={() => choose(NEW)} hint="←" />
-              <span className="duel__vs" aria-hidden="true">vs</span>
-              <PickCard key={opponent.id} movie={opponent} onPick={() => choose(OPPONENT)} hint="→" />
-            </div>
-
-            <footer className="compare__foot">
-              <button type="button" className="ghost" onClick={undo} disabled={history.length === 1}>
-                Undo
-              </button>
-              <button type="button" className="ghost ghost--tie" onClick={() => choose(TIE)}>
-                It's a tie
-                <kbd className="pick__key" aria-hidden="true">↓</kbd>
-              </button>
-              <span className="compare__keys">Tap a poster, or use ← →</span>
-            </footer>
-          </>
-        )}
+// "How did you feel about it?" One button per category. When reranking, the
+// movie's current category is marked so it's easy to keep.
+function FeelingStep({ titleId, movie, rerank, current, onPick }) {
+  return (
+    <div className="feel">
+      <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="lg" />
+      <h2 className="compare__title" id={titleId}>How did you feel about {movie.title}?</h2>
+      <p className="compare__progress">
+        {rerank ? 'Keep your answer, or change it.' : 'Then we\'ll compare it with others you felt the same about.'}
+      </p>
+      <div className="feel__options">
+        {SCORE_CATEGORIES.map((c, i) => (
+          <button
+            type="button"
+            key={c.id}
+            className={`feel__btn feel__btn--${c.id}${c.id === current ? ' is-current' : ''}`}
+            onClick={() => onPick(c.id)}
+            autoFocus={i === 0}
+          >
+            <span className="feel__label">{c.label}</span>
+            <span className="feel__range">{c.range}</span>
+            {c.id === current && <span className="feel__now">Current</span>}
+            <kbd className="pick__key" aria-hidden="true">{i + 1}</kbd>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -159,7 +241,7 @@ function PickCard({ movie, badge, onPick, hint }) {
 
 // Result screen: where the movie landed, its score once unlocked, and the
 // movies around it for context.
-function Placed({ titleId, movie, tiers, tied, oldRank, saveStatus, onRetry, onRankAnother, onSeeList }) {
+function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, onRetry, onRankAnother, onSeeList }) {
   const ranks = tierRanks(tiers)
   const rows = tiers.flatMap((tier, i) => tier.map((m) => ({ movie: m, rank: ranks[i], tier: i })))
   const at = rows.findIndex((r) => r.movie.id === movie.id)
@@ -173,9 +255,14 @@ function Placed({ titleId, movie, tiers, tied, oldRank, saveStatus, onRetry, onR
 
   let eyebrow = 'Ranked'
   let text = `${movie.title} is now #${rank} in your list.`
+  const label = getCategory(category).label
+  const inCategory = tiersInCategory(tiers, category).reduce((n, t) => n + t.length, 0)
   if (count === 1) {
     eyebrow = 'First movie added'
     text = `${movie.title} starts your list. Add another and SceneIt will ask you to compare them.`
+  } else if (inCategory === 1 && oldRank === null) {
+    eyebrow = label
+    text = `${movie.title} is your first “${label}” movie, so there was nothing to compare it with.`
   } else if (tied) {
     eyebrow = 'Tied'
     text = `${movie.title} shares #${rank} with ${tiedWith.map((m) => m.title).join(', ')}.`

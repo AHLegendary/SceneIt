@@ -3,7 +3,7 @@ import Poster from '../components/Poster.jsx'
 import { tierRanks } from '../features/ranking/binaryInsertion.js'
 import Segmented from '../components/Segmented.jsx'
 import {
-  categoryOf,
+  categoryOfMovie,
   countByCategory,
   moviesUntilScores,
   SCORE_CATEGORIES,
@@ -16,7 +16,8 @@ import { useMyTiers } from '../lib/useMyList.js'
 
 // The signed-in user's ranked list. Starts empty; "Rank a movie" opens search.
 // Tied movies share a rank. Scores appear once 10+ movies are ranked, and
-// with them a filter by score category (Loved it / It was okay / Not a fan).
+// with them a filter by the category picked when ranking (Loved it / It was
+// okay / Not a fan).
 // highlightId briefly marks the movie that was just ranked.
 export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const tiers = useMyTiers()
@@ -29,13 +30,13 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const [filter, setFilter] = useState('all')
   // No scores (under 10 movies) means no categories, so show everything.
   const activeFilter = scores ? filter : 'all'
-  const counts = countByCategory(scores)
+  const counts = countByCategory(tiers)
   const filterOptions = [
     { id: 'all', label: `All · ${count}` },
     ...SCORE_CATEGORIES.map((c) => ({ id: c.id, label: `${c.label} · ${counts[c.id]}` })),
   ]
   const category = SCORE_CATEGORIES.find((c) => c.id === activeFilter)
-  const shows = (movie) => activeFilter === 'all' || categoryOf(scores.get(movie.id)) === activeFilter
+  const shows = (movie) => activeFilter === 'all' || categoryOfMovie(movie) === activeFilter
   const shownCount = activeFilter === 'all' ? count : counts[activeFilter]
 
   async function remove(movie) {
@@ -79,7 +80,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         <div className="unlock" role="status">
           <div className="unlock__text">
             <strong>Rank {toUnlock} more {toUnlock === 1 ? 'movie' : 'movies'} to unlock scores</strong>
-            <span>Once you've ranked {SCORE_UNLOCK}, every movie gets a score out of 10 based on where it sits.</span>
+            <span>Once you've ranked {SCORE_UNLOCK}, every movie gets a score out of 10 based on how you felt about it and where it sits.</span>
           </div>
           <div
             className="unlock__bar"

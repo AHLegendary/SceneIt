@@ -7,7 +7,7 @@ import { rowsToTiers } from './supabaseStore.js'
 export async function fetchUserTiers(userId) {
   const { data, error } = await supabase
     .from('rankings')
-    .select('movie_id, position, movies(tmdb_id, title, year, poster_path, genres, overview)')
+    .select('movie_id, position, category, movies(tmdb_id, title, year, poster_path, genres, overview)')
     .eq('user_id', userId)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
