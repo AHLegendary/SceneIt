@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseHash, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
+import { blendHref, parseHash, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
 
 describe('parseHash', () => {
   it('reads a sidebar page', () => {
@@ -32,6 +32,22 @@ describe('parseHash', () => {
   it('falls back on a malformed encoding instead of throwing', () => {
     expect(parseHash('#/u/%E0%A4%A')).toEqual({ page: DEFAULT_PAGE, username: null })
     expect(parseHash('#/u/%E0%A4%A/my-list')).toEqual({ page: DEFAULT_PAGE, username: null })
+  })
+})
+
+describe('Movie Blend routes', () => {
+  it('reads the blends tab', () => {
+    expect(parseHash('#/blends')).toEqual({ page: 'blends', username: null })
+  })
+  it('reads one blend, and blendHref builds a link it reads back', () => {
+    expect(parseHash('#/blends/abc')).toEqual({ page: 'blend', username: null, blendId: 'abc' })
+    expect(parseHash(blendHref('abc'))).toEqual({ page: 'blend', username: null, blendId: 'abc' })
+  })
+  it('falls back on malformed blend paths', () => {
+    expect(parseHash('#/blend').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/blends/').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/blends/a/b').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/blends/%E0%A4%A')).toEqual({ page: DEFAULT_PAGE, username: null })
   })
 })
 

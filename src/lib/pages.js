@@ -5,6 +5,7 @@ export const PAGES = [
   { id: 'my-list', label: 'My List' },
   { id: 'for-you', label: 'For You' },
   { id: 'friends', label: 'Friends' },
+  { id: 'blends', label: 'Movie Blend' },
   { id: 'login', label: 'Log in' },
   { id: 'signup', label: 'Sign up' },
   { id: 'profile', label: 'Profile' },
@@ -14,6 +15,7 @@ export const PAGES = [
 export const NAV_PAGES = [
   { id: 'home', label: 'Home' },
   { id: 'leaderboard', label: 'Leaderboard' },
+  { id: 'blends', label: 'Movie Blend' },
 ]
 
 // Shortcuts in the Profile menu (the semicircle under the Profile button).
@@ -25,6 +27,7 @@ export const PROFILE_SHORTCUTS = [
 ]
 
 // 'user' is someone else's profile (#/u/name, see route.js); it has no tab.
+// 'blend' is one Movie Blend (#/blends/id); it has no tab either, and needs an account.
 // Pages anyone can see without logging in. Everything else needs an account.
 export const PUBLIC_PAGES = new Set(['home', 'leaderboard', 'login', 'signup', 'user', 'user-list'])
 

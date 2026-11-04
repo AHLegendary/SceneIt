@@ -3,11 +3,14 @@ import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
+import { useBlends } from '../features/blends/useBlends.js'
 import { NAV_PAGES, PROFILE_SHORTCUTS } from '../lib/pages.js'
 import { signOut } from '../lib/supabaseStore.js'
 import { useFriendGroups } from '../lib/useFriends.js'
 
-// Header: Logo | search | Home · Leaderboard · Profile (or Log in / Sign up).
+const NAV_ICONS = { home: 'home', leaderboard: 'chart', blends: 'people' }
+
+// Header: Logo | search | Home · Leaderboard · Movie Blend · Profile (or Log in / Sign up).
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).
 // Nothing account-specific renders until the saved session has been checked,
 // so logged-out visitors never see a flash of private controls.
@@ -15,6 +18,7 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
   const signedIn = account.status === 'ready' || account.status === 'error'
   const checking = account.status === 'loading' && !account.user
   const requests = useFriendGroups().incoming.length
+  const blendInvites = useBlends().invites.length
 
   return (
     <header className="nav">
@@ -31,8 +35,13 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
               aria-current={current === page.id ? 'page' : undefined}
               onClick={() => onNavigate(page.id)}
             >
-              <Icon name={page.id === 'home' ? 'home' : 'chart'} size={20} />
+              <Icon name={NAV_ICONS[page.id]} size={20} />
               <span>{page.label}</span>
+              {page.id === 'blends' && blendInvites > 0 && (
+                <span className="badge" aria-label={`${blendInvites} pending blend ${blendInvites === 1 ? 'invite' : 'invites'}`}>
+                  {blendInvites > 9 ? '9+' : blendInvites}
+                </span>
+              )}
             </button>
           ))}
 

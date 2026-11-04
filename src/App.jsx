@@ -3,6 +3,8 @@ import './App.css'
 import MovieDetails from './components/MovieDetails.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
+import BlendDetailPage from './features/blends/BlendDetailPage.jsx'
+import BlendsPage from './features/blends/BlendsPage.jsx'
 import TopNav from './components/TopNav.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
@@ -108,7 +110,7 @@ function App() {
   return (
     <div className="app">
       <TopNav
-        current={page}
+        current={page === 'blend' ? 'blends' : page}
         account={account}
         onNavigate={navigate}
         onOpen={openDetails}
@@ -137,6 +139,10 @@ function App() {
           <ForYouPage onOpen={openDetails} onAdd={openRankSearch} />
         ) : page === 'friends' ? (
           <FriendsPage />
+        ) : page === 'blends' ? (
+          <BlendsPage />
+        ) : page === 'blend' ? (
+          <BlendDetailPage key={route.blendId} blendId={route.blendId} onOpen={openDetails} />
         ) : page === 'leaderboard' ? (
           <LeaderboardPage onOpen={openDetails} />
         ) : (
