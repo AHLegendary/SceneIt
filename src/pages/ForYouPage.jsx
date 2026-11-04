@@ -2,20 +2,24 @@ import { useEffect, useMemo, useState } from 'react'
 import Poster from '../components/Poster.jsx'
 import {
   buildRecommendations,
+  friendSignals,
   mergeTmdbRecs,
   pickSeeds,
+  recLabel,
   RECS_UNLOCK,
 } from '../features/recommendations/recommend.js'
 import { getCatalog, movieFromDb, posterUrl } from '../lib/localStore.js'
 import { getRecommendations } from '../lib/movies.js'
+import { fetchTiersForUsers } from '../lib/rankingsQueries.js'
+import { useFriends } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
 // Personalized recommendations, unlocked at 15 ranked movies. Cards open the
 // movie details panel, where the user can rank them.
 //
 // Shows catalog-only picks right away, then folds in TMDb's recommendations
-// for the user's top and bottom movies once they load. If TMDb fails, the
-// catalog picks just stay.
+// for the user's top and bottom movies and friends' rankings once they
+// load. If either fails, the page just goes without it.
 export default function ForYouPage({ onOpen, onAdd }) {
   const tiers = useMyTiers()
   const count = tiers.reduce((n, tier) => n + tier.length, 0)
@@ -36,13 +40,40 @@ export default function ForYouPage({ onOpen, onAdd }) {
     }
   }, [seedKey])
 
+  // Friends' ranked lists, refetched when the set of friends changes.
+  const { list: friendList } = useFriends()
+  const friends = useMemo(() => friendList.filter((f) => f.direction === 'friends'), [friendList])
+  const friendKey = unlocked ? friends.map((f) => f.id).sort().join(',') : ''
+  const [friendTiers, setFriendTiers] = useState({ key: '', byUser: null })
+
+  useEffect(() => {
+    if (!friendKey) return undefined
+    let cancelled = false
+    fetchTiersForUsers(friendKey.split(','))
+      .then((byUser) => !cancelled && setFriendTiers({ key: friendKey, byUser }))
+      .catch((error) => console.warn("Friends' rankings unavailable:", error.message))
+    return () => {
+      cancelled = true
+    }
+  }, [friendKey])
+
   const recs = useMemo(() => {
     const catalog = getCatalog()
-    if (fetched.key !== seedKey || !fetched.results) return buildRecommendations(tiers, catalog)
-    const seedsByTmdb = new Map([...seeds.likes, ...seeds.dislikes].map((m) => [m.tmdb_id, m]))
-    const { candidates, links } = mergeTmdbRecs(fetched.results, seedsByTmdb, movieFromDb)
-    return buildRecommendations(tiers, [...candidates, ...catalog], { links })
-  }, [tiers, seeds, seedKey, fetched])
+    let candidates = catalog
+    let links
+    if (fetched.key === seedKey && fetched.results) {
+      const seedsByTmdb = new Map([...seeds.likes, ...seeds.dislikes].map((m) => [m.tmdb_id, m]))
+      const merged = mergeTmdbRecs(fetched.results, seedsByTmdb, movieFromDb)
+      candidates = [...merged.candidates, ...catalog]
+      links = merged.links
+    }
+    let signals
+    if (friendKey && friendTiers.key === friendKey && friendTiers.byUser) {
+      const withTiers = friends.map((f) => ({ ...f, tiers: friendTiers.byUser.get(f.id) ?? [] }))
+      signals = friendSignals(tiers, withTiers)
+    }
+    return buildRecommendations(tiers, candidates, { links, friends: signals })
+  }, [tiers, seeds, seedKey, fetched, friends, friendKey, friendTiers])
 
   return (
     <section className="page">
@@ -63,7 +94,7 @@ export default function ForYouPage({ onOpen, onAdd }) {
           </h2>
           <p className="empty__text">
             Once you've ranked {RECS_UNLOCK}, SceneIt suggests movies based on what you put at the top
-            of your list, and steers away from what you put at the bottom.
+            of your list, steers away from what you put at the bottom, and mixes in what your friends love.
           </p>
           <div
             className="unlock__bar unlock__bar--wide"
@@ -90,14 +121,12 @@ export default function ForYouPage({ onOpen, onAdd }) {
           <section className="recs" key={row.id} aria-label={row.title}>
             <h2 className="recs__title">{row.title}</h2>
             <ul className="recs__grid">
-              {row.items.map(({ movie, because }) => (
-                <li key={movie.id}>
-                  <button type="button" className="rec" onClick={() => onOpen(movie.id)}>
-                    <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="md" />
-                    <span className="rec__title">{movie.title}</span>
-                    <span className="rec__meta">
-                      {row.id === 'top' && because ? `Because you liked ${because.title}` : movie.year}
-                    </span>
+              {row.items.map((item) => (
+                <li key={item.movie.id}>
+                  <button type="button" className="rec" onClick={() => onOpen(item.movie.id)}>
+                    <Poster title={item.movie.title} src={posterUrl(item.movie, 'w342')} size="md" />
+                    <span className="rec__title">{item.movie.title}</span>
+                    <span className="rec__meta">{recLabel(item, row.id)}</span>
                   </button>
                 </li>
               ))}

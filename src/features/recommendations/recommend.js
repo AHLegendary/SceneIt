@@ -9,6 +9,12 @@
 //   * TMDb's recommendations for a handful of the user's top and bottom
 //     movies (pickSeeds -> /api/movies/recommendations -> mergeTmdbRecs),
 //     which reaches any movie on TMDb, not just the catalog
+//   * friends' ranked lists (friendSignals): movies a friend put in their
+//     top half
+//
+// Friends' opinions are added on top: a movie a friend ranked high gains,
+// one they ranked low loses, scaled by how close their taste is to yours
+// on the movies you've both ranked (tasteSimilarity).
 //
 // Two movies are related when TMDb recommends one for the other (a "link",
 // stronger the higher TMDb lists it) and, more weakly, when they share
@@ -108,11 +114,88 @@ export function relatedness(a, b, links) {
   return SIMILAR_WEIGHT * link + GENRE_WEIGHT * genre
 }
 
-// Scores every unranked candidate. `links` is the map from mergeTmdbRecs
-// (optional). Returns [{ movie, score, because }] sorted best first, where
-// `because` is the ranked movie that helped most. Only movies with a
-// positive score are returned, and each movie at most once.
-export function scoreCandidates(tiers, candidates, links) {
+// ------------------------------------------------------------------ friends
+
+// How much a friend's opinion counts, 0 to 1. Friends we can't compare yet
+// (few movies in common) start at FRIEND_BASE; shared taste raises it toward
+// 1, opposite taste lowers it toward 0.
+const FRIEND_BASE = 0.25
+// Shared movies needed before the similarity is trusted halfway.
+const FRIEND_SHRINK = 5
+// A friend's favorite (weight +1, affinity 1) is worth this much score, about
+// as much as a strong TMDb link to one of your own favorites.
+export const FRIEND_WEIGHT = 1
+
+// Taste similarity of two ranked lists, -1 to 1: cosine of their position
+// weights over the movies both ranked, shrunk toward 0 when they share
+// only a few. Returns { similarity, shared }.
+export function tasteSimilarity(myTiers, theirTiers) {
+  const mine = positionWeights(myTiers)
+  const theirs = positionWeights(theirTiers)
+  let dot = 0
+  let a2 = 0
+  let b2 = 0
+  let shared = 0
+  for (const [id, a] of mine) {
+    if (!theirs.has(id)) continue
+    const b = theirs.get(id)
+    dot += a * b
+    a2 += a * a
+    b2 += b * b
+    shared++
+  }
+  if (!shared || !a2 || !b2) return { similarity: 0, shared }
+  const cosine = dot / Math.sqrt(a2 * b2)
+  return { similarity: cosine * (shared / (shared + FRIEND_SHRINK)), shared }
+}
+
+// Friend affinity from similarity: FRIEND_BASE at 0, 1 at +1, 0 at -1.
+export function friendAffinity(similarity) {
+  const a = similarity >= 0 ? FRIEND_BASE + (1 - FRIEND_BASE) * similarity : FRIEND_BASE * (1 + similarity)
+  return Math.min(1, Math.max(0, a))
+}
+
+// Turns friends' ranked lists into per-movie opinions.
+//   friends  [{ id, username, tiers }]
+// Returns { friends: [{ id, username, affinity, shared }], opinions, candidates }
+// where opinions maps movie id -> [{ username, weight, affinity }] and
+// candidates are the movies friends ranked in their top half.
+export function friendSignals(myTiers, friends = []) {
+  const opinions = new Map()
+  const candidates = new Map()
+  const summary = []
+  for (const friend of friends) {
+    if (!friend?.tiers?.length) continue
+    const { similarity, shared } = tasteSimilarity(myTiers, friend.tiers)
+    const affinity = friendAffinity(similarity)
+    summary.push({ id: friend.id, username: friend.username, affinity, shared })
+    if (!affinity) continue
+    const weights = positionWeights(friend.tiers)
+    for (const movie of friend.tiers.flat()) {
+      const weight = weights.get(movie.id)
+      if (!opinions.has(movie.id)) opinions.set(movie.id, [])
+      opinions.get(movie.id).push({ username: friend.username, weight, affinity })
+      if (weight > 0) candidates.set(movie.id, movie)
+    }
+  }
+  return { friends: summary, opinions, candidates: [...candidates.values()] }
+}
+
+// ------------------------------------------------------------------ scoring
+
+// Scores every unranked candidate.
+//   links    the map from mergeTmdbRecs (optional)
+//   friends  the result of friendSignals (optional)
+// Returns [{ movie, score, because, becauseFriend, friendScore, fans }]
+// sorted best first:
+//   because        the ranked movie that helped most (null if none did)
+//   becauseFriend  username of the friend whose opinion helped most, when it
+//                  outweighed every one of your own movies
+//   friendScore    friends' part of the score
+//   fans           usernames of friends who ranked it in their top half,
+//                  biggest influence first
+// Only movies with a positive score are returned, and each movie at most once.
+export function scoreCandidates(tiers, candidates, { links, friends } = {}) {
   const ranked = tiers.flat()
   const rankedIds = new Set(ranked.map((m) => m.id))
   const weights = positionWeights(tiers)
@@ -133,27 +216,47 @@ export function scoreCandidates(tiers, candidates, links) {
         because = r
       }
     }
-    if (score > 0) results.push({ movie, score, because })
+
+    let friendScore = 0
+    let becauseFriend = null
+    const fans = []
+    for (const o of friends?.opinions.get(movie.id) ?? []) {
+      const contribution = FRIEND_WEIGHT * o.affinity * o.weight
+      friendScore += contribution
+      if (o.weight > 0) fans.push({ username: o.username, contribution })
+      if (contribution > best) {
+        best = contribution
+        becauseFriend = o.username
+      }
+    }
+    score += friendScore
+    fans.sort((a, b) => b.contribution - a.contribution)
+
+    if (score > 0) {
+      results.push({ movie, score, because, becauseFriend, friendScore, fans: fans.map((f) => f.username) })
+    }
   }
 
   // Ties broken by title so the order is stable between renders.
   return results.sort((a, b) => b.score - a.score || a.movie.title.localeCompare(b.movie.title))
 }
 
-// The recommendations page: a top-picks row plus "Because you ranked X
-// highly" rows for the user's favorites. Movies don't repeat across rows.
-// `candidates` is the catalog plus any TMDb candidates; `links` comes from
-// mergeTmdbRecs. Returns { locked: true, remaining } until RECS_UNLOCK
-// movies are ranked.
+// The recommendations page: a top-picks row, a "your friends loved these"
+// row, then "Because you ranked X highly" rows for the user's favorites.
+// Movies don't repeat across rows.
+//   candidates  the catalog plus any TMDb and friend candidates
+//   links       from mergeTmdbRecs
+//   friends     from friendSignals
+// Returns { locked: true, remaining } until RECS_UNLOCK movies are ranked.
 export function buildRecommendations(
   tiers,
   candidates,
-  { links, unlockAt = RECS_UNLOCK, perRow = 6, becauseRows = 3 } = {},
+  { links, friends, unlockAt = RECS_UNLOCK, perRow = 6, becauseRows = 3 } = {},
 ) {
   const count = tiers.reduce((n, tier) => n + tier.length, 0)
   if (count < unlockAt) return { locked: true, remaining: unlockAt - count }
 
-  const scored = scoreCandidates(tiers, candidates, links)
+  const scored = scoreCandidates(tiers, [...candidates, ...(friends?.candidates ?? [])], { links, friends })
   const used = new Set()
   const take = (items) => {
     const picked = items.filter((s) => !used.has(s.movie.id)).slice(0, perRow)
@@ -161,9 +264,16 @@ export function buildRecommendations(
     return picked
   }
 
-  const rows = []
+  // Movies friends ranked highly, biggest friend pull first. Picked before
+  // the top row (but shown after it) so friends' picks always get a row
+  // instead of being absorbed into top picks.
+  const friendPicks = scored.filter((s) => s.fans.length && s.friendScore > 0).sort((a, b) => b.friendScore - a.friendScore)
+  const fromFriends = take(friendPicks)
   const top = take(scored)
+
+  const rows = []
   if (top.length) rows.push({ id: 'top', title: 'Top picks for you', items: top })
+  if (fromFriends.length) rows.push({ id: 'friends', title: 'Your friends loved these', items: fromFriends })
 
   // Favorites = the user's top-ranked movies, best first.
   for (const fav of tiers.flat().slice(0, becauseRows)) {
@@ -175,4 +285,19 @@ export function buildRecommendations(
   }
 
   return { locked: false, rows }
+}
+
+// The small line under a recommendation's title.
+export function recLabel(item, rowId) {
+  const { movie, because, becauseFriend, fans = [] } = item
+  if (rowId === 'friends' && fans.length) {
+    if (fans.length === 1) return `Loved by ${fans[0]}`
+    if (fans.length === 2) return `Loved by ${fans[0]} and ${fans[1]}`
+    return `Loved by ${fans[0]} +${fans.length - 1}`
+  }
+  if (rowId === 'top') {
+    if (becauseFriend) return `${becauseFriend} loved it`
+    if (because) return `Because you liked ${because.title}`
+  }
+  return movie.year ?? ''
 }
