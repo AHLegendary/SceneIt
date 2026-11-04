@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import FriendAction from '../components/FriendAction.jsx'
 import TopMovies from '../components/TopMovies.jsx'
 import { userListHref } from '../lib/route.js'
+import { profileImageUrl } from '../lib/profileMedia.js'
 import { useProfileLookup } from '../lib/useProfileLookup.js'
 import { useUserTiers } from '../lib/useUserTiers.js'
 import './ProfilePage.css'
@@ -15,6 +17,9 @@ export default function UserProfilePage({ username, account, onOpen }) {
   const { view, relation, friendsReady, signedIn, retry } = useProfileLookup(username, account, '/profile')
   const list = useUserTiers(view.kind === 'profile' ? view.profile.id : null)
   const known = view.profile ?? view.user
+  // Profile pictures live in storage keyed by user id; fall back to the
+  // initial when there isn't one (the image fails to load).
+  const [avatarMissing, setAvatarMissing] = useState(false)
 
   const heading = (
     <header className="page__head">
@@ -24,7 +29,14 @@ export default function UserProfilePage({ username, account, onOpen }) {
             ← Back to Friends
           </a>
         )}
-        <h1 className="page__title profile__name">{known?.username ?? username}</h1>
+        <span className="uprofile__identity">
+          {view.profile?.id && !avatarMissing ? (
+            <img className="uprofile__avatar" src={profileImageUrl(view.profile.id, 'avatar')} alt="" onError={() => setAvatarMissing(true)} />
+          ) : (
+            <span className="uprofile__avatar uprofile__avatar--initial" aria-hidden="true">{(known?.username ?? username).charAt(0).toUpperCase()}</span>
+          )}
+          <h1 className="page__title profile__name">{known?.username ?? username}</h1>
+        </span>
         {view.kind === 'profile' && view.profile.pronouns && (
           <p className="uprofile__pronouns">{view.profile.pronouns}</p>
         )}

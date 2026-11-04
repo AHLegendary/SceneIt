@@ -25,6 +25,10 @@ export async function getUserFromRequest(req) {
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) return null;
   const { data, error } = await getAdminClient().auth.getUser(match[1]);
-  if (error || !data?.user) return null;
+  if (error || !data?.user) {
+    // Surfaces expired / invalid tokens in the server log so they're easy to spot.
+    console.warn('Auth rejected the access token:', error?.message ?? 'no user');
+    return null;
+  }
   return data.user;
 }

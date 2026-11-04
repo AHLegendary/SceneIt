@@ -1,214 +1,142 @@
 .login {
-  --ink: #12141c;
-  --muted: #5b6072;
-  --surface: #ffffff;
-  --page: #eef0f5;
-  --line: #cfd3df;
-  --side-a: #2f3bff;
-  --side-b: #ff4f81;
-  --error: #b3261e;
-
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
-  gap: 1.5rem;
-  max-width: 62rem;
-  color: var(--ink);
-  font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  gap: 28px;
+  width: min(1040px, 100%);
+  margin: 10px auto 0;
 }
 
-/* Hero: two sides facing off, the app's core interaction */
+/* Hero: two posters facing off, the app's core interaction */
 .login-hero {
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  gap: 8px;
   min-height: 30rem;
-  padding: 2rem;
+  padding: 28px;
   overflow: hidden;
-  border-radius: 16px;
-  background: linear-gradient(100deg, var(--side-a) 50%, var(--side-b) 50%);
-  color: #fff;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(70% 60% at 30% 20%, rgb(var(--accent-rgb) / 0.22), transparent 70%),
+    linear-gradient(160deg, #15233a, #0a0e17 70%);
+  border: 1px solid rgb(var(--accent-rgb) / 0.25);
+  box-shadow: inset 0 0 60px rgb(var(--accent-rgb) / 0.06);
 }
-
 .versus {
   position: absolute;
-  inset: 0;
+  inset: 0 0 32%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.versus-side .poster { box-shadow: var(--shadow-md), 0 0 0 1px rgb(255 255 255 / 0.08); }
+.versus-a .poster { transform: rotate(-7deg) translateY(6px); }
+.versus-b .poster { transform: rotate(7deg) translateY(6px); }
+.versus-vs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid rgb(var(--accent-rgb) / 0.7);
+  box-shadow: var(--glow-strong);
+  color: var(--accent);
+  font-weight: 900;
+  font-style: italic;
+  font-size: 15px;
 }
-
-.versus-side {
-  position: relative;
-}
-
-.versus-poster {
-  position: absolute;
-  width: 46%;
-  aspect-ratio: 2 / 3;
-  top: 18%;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
-}
-
-.versus-poster-back {
-  background: rgba(255, 255, 255, 0.45);
-  top: 24%;
-}
-
-.versus-a .versus-poster { right: 16%; transform: rotate(-6deg); }
-.versus-a .versus-poster-back { right: 36%; transform: rotate(-12deg); }
-.versus-b .versus-poster { left: 16%; transform: rotate(6deg); }
-.versus-b .versus-poster-back { left: 36%; transform: rotate(12deg); }
-
 .login-hero-line {
   position: relative;
-  margin: 0;
   max-width: 14ch;
-  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-size: clamp(2rem, 3.6vw, 2.9rem);
   font-weight: 800;
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
+.login-hero-sub { position: relative; font-size: 15px; color: var(--ink-2); }
 
 /* Form panel */
 .login-panel {
   align-self: center;
-  box-sizing: border-box;
   width: 100%;
-  padding: 2rem 1.75rem;
+  padding: 30px 28px;
   background: var(--surface);
-  border-radius: 16px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.25);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md), 0 0 40px rgb(var(--accent-rgb) / 0.08);
 }
+.login-title { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+.login-subtitle { margin-top: 8px; font-size: 15px; color: var(--ink-2); }
+.login-form { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
 
-.link-button {
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: var(--side-a);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.login-title {
-  margin: 0 0 0.5rem;
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.login-subtitle {
-  margin: 0 0 2rem;
-  color: var(--muted);
-}
-
-.login-form {
-  display: grid;
-  gap: 1.25rem;
-}
-
-.field label {
-  display: block;
-  margin-bottom: 0.375rem;
-  font-weight: 600;
-}
-
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 13px; font-weight: 700; color: var(--ink-2); }
 .field input {
   width: 100%;
-  box-sizing: border-box;
-  padding: 0.75rem 0.875rem;
-  font: inherit;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
   color: var(--ink);
-  background: var(--surface);
-  border: 1.5px solid var(--line);
-  border-radius: 8px;
+  font-size: 15px;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
 }
+.field input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--glow); }
+.field input[aria-invalid="true"] { border-color: var(--danger); }
+.field input:disabled { opacity: 0.6; }
+.field-hint { font-size: 12px; color: var(--ink-3); }
+.field-error { font-size: 12px; color: #ffb3bb; }
 
-.field input[aria-invalid='true'] {
-  border-color: var(--error);
-}
-
-.password-wrap {
-  position: relative;
-}
-
-.password-wrap input {
-  padding-right: 4.5rem;
-}
-
+.password-wrap { position: relative; }
+.password-wrap input { padding-right: 68px; }
 .password-toggle {
   position: absolute;
+  right: 8px;
   top: 50%;
-  right: 0.5rem;
   transform: translateY(-50%);
-  padding: 0.375rem 0.625rem;
-  font: inherit;
-  font-size: 0.875rem;
-  color: var(--muted);
-  background: none;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
 }
-
-.field-error {
-  margin: 0.375rem 0 0;
-  font-size: 0.875rem;
-  color: var(--error);
-}
-
-.login-alert {
-  padding: 0.75rem 0.875rem;
-  color: var(--error);
-  background: #fdecea;
-  border-left: 4px solid var(--error);
-  border-radius: 6px;
-}
+.password-toggle:hover { background: var(--hover); color: var(--ink); }
 
 .login-submit {
-  padding: 0.875rem 1rem;
-  font: inherit;
-  font-weight: 700;
-  color: #fff;
-  background: var(--ink);
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 0 18px rgb(var(--accent-rgb) / 0.35);
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease), background var(--fast) var(--ease);
 }
+.login-submit:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); box-shadow: 0 0 26px rgb(var(--accent-rgb) / 0.55); }
+.login-submit:disabled { opacity: 0.6; cursor: default; }
 
-.login-submit:hover:not(:disabled) { background: #272b3a; }
-.login-submit:disabled { opacity: 0.6; cursor: progress; }
-
-.login-switch {
-  margin: 1.5rem 0 0;
-  color: var(--muted);
+.login-notice, .login-alert {
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  background: rgb(var(--accent-rgb) / 0.1);
+  border: 1px solid rgb(var(--accent-rgb) / 0.35);
+  color: var(--ink);
 }
+.login-alert { background: rgb(255 107 122 / 0.08); border-color: rgb(255 107 122 / 0.4); color: #ffb3bb; }
 
-.login :focus-visible {
-  outline: 3px solid var(--side-a);
-  outline-offset: 2px;
-}
+.login-switch { margin-top: 20px; font-size: 14px; color: var(--ink-2); }
+.link-button { color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.link-button:hover { color: var(--accent-2); }
 
-/* Narrow widths (375px target): hero collapses to a thin banner above the form */
-@media (max-width: 900px) {
+@media (max-width: 860px) {
   .login { grid-template-columns: 1fr; }
-  .login-hero { min-height: 6rem; padding: 1.25rem 1.5rem; }
-  .versus { display: none; }
-  .login-hero-line { font-size: 1.5rem; max-width: none; }
-}
-
-.field-hint {
-  margin: 0.375rem 0 0;
-  font-size: 0.875rem;
-  color: var(--muted);
-}
-
-.login-notice {
-  padding: 0.75rem 0.875rem;
-  color: #14532d;
-  background: #e6f4ea;
-  border-left: 4px solid #1e8e3e;
-  border-radius: 6px;
+  .login-hero { min-height: 22rem; }
+  .versus { inset: 0 0 40%; }
+  .versus-side .poster { width: 96px; height: 144px; }
 }

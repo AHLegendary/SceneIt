@@ -9,6 +9,8 @@ import {
   scoreTiers,
   SCORE_UNLOCK,
   tiersInCategory,
+  TIER_LIST,
+  tierListOf,
 } from '../../src/features/ranking/scores.js'
 
 
@@ -144,5 +146,31 @@ describe('category slices of a list', () => {
     // Empty categories still have a place: an "okay" movie in a loved/meh list
     // goes between them.
     expect(categoryOffset([...cat('loved', 2), ...cat('meh', 2)], 'okay')).toBe(2)
+  })
+})
+
+describe('tierListOf', () => {
+  const m = (id, category = 'okay') => ({ id, title: id, category })
+  it('always returns every row S to F, in order', () => {
+    const rows = tierListOf([])
+    expect(rows.map((r) => r.id)).toEqual(TIER_LIST.map((t) => t.id))
+    expect(rows.every((r) => r.movies.length === 0)).toBe(true)
+  })
+  it('puts the top of Loved it in S and the bottom of Not a fan in F, even before scores unlock', () => {
+    const tiers = [[m('a', 'loved')], [m('b', 'loved')], [m('c')], [m('d', 'meh')], [m('e', 'meh')]]
+    const rows = Object.fromEntries(tierListOf(tiers).map((r) => [r.id, r.movies.map((x) => x.id)]))
+    expect(rows.S).toEqual(['a'])
+    expect(rows.F).toEqual(['d', 'e'])
+  })
+  it('keeps tied movies in the same row', () => {
+    const tiers = Array.from({ length: 12 }, (_, i) => [m(`m${i}`)])
+    tiers[0] = [m('x'), m('y')]
+    const rows = tierListOf(tiers)
+    const row = rows.find((r) => r.movies.some((v) => v.id === 'x'))
+    expect(row.movies.map((v) => v.id)).toContain('y')
+    expect(rows.flatMap((r) => r.movies)).toHaveLength(13)
+  })
+  it('a lone movie sits in the middle of its category band', () => {
+    expect(tierListOf([[m('only', 'loved')]]).find((r) => r.id === 'A').movies).toHaveLength(1)
   })
 })

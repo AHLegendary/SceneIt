@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Icon from '../components/Icon.jsx'
 import {
   acceptFriendRequest,
   loadFriends,
@@ -56,7 +57,7 @@ export default function FriendsPage() {
     <section className="page">
       <header className="page__head">
         <div>
-          <h1 className="page__title">Friends</h1>
+          <h1 className="page__title"><Icon name="friends" size={30} />Friends</h1>
           <p className="page__sub">Find people by username and see who's asked to be your friend.</p>
         </div>
       </header>
@@ -172,14 +173,11 @@ function AddFriend({ list, rowState, onSend, onAccept }) {
   return (
     <div className="friends__add">
       <label className="search">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
+        <Icon name="search" size={18} className="search__icon" />
         <input
           className="search__input"
           type="search"
-          placeholder="Search usernames to add a friend"
+          placeholder="Search usernames to add a friend…"
           aria-label="Search usernames"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

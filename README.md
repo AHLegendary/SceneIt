@@ -168,6 +168,14 @@ The development server is for local development and manual testing, not automate
 
 If the tests and build succeed and the application runs locally, you're ready to start contributing.
 
+## Homepage Data
+
+The homepage's **Trending Now** row comes from `GET /api/movies/trending` (TMDb's weekly trending list, needs `TMDB_READ_TOKEN`). Without the API it falls back to the most-rated movies in the built-in catalog and is labelled "Popular on SceneIt". **Top Ranked** and **Most Watched** come from the public leaderboard; **Because You Ranked…** and **Friends Are Watching** only appear for logged-in users and only from their own list and friends.
+
+## Profile Pictures and Banners
+
+Users can add a profile picture and banner from their Profile page. The browser resizes the image, then `PUT /api/profile/media` stores it in the public `profile-media` Storage bucket at `<user id>/avatar.jpg` or `banner.jpg` (the bucket is created on first use with the server's secret key, so no migration is needed). Pages build the image URL from the user id and fall back to an initial / the top movie's backdrop when there is none.
+
 ## Demo Movie Data
 
 The local demo runs on a fixed catalog in `src/data/movies.json` and stores the guest's list in localStorage (see `src/lib/localStore.js`). No TMDb calls happen at runtime.

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import Icon from '../components/Icon.jsx'
 import Poster from '../components/Poster.jsx'
+import Sparkles from '../components/Sparkles.jsx'
 import Segmented from '../components/Segmented.jsx'
 import { fetchLeaderboard } from '../lib/leaderboard.js'
 import { posterUrl } from '../lib/localStore.js'
@@ -50,7 +52,7 @@ export default function LeaderboardPage({ onOpen }) {
     <section className="page">
       <header className="page__head">
         <div>
-          <h1 className="page__title">Leaderboard</h1>
+          <h1 className="page__title"><Icon name="trophy" size={30} />Leaderboard</h1>
           <p className="page__sub">What the SceneIt community is ranking right now.</p>
         </div>
         <div className="page__controls">
@@ -77,6 +79,8 @@ export default function LeaderboardPage({ onOpen }) {
           <p className="empty__text">{EMPTY_TEXT[period]}</p>
         </div>
       ) : (
+        <>
+        {rows.length >= 3 && <Podium rows={rows.slice(0, 3)} category={category} onOpen={onOpen} />}
         <ol className="board" key={key}>
           {rows.map((movie) => (
             <li className={`row row--link${movie.rank <= 3 ? ' is-top' : ''}`} key={movie.id} onClick={() => onOpen(movie.id)}>
@@ -104,7 +108,30 @@ export default function LeaderboardPage({ onOpen }) {
             </li>
           ))}
         </ol>
+        </>
       )}
     </section>
+  )
+}
+
+// The top three, posters first. Order on screen is 2 · 1 · 3 like a podium.
+function Podium({ rows, category, onOpen }) {
+  const order = [rows[1], rows[0], rows[2]]
+  return (
+    <ol className="podium" aria-label="Top three">
+      {order.map((movie) => (
+        <li key={movie.id} className={`podium__spot podium__spot--${movie.rank}`}>
+          <button type="button" className="podium__btn" onClick={() => onOpen(movie.id)}>
+            {movie.rank === 1 && <Sparkles count={26} seed={7} />}
+            <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="md" />
+            <span className="podium__title">{movie.title}</span>
+            <span className="podium__value">
+              {category === 'watched' ? `${movie.rankers.toLocaleString()} rankers` : `${movie.score.toFixed(1)} score`}
+            </span>
+          </button>
+          <span className="podium__stand" aria-hidden="true">{movie.rank}</span>
+        </li>
+      ))}
+    </ol>
   )
 }
