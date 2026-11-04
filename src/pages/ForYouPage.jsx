@@ -93,8 +93,8 @@ export default function ForYouPage({ onOpen, onAdd }) {
             Rank {recs.remaining} more {recs.remaining === 1 ? 'movie' : 'movies'} to unlock recommendations
           </h2>
           <p className="empty__text">
-            Once you've ranked {RECS_UNLOCK}, SceneIt suggests movies based on what you put at the top
-            of your list, steers away from what you put at the bottom, and mixes in what your friends love.
+            Once you've ranked {RECS_UNLOCK}, SceneIt suggests movies like the ones you loved, steers
+            away from ones you weren't a fan of, and mixes in what your friends love.
           </p>
           <div
             className="unlock__bar unlock__bar--wide"

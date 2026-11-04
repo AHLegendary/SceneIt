@@ -8,6 +8,7 @@ import {
   mergeTmdbRecs,
   pickSeeds,
   positionWeights,
+  rankWeights,
   recLabel,
   RECS_UNLOCK,
   relatedness,
@@ -326,5 +327,79 @@ describe('recLabel', () => {
     expect(recLabel({ movie: m, becauseFriend: 'a', because: { title: 'Y' } }, 'top')).toBe('a loved it')
     expect(recLabel({ movie: m, because: { title: 'Y' } }, 'top')).toBe('Because you liked Y')
     expect(recLabel({ movie: m, because: { title: 'Y' } }, 'because-y')).toBe(2020)
+  })
+})
+
+describe('rankWeights (categories)', () => {
+  const cat = (id, category, genres = []) => ({ ...movie(id, genres), category })
+
+  it('spreads each category across its own weight band', () => {
+    const tiers = singles([cat('l1', 'loved'), cat('l2', 'loved'), cat('o1', 'okay'), cat('o2', 'okay'), cat('m1', 'meh'), cat('m2', 'meh')])
+    const w = rankWeights(tiers)
+    expect(w.get('l1')).toBe(1)
+    expect(w.get('l2')).toBe(0.5)
+    expect(w.get('o1')).toBeCloseTo(0.2)
+    expect(w.get('o2')).toBeCloseTo(-0.2)
+    expect(w.get('m1')).toBe(-0.5)
+    expect(w.get('m2')).toBe(-1)
+  })
+
+  it("doesn't punish a list that's mostly loved", () => {
+    // 9 loved, 1 meh: the 9th loved movie still counts strongly for.
+    const loved = Array.from({ length: 9 }, (_, i) => cat(`l${i}`, 'loved'))
+    const w = rankWeights(singles([...loved, cat('m', 'meh')]))
+    expect(w.get('l8')).toBe(0.5)
+    expect(positionWeights(singles([...loved, cat('m', 'meh')])).get('l8')).toBeLessThan(0)
+  })
+
+  it('gives a movie alone in its category the middle of the band, and ties a shared weight', () => {
+    const w = rankWeights([[cat('l', 'loved')], [cat('o1', 'okay'), cat('o2', 'okay')], [cat('m', 'meh')]])
+    expect(w.get('l')).toBe(0.75)
+    expect(w.get('o1')).toBe(0)
+    expect(w.get('o2')).toBe(0)
+    expect(w.get('m')).toBe(-0.75)
+  })
+
+  it('falls back to position weights for lists without categories', () => {
+    const tiers = singles([movie('a'), movie('b'), movie('c')])
+    expect([...rankWeights(tiers).values()]).toEqual([1, 0, -1])
+  })
+
+  it('seeds TMDb with loved movies and only real dislikes', () => {
+    const list = [cat('l', 'loved'), cat('o1', 'okay'), cat('o2', 'okay'), cat('m', 'meh')].map((m, i) => ({ ...m, tmdb_id: i + 1 }))
+    const { likes, dislikes } = pickSeeds(singles(list), { top: 8, bottom: 4 })
+    expect(likes.map((m) => m.id)).toEqual(['l', 'o1'])
+    expect(dislikes.map((m) => m.id)).toEqual(['m'])
+  })
+
+  it('scores by category: relatives of loved movies up, of "Not a fan" ones out', () => {
+    const tiers = singles([
+      ...Array.from({ length: 12 }, (_, i) => cat(`l${i}`, 'loved', ['Science Fiction'])),
+      cat('o', 'okay', ['Comedy']),
+      cat('m1', 'meh', ['Horror']),
+      cat('m2', 'meh', ['Horror']),
+    ])
+    const scored = scoreCandidates(tiers, [movie('sf', ['Science Fiction']), movie('scary', ['Horror'])])
+    expect(ids(scored)).toEqual(['sf'])
+  })
+
+  it('only treats a friend\'s "Loved it" movies as their picks', () => {
+    const mine = Array.from({ length: 15 }, (_, i) => cat(`me${i}`, 'loved'))
+    const friend = { id: 'u', username: 'alex', tiers: singles([cat('fav', 'loved'), cat('fine', 'okay'), cat('bad', 'meh')]) }
+    const signals = friendSignals(singles(mine), [friend])
+    expect(signals.candidates.map((m) => m.id)).toEqual(['fav'])
+    const scored = scoreCandidates(singles(mine), [movie('fav'), movie('fine')], { friends: signals })
+    expect(scored.find((s) => s.movie.id === 'fav').fans).toEqual(['alex'])
+    expect(scored.find((s) => s.movie.id === 'fine')?.fans ?? []).toEqual([])
+  })
+
+  it('builds "Because you ranked" rows only from loved movies', () => {
+    const tiers = singles([
+      cat('fav', 'loved', ['Drama']),
+      ...Array.from({ length: 14 }, (_, i) => cat(`o${i}`, 'okay', ['Drama'])),
+    ])
+    const result = buildRecommendations(tiers, [movie('d1', ['Drama']), movie('d2', ['Drama'])], { perRow: 1 })
+    const because = result.rows.filter((r) => r.id.startsWith('because-')).map((r) => r.id)
+    expect(because.every((id) => id === 'because-fav')).toBe(true)
   })
 })
