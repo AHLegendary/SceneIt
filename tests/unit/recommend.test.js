@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
 import {
   buildRecommendations,
+  mergeTmdbRecs,
+  pickSeeds,
   positionWeights,
   RECS_UNLOCK,
   relatedness,
@@ -125,5 +127,100 @@ describe('buildRecommendations', () => {
 
   it('returns no rows when everything has been ranked', () => {
     expect(buildRecommendations(singles(MOVIES), MOVIES)).toEqual({ locked: false, rows: [] })
+  })
+})
+
+describe('pickSeeds', () => {
+  const withTmdb = (n) => Array.from({ length: n }, (_, i) => ({ ...movie(`m${i}`), tmdb_id: i + 1 }))
+
+  it('takes the top movies as likes and the bottom ones as dislikes, worst first', () => {
+    const { likes, dislikes } = pickSeeds(singles(withTmdb(20)), { top: 3, bottom: 2 })
+    expect(likes.map((m) => m.id)).toEqual(['m0', 'm1', 'm2'])
+    expect(dislikes.map((m) => m.id)).toEqual(['m19', 'm18'])
+  })
+
+  it('skips movies without a TMDb id', () => {
+    const list = withTmdb(5)
+    delete list[0].tmdb_id
+    expect(pickSeeds(singles(list), { top: 1 }).likes[0].id).toBe('m1')
+  })
+
+  it('never uses a middle movie as a seed', () => {
+    const { likes, dislikes } = pickSeeds(singles(withTmdb(3)), { top: 5, bottom: 5 })
+    expect(likes.map((m) => m.id)).toEqual(['m0'])
+    expect(dislikes.map((m) => m.id)).toEqual(['m2'])
+  })
+})
+
+describe('mergeTmdbRecs', () => {
+  const seed = { ...movie('seed', ['Drama']), tmdb_id: 1 }
+  const row = (tmdb_id, extra = {}) => ({ tmdb_id, title: `T${tmdb_id}`, genres: ['Drama'], tmdb_votes: 500, ...extra })
+  const toMovie = (r) => ({ id: `tmdb-${r.tmdb_id}`, title: r.title, genres: r.genres, tmdb_id: r.tmdb_id })
+  const seeds = new Map([[1, seed]])
+
+  it('links each recommendation to its seed both ways, stronger for higher picks', () => {
+    const { candidates, links } = mergeTmdbRecs([{ seed: 1, movies: [row(10), row(11), row(12)] }], seeds, toMovie)
+    expect(candidates.map((m) => m.id)).toEqual(['tmdb-10', 'tmdb-11', 'tmdb-12'])
+    expect(links.get('seed').get('tmdb-10')).toBe(1)
+    expect(links.get('seed').get('tmdb-12')).toBe(0.5)
+    expect(links.get('tmdb-11').get('seed')).toBeCloseTo(0.75)
+  })
+
+  it('drops obscure titles, unknown seeds and rows toMovie rejects', () => {
+    const { candidates } = mergeTmdbRecs(
+      [{ seed: 1, movies: [row(10, { tmdb_votes: 3 }), row(11), row(12)] }, { seed: 99, movies: [row(20)] }],
+      seeds,
+      (r) => (r.tmdb_id === 12 ? null : toMovie(r)),
+    )
+    expect(candidates.map((m) => m.id)).toEqual(['tmdb-11'])
+  })
+
+  it('keeps one candidate when two seeds recommend the same movie, with the stronger link', () => {
+    const other = { ...movie('other'), tmdb_id: 2 }
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 1, movies: [row(5), row(10)] }, { seed: 2, movies: [row(10)] }],
+      new Map([[1, seed], [2, other]]),
+      toMovie,
+    )
+    expect(candidates).toHaveLength(2)
+    expect(links.get('tmdb-10').get('seed')).toBe(0.5)
+    expect(links.get('tmdb-10').get('other')).toBe(1)
+  })
+})
+
+describe('scoring with TMDb links', () => {
+  const ranked = Array.from({ length: 15 }, (_, i) => ({ ...movie(`r${i}`, ['Drama']), tmdb_id: i + 1 }))
+  const tiers = singles(ranked)
+  const toMovie = (r) => ({ id: `tmdb-${r.tmdb_id}`, title: r.title, genres: r.genres, tmdb_id: r.tmdb_id })
+  const seedsByTmdb = new Map(ranked.map((m) => [m.tmdb_id, m]))
+
+  it('recommends movies outside the catalog that TMDb links to favorites', () => {
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 1, movies: [{ tmdb_id: 500, title: 'Fresh', genres: ['Comedy'], tmdb_votes: 1000 }] }],
+      seedsByTmdb,
+      toMovie,
+    )
+    const scored = scoreCandidates(tiers, candidates, links)
+    expect(scored[0].movie.id).toBe('tmdb-500')
+    expect(scored[0].because.id).toBe('r0')
+  })
+
+  it('pushes down movies TMDb links to disliked ones', () => {
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 15, movies: [{ tmdb_id: 600, title: 'Nope', genres: ['Comedy'], tmdb_votes: 1000 }] }],
+      seedsByTmdb,
+      toMovie,
+    )
+    expect(ids(scoreCandidates(tiers, candidates, links))).not.toContain('tmdb-600')
+  })
+
+  it('fills "because" rows with movies linked to that favorite first', () => {
+    const linked = [700, 701, 702].map((tmdb_id) => ({ tmdb_id, title: `L${tmdb_id}`, genres: ['Comedy'], tmdb_votes: 1000 }))
+    const { candidates, links } = mergeTmdbRecs([{ seed: 2, movies: linked }], seedsByTmdb, toMovie)
+    const genreMatches = Array.from({ length: 6 }, (_, i) => movie(`g${i}`, ['Drama']))
+    // The top row takes the two strongest links; r1's row should get the third, not a genre match.
+    const result = buildRecommendations(tiers, [...genreMatches, ...candidates], { links, perRow: 2 })
+    const row = result.rows.find((r) => r.id === 'because-r1')
+    expect(ids(row.items)[0]).toBe('tmdb-702')
   })
 })

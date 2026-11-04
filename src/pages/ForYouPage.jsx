@@ -1,15 +1,48 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Poster from '../components/Poster.jsx'
-import { buildRecommendations, RECS_UNLOCK } from '../features/recommendations/recommend.js'
-import { getCatalog, posterUrl } from '../lib/localStore.js'
+import {
+  buildRecommendations,
+  mergeTmdbRecs,
+  pickSeeds,
+  RECS_UNLOCK,
+} from '../features/recommendations/recommend.js'
+import { getCatalog, movieFromDb, posterUrl } from '../lib/localStore.js'
+import { getRecommendations } from '../lib/movies.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
 // Personalized recommendations, unlocked at 15 ranked movies. Cards open the
 // movie details panel, where the user can rank them.
+//
+// Shows catalog-only picks right away, then folds in TMDb's recommendations
+// for the user's top and bottom movies once they load. If TMDb fails, the
+// catalog picks just stay.
 export default function ForYouPage({ onOpen, onAdd }) {
   const tiers = useMyTiers()
-  const recs = useMemo(() => buildRecommendations(tiers, getCatalog()), [tiers])
   const count = tiers.reduce((n, tier) => n + tier.length, 0)
+  const unlocked = count >= RECS_UNLOCK
+
+  const seeds = useMemo(() => pickSeeds(tiers), [tiers])
+  const seedKey = unlocked ? [...seeds.likes, ...seeds.dislikes].map((m) => m.tmdb_id).sort((a, b) => a - b).join(',') : ''
+  const [fetched, setFetched] = useState({ key: '', results: null })
+
+  useEffect(() => {
+    if (!seedKey) return undefined
+    let cancelled = false
+    getRecommendations(seedKey.split(',').map(Number))
+      .then((results) => !cancelled && setFetched({ key: seedKey, results }))
+      .catch((error) => console.warn('TMDb recommendations unavailable:', error.message))
+    return () => {
+      cancelled = true
+    }
+  }, [seedKey])
+
+  const recs = useMemo(() => {
+    const catalog = getCatalog()
+    if (fetched.key !== seedKey || !fetched.results) return buildRecommendations(tiers, catalog)
+    const seedsByTmdb = new Map([...seeds.likes, ...seeds.dislikes].map((m) => [m.tmdb_id, m]))
+    const { candidates, links } = mergeTmdbRecs(fetched.results, seedsByTmdb, movieFromDb)
+    return buildRecommendations(tiers, [...candidates, ...catalog], { links })
+  }, [tiers, seeds, seedKey, fetched])
 
   return (
     <section className="page">
@@ -50,7 +83,7 @@ export default function ForYouPage({ onOpen, onAdd }) {
       ) : recs.rows.length === 0 ? (
         <div className="empty">
           <h2 className="empty__title">Nothing new to suggest</h2>
-          <p className="empty__text">You've ranked everything we'd recommend from the demo catalog. Impressive.</p>
+          <p className="empty__text">Rank a few more movies and check back for new picks.</p>
         </div>
       ) : (
         recs.rows.map((row) => (
