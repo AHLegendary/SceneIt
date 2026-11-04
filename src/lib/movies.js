@@ -15,10 +15,19 @@ export async function searchMovies(query) {
   return results;
 }
 
+// This week's most popular movies on TMDb (through our API), in the
+// `movies` table shape plus backdrop_path.
+export async function fetchTrending() {
+  const { results } = await getJson('/api/movies/trending');
+  return results;
+}
+
 export async function getMovie(tmdbId) {
   const { movie } = await getJson(`/api/movies/${encodeURIComponent(tmdbId)}`);
   return movie;
 }
+
+export class UnauthorizedError extends Error {}
 
 // TMDb's recommendations for each seed movie (TMDb ids). Ids are sorted so
 // the same set of seeds always hits the same cached URL.
@@ -32,11 +41,16 @@ export async function getRecommendations(tmdbIds) {
 
 // Makes sure a movie is in the database so it can be ranked. The server
 // checks the access token, looks the movie up on TMDb and saves it.
-// Returns the saved row ({ tmdb_id, title, year, ... }).
+// Returns the saved row ({ tmdb_id, title, year, ... }). Throws
+// UnauthorizedError when the server rejects the token, so the caller can
+// refresh the session and try again.
 export async function saveMovie(tmdbId, accessToken) {
-  const { movie } = await getJson(`/api/movies/${encodeURIComponent(tmdbId)}`, {
+  const response = await fetch(`/api/movies/${encodeURIComponent(tmdbId)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return movie;
+  const body = await response.json().catch(() => ({}));
+  if (response.status === 401) throw new UnauthorizedError(body.error || 'Log in to rank movies.');
+  if (!response.ok) throw new Error(body.error || 'Something went wrong, try again later.');
+  return body.movie;
 }

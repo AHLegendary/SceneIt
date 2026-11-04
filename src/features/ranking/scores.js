@@ -107,3 +107,28 @@ export function countByCategory(tiers) {
   for (const tier of tiers ?? []) for (const movie of tier) counts[categoryOfMovie(movie)] += 1
   return counts
 }
+
+// Tier-list rows (S/A/B/C/D/F) for a ranked list, like a tier maker. Rows are
+// cut by score; before scores unlock the same position-based spread is used
+// (scoreTiers with the gate off), so the tier list works from the first movie.
+export const TIER_LIST = [
+  { id: 'S', min: 9, color: '#ff7f7e', range: '9.0–10', blurb: 'All-time favorites' },
+  { id: 'A', min: 8, color: '#ffbf7f', range: '8.0–8.9', blurb: 'Loved it' },
+  { id: 'B', min: 7, color: '#ffdf80', range: '7.0–7.9', blurb: 'Really good' },
+  { id: 'C', min: 5.5, color: '#feff7f', range: '5.5–6.9', blurb: 'It was okay' },
+  { id: 'D', min: 4, color: '#bfff7f', range: '4.0–5.4', blurb: 'Not for me' },
+  { id: 'F', min: -Infinity, color: '#7fbfff', range: '1.0–3.9', blurb: 'Bottom of the list' },
+]
+
+// [{ id, color, movies }] in S→F order, every row present (empty ones too).
+export function tierListOf(tiers) {
+  const scores = scoreTiers(tiers, 1) ?? new Map()
+  const rows = TIER_LIST.map((t) => ({ ...t, movies: [] }))
+  for (const tier of tiers) {
+    for (const movie of tier) {
+      const score = scores.get(movie.id) ?? TOP_SCORE
+      rows.find((r) => score >= r.min).movies.push(movie)
+    }
+  }
+  return rows
+}

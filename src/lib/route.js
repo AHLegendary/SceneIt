@@ -1,6 +1,6 @@
-import { PAGES } from './pages.js'
+import { DEFAULT_PAGE, PAGES } from './pages.js'
 
-export const DEFAULT_PAGE = 'leaderboard'
+export { DEFAULT_PAGE }
 
 function decode(part) {
   try {

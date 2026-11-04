@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import Icon from '../../components/Icon.jsx'
 import Poster from '../../components/Poster.jsx'
+import Sparkles from '../../components/Sparkles.jsx'
+import BlueFire from './BlueFire.jsx'
 import { posterUrl } from '../../lib/localStore.js'
 import { getMyTiers, placeMovie } from '../../lib/supabaseStore.js'
 import {
@@ -23,6 +26,9 @@ import {
   scoreTiers,
   tiersInCategory,
 } from './scores.js'
+
+// How long a pick's animation runs before the answer is applied.
+const PICK_MS = 900
 
 // Rank of a movie in a list of tiers, or null if it isn't there.
 function rankOf(tiers, id) {
@@ -53,6 +59,7 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
   const saveStarted = useRef(false)
   // 'saving' | 'saved' | 'failed'
   const [saveStatus, setSaveStatus] = useState('saving')
+  const [saveError, setSaveError] = useState(null)
   const titleId = useId()
 
   const state = history[history.length - 1] ?? null
@@ -64,9 +71,24 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
     setHistory([startInsertion(tiersInCategory(setup.others, id), movie)])
   }
 
+  // A pick plays a short animation first: the winner grows and shifts toward
+  // the middle, the loser burns up in blue fire, then the answer is applied
+  // and the next opponent slides in.
+  const [anim, setAnim] = useState(null) // { choice, opponentId }
+  const reduced = useRef(false)
+  useEffect(() => {
+    reduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  }, [])
+
   function choose(choice) {
-    if (!state || done) return
-    setHistory((h) => [...h, answer(h[h.length - 1], choice)])
+    if (!state || done || anim) return
+    const apply = () => {
+      setAnim(null)
+      setHistory((h) => [...h, answer(h[h.length - 1], choice)])
+    }
+    if (reduced.current) return apply()
+    setAnim({ choice, opponentId: opponent.id })
+    setTimeout(apply, PICK_MS)
   }
 
   // Undo the last comparison, or go back to the category question.
@@ -83,7 +105,8 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
     try {
       await placeMovie(movie.id, { category, ...finalPlacement(state) })
       setSaveStatus('saved')
-    } catch {
+    } catch (e) {
+      setSaveError(e.message)
       setSaveStatus('failed')
     }
   }
@@ -106,7 +129,10 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
       }
       else if (e.key === 'ArrowLeft') choose(NEW)
       else if (e.key === 'ArrowRight') choose(OPPONENT)
-      else if (e.key === 'ArrowDown' || e.key === '=') choose(TIE)
+      else if (e.key === 'ArrowDown' || e.key === '=' || e.key === ' ' || e.code === 'Space') {
+        e.preventDefault() // space would also "click" whichever poster has focus
+        choose(TIE)
+      }
     }
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
@@ -146,6 +172,7 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
         tied={finalPlacement(state).tied}
         oldRank={setup.oldRank}
         saveStatus={saveStatus}
+        saveError={saveError}
         onRetry={save}
         onRankAnother={onRankAnother}
         onSeeList={onSeeList}
@@ -159,23 +186,40 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
           <p className="compare__progress" aria-live="polite">
             {getCategory(category).label} · Comparison {state.comparisons + 1} of up to {maxComparisons(state.tiers.length)}
           </p>
+          <span className="compare__bar" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, ((state.comparisons + 1) / Math.max(1, maxComparisons(state.tiers.length))) * 100)}%` }} />
+          </span>
         </header>
 
-        <div className="duel">
-          <PickCard movie={movie} badge={rerank ? 'Reranking' : 'Just watched'} onPick={() => choose(NEW)} hint="←" />
+        <div className={`duel${anim ? ' is-animating' : ''}${anim?.choice === TIE ? ' is-tie' : ''}`}>
+          <PickCard
+            movie={movie}
+            badge={rerank ? 'Reranking' : 'Just watched'}
+            onPick={() => choose(NEW)}
+            hint="←"
+            state={anim ? (anim.choice === NEW ? 'win win-left' : anim.choice === TIE ? 'tie' : 'burn') : null}
+          />
           <span className="duel__vs" aria-hidden="true">vs</span>
-          <PickCard key={opponent.id} movie={opponent} onPick={() => choose(OPPONENT)} hint="→" />
+          <PickCard
+            key={opponent.id}
+            movie={opponent}
+            onPick={() => choose(OPPONENT)}
+            hint="→"
+            state={anim ? (anim.choice === OPPONENT ? 'win win-right' : anim.choice === TIE ? 'tie' : 'burn') : 'enter'}
+          />
         </div>
 
         <footer className="compare__foot">
           <button type="button" className="ghost" onClick={undo}>
+            <Icon name="undo" size={16} />
             {history.length > 1 ? 'Undo' : 'Back'}
           </button>
           <button type="button" className="ghost ghost--tie" onClick={() => choose(TIE)}>
+            <Icon name="equal" size={16} />
             It's a tie
             <kbd className="pick__key" aria-hidden="true">↓</kbd>
           </button>
-          <span className="compare__keys">Tap a poster, or use ← →</span>
+          <span className="compare__keys">Click a poster, or press ← / → (Space for a tie)</span>
         </footer>
       </>
     )
@@ -225,15 +269,23 @@ function FeelingStep({ titleId, movie, rerank, current, onPick }) {
   )
 }
 
-function PickCard({ movie, badge, onPick, hint }) {
+function PickCard({ movie, badge, onPick, hint, state }) {
   return (
-    <button type="button" className="pick" onClick={onPick} aria-label={`I liked ${movie.title} more`}>
+    <button
+      type="button"
+      className={`pick${state ? ` ${state.split(' ').map((k) => `pick--${k}`).join(' ')}` : ''}`}
+      onClick={onPick}
+      aria-label={`I liked ${movie.title} more`}
+    >
+      {state === 'burn' && <BlueFire duration={PICK_MS} />}
       {badge && <span className="pick__badge">{badge}</span>}
-      <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="lg" />
-      <span className="pick__title">{movie.title}</span>
-      <span className="pick__meta">
-        {movie.year}
-        <kbd className="pick__key" aria-hidden="true">{hint}</kbd>
+      <span className="pick__body">
+        <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="lg" />
+        <span className="pick__title">{movie.title}</span>
+        <span className="pick__meta">
+          {movie.year}
+          <kbd className="pick__key" aria-hidden="true">{hint}</kbd>
+        </span>
       </span>
     </button>
   )
@@ -241,14 +293,25 @@ function PickCard({ movie, badge, onPick, hint }) {
 
 // Result screen: where the movie landed, its score once unlocked, and the
 // movies around it for context.
-function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, onRetry, onRankAnother, onSeeList }) {
+function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, saveError, onRetry, onRankAnother, onSeeList }) {
   const ranks = tierRanks(tiers)
   const rows = tiers.flatMap((tier, i) => tier.map((m) => ({ movie: m, rank: ranks[i], tier: i })))
   const at = rows.findIndex((r) => r.movie.id === movie.id)
-  const from = Math.max(0, Math.min(at - 1, rows.length - 3))
-  const nearby = rows.slice(from, from + 3)
   const { rank, tier } = rows[at]
   const count = rows.length
+  const newRow = useRef(null)
+  // Scroll the list so the new movie sits in the middle, once it exists.
+  useEffect(() => {
+    newRow.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [])
+  // The rank counts up from the bottom to its final spot.
+  const [shown, setShown] = useState(count === 1 ? 1 : rows.length)
+  useEffect(() => {
+    if (shown <= rank) return undefined
+    const step = Math.max(1, Math.round((rows.length - rank) / 18))
+    const t = setTimeout(() => setShown((v) => Math.max(rank, v - step)), 40)
+    return () => clearTimeout(t)
+  }, [shown, rank, rows.length])
   const tiedWith = tiers[tier].filter((m) => m.id !== movie.id)
   const scores = scoreTiers(tiers)
   const toUnlock = moviesUntilScores(count)
@@ -273,9 +336,13 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, on
 
   return (
     <div className="placed">
+      <Sparkles count={34} seed={3} />
       <p className="placed__eyebrow">{eyebrow}</p>
+      <span className="placed__burst" aria-hidden="true">
+        {Array.from({ length: 14 }, (_, i) => <i key={i} style={{ '--i': i }} />)}
+      </span>
       <h2 className="placed__rank" id={titleId}>
-        #{rank}
+        #{shown}
         <span> of {count}</span>
       </h2>
       <p className="placed__text">{text}</p>
@@ -289,9 +356,9 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, on
         </p>
       )}
 
-      <ol className="placed__list">
-        {nearby.map((r) => (
-          <li key={r.movie.id} className={r.movie.id === movie.id ? 'is-new' : undefined}>
+      <ol className="placed__list placed__list--scroll" aria-label="Your ranked list">
+        {rows.map((r) => (
+          <li key={r.movie.id} ref={r.movie.id === movie.id ? newRow : undefined} className={r.movie.id === movie.id ? 'is-new' : undefined}>
             <span className="placed__num">{r.rank}</span>
             <Poster title={r.movie.title} src={posterUrl(r.movie, 'w154')} size="sm" />
             <span className="placed__name">{r.movie.title}</span>
@@ -299,14 +366,19 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, on
           </li>
         ))}
       </ol>
+      <p className="placed__scrollhint">Scroll to see the rest of your list</p>
 
       {saveStatus === 'saving' && (
         <p className="placed__save" role="status">Saving…</p>
       )}
       {saveStatus === 'failed' && (
         <div className="notice notice--error" role="alert">
-          <span>Couldn't save your ranking. Check your connection and try again.</span>
-          <button type="button" className="btn btn--sm" onClick={onRetry} autoFocus>Try again</button>
+          <span>{saveError || "Couldn't save your ranking. Check your connection and try again."}</span>
+          {/session has expired/i.test(saveError ?? '') ? (
+            <button type="button" className="btn btn--sm" onClick={() => { window.location.hash = '/login' }} autoFocus>Log in</button>
+          ) : (
+            <button type="button" className="btn btn--sm" onClick={onRetry} autoFocus>Try again</button>
+          )}
         </div>
       )}
 
@@ -316,16 +388,18 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, on
             <button type="button" className="btn btn--light" onClick={onSeeList} disabled={saveStatus !== 'saved'}>
               See my list
             </button>
-            <button type="button" className="btn" onClick={onRankAnother} disabled={saveStatus !== 'saved'} autoFocus>
+            <button type="button" className="btn btn--accent" onClick={onRankAnother} disabled={saveStatus !== 'saved'} autoFocus>
+              <Icon name="swords" size={16} />
               Rank another
             </button>
           </>
         ) : (
-          <button type="button" className="btn" onClick={onSeeList} disabled={saveStatus !== 'saved'} autoFocus>
+          <button type="button" className="btn btn--accent" onClick={onSeeList} disabled={saveStatus !== 'saved'} autoFocus>
             Done
           </button>
         )}
       </div>
+
     </div>
   )
 }

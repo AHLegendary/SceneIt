@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import Icon from '../components/Icon.jsx'
 import Poster from '../components/Poster.jsx'
 import {
   buildRecommendations,
@@ -79,7 +80,7 @@ export default function ForYouPage({ onOpen, onAdd }) {
     <section className="page">
       <header className="page__head">
         <div>
-          <h1 className="page__title">For You</h1>
+          <h1 className="page__title"><Icon name="sparkle" size={30} />For You</h1>
           <p className="page__sub">Picked from how you've ranked movies so far.</p>
         </div>
       </header>
@@ -107,7 +108,8 @@ export default function ForYouPage({ onOpen, onAdd }) {
             <span style={{ width: `${(count / RECS_UNLOCK) * 100}%` }} />
           </div>
           <p className="empty__note">{count} of {RECS_UNLOCK} ranked</p>
-          <button type="button" className="btn" onClick={onAdd}>
+          <button type="button" className="btn btn--accent" onClick={onAdd}>
+            <Icon name="swords" size={18} />
             Rank a movie
           </button>
         </div>
