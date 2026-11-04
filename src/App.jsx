@@ -3,6 +3,8 @@ import './App.css'
 import MovieDetails from './components/MovieDetails.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
+import BlendDetailPage from './features/blends/BlendDetailPage.jsx'
+import BlendsPage from './features/blends/BlendsPage.jsx'
 import AccountBadge from './components/AccountBadge.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
@@ -76,7 +78,7 @@ function App() {
 
   return (
     <div className="app">
-      <Sidebar current={page} onNavigate={navigate} signedIn={signedIn} username={account.username} />
+      <Sidebar current={page === 'blend' ? 'blends' : page} onNavigate={navigate} signedIn={signedIn} username={account.username} />
       <main className="main">
         <div className="topbar">
           <AccountBadge account={account} />
@@ -101,6 +103,10 @@ function App() {
           <ForYouPage onOpen={openDetails} onAdd={openSearch} />
         ) : page === 'friends' ? (
           <FriendsPage />
+        ) : page === 'blends' ? (
+          <BlendsPage />
+        ) : page === 'blend' ? (
+          <BlendDetailPage key={route.blendId} blendId={route.blendId} onOpen={openDetails} />
         ) : (
           <LeaderboardPage onOpen={openDetails} />
         )}

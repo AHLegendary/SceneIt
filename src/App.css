@@ -1086,6 +1086,12 @@
 .frow__meta { font-size: 13px; color: var(--ink-3); }
 .frow__actions { display: flex; align-items: center; gap: 6px; }
 .btn--danger { background: #b3261e; }
+
+/* ------------------------------------------------------------------ movie blend */
+.blend-form { display: flex; flex-direction: column; gap: 12px; animation: rise var(--mid) var(--ease); }
+.blend-form__pick { cursor: pointer; }
+.blend-form__actions { display: flex; align-items: center; gap: 8px; }
+
 @media (max-width: 760px) {
   .sidebar__tabs { overflow-x: auto; }
   .sidebar__badge { min-width: 18px; height: 18px; margin-left: 6px; font-size: 11px; vertical-align: 1px; }
