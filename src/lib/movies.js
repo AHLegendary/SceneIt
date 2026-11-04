@@ -20,6 +20,16 @@ export async function getMovie(tmdbId) {
   return movie;
 }
 
+// TMDb's recommendations for each seed movie (TMDb ids). Ids are sorted so
+// the same set of seeds always hits the same cached URL.
+// Returns [{ seed, movies: [{ tmdb_id, title, ..., tmdb_rating, tmdb_votes }] }].
+export async function getRecommendations(tmdbIds) {
+  const ids = [...new Set(tmdbIds)].sort((a, b) => a - b);
+  if (!ids.length) return [];
+  const { results } = await getJson(`/api/movies/recommendations?ids=${ids.join(',')}`);
+  return results;
+}
+
 // Makes sure a movie is in the database so it can be ranked. The server
 // checks the access token, looks the movie up on TMDb and saves it.
 // Returns the saved row ({ tmdb_id, title, year, ... }).

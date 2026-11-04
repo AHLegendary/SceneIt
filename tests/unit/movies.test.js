@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getMovie, searchMovies } from '../../src/lib/movies.js';
+import { getMovie, getRecommendations, searchMovies } from '../../src/lib/movies.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -26,6 +26,19 @@ describe('src/lib/movies.js', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/api/movies/search?q=Spider-Man%3A%20No%20Way%20Home%20%26%20Friends',
     );
+  });
+
+  it('getRecommendations requests sorted, deduped seed ids', async () => {
+    const results = [{ seed: 1, movies: [] }];
+    mockResponse({ body: { results } });
+    await expect(getRecommendations([30, 1, 30])).resolves.toEqual(results);
+    expect(fetch).toHaveBeenCalledWith('/api/movies/recommendations?ids=1,30');
+  });
+
+  it('getRecommendations skips the request when there are no seeds', async () => {
+    mockResponse({ body: {} });
+    await expect(getRecommendations([])).resolves.toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('getMovie requests the details endpoint and returns the movie', async () => {
