@@ -1,80 +1,25 @@
-import { useEffect, useRef, useState } from 'react'
-import {
-  acceptFriendRequest,
-  relationTo,
-  searchUsers,
-  sendFriendRequest,
-  SEND_RESULTS,
-} from '../lib/friends.js'
-import { fetchProfileByUsername } from '../lib/profileQueries.js'
-import { validateUsername } from '../lib/validation.js'
-import { useFriends } from '../lib/useFriends.js'
+import { useState } from 'react'
+import FriendAction from '../components/FriendAction.jsx'
+import TopMovies from '../components/TopMovies.jsx'
+import { userListHref } from '../lib/route.js'
+import { profileImageUrl } from '../lib/profileMedia.js'
+import { useProfileLookup } from '../lib/useProfileLookup.js'
+import { useUserTiers } from '../lib/useUserTiers.js'
 import './ProfilePage.css'
 
 const LOAD_ERROR = "Couldn't load this profile. Check your connection and try again."
 
 // Someone else's profile, at #/u/<username>.
-//   public (or you're friends)  -> pronouns and bio
+//   public (or you're friends)  -> pronouns, bio, and their top movies
 //   private, you're logged in   -> a private notice with an Add friend button
 //   private, logged out         -> can't tell it apart from a missing user
-export default function UserProfilePage({ username, account }) {
-  const signedIn = account.status === 'ready'
-  const myId = account.user?.id ?? null
-  const friends = useFriends()
-  // 'loading' | 'profile' | 'private' | 'missing' | 'hidden' | 'error'
-  const [view, setView] = useState({ kind: 'loading' })
-  const [attempt, setAttempt] = useState(0)
-  // Whose profile this is. Kept across reloads so friend status doesn't depend
-  // on the view being cleared (which caused an endless reload for friends).
-  const [targetId, setTargetId] = useState(null)
-  const loadedFor = useRef('')
-
+export default function UserProfilePage({ username, account, onOpen }) {
+  const { view, relation, friendsReady, signedIn, retry } = useProfileLookup(username, account, '/profile')
+  const list = useUserTiers(view.kind === 'profile' ? view.profile.id : null)
   const known = view.profile ?? view.user
-  const relation = targetId ? relationTo(friends.list, targetId) : null
-  const isFriend = relation === 'friends'
-
-  useEffect(() => {
-    let current = true
-    // Show "Loading…" only for a new username, login, or retry. A change in
-    // friend status refreshes quietly so the page doesn't flash.
-    const key = `${username}|${signedIn}|${myId}|${attempt}`
-    if (loadedFor.current !== key) {
-      loadedFor.current = key
-      setTargetId(null)
-      setView({ kind: 'loading' })
-    }
-
-    async function lookup() {
-      if (validateUsername(username) !== '') return { kind: 'missing' }
-
-      const profile = await fetchProfileByUsername(username)
-      if (profile) return { kind: 'profile', profile }
-      if (!signedIn) return { kind: 'hidden' }
-
-      // Not visible. Search can still find private users by username.
-      const matches = await searchUsers(username)
-      const match = matches.find((u) => u.username.toLowerCase() === username.toLowerCase())
-      return match ? { kind: 'private', user: match } : { kind: 'missing' }
-    }
-
-    lookup().then(
-      (result) => {
-        if (!current) return
-        // Your own profile lives on the Profile tab.
-        if (result.kind === 'profile' && result.profile.id === myId) {
-          window.location.hash = '/profile'
-          return
-        }
-        setTargetId(result.profile?.id ?? result.user?.id ?? null)
-        setView(result)
-      },
-      () => current && setView({ kind: 'error' }),
-    )
-    return () => {
-      current = false
-    }
-    // isFriend: becoming friends (or unfriending) changes what's visible, so look again.
-  }, [username, signedIn, myId, isFriend, attempt])
+  // Profile pictures live in storage keyed by user id; fall back to the
+  // initial when there isn't one (the image fails to load).
+  const [avatarMissing, setAvatarMissing] = useState(false)
 
   const heading = (
     <header className="page__head">
@@ -84,7 +29,14 @@ export default function UserProfilePage({ username, account }) {
             ← Back to Friends
           </a>
         )}
-        <h1 className="page__title profile__name">{known?.username ?? username}</h1>
+        <span className="uprofile__identity">
+          {view.profile?.id && !avatarMissing ? (
+            <img className="uprofile__avatar" src={profileImageUrl(view.profile.id, 'avatar')} alt="" onError={() => setAvatarMissing(true)} />
+          ) : (
+            <span className="uprofile__avatar uprofile__avatar--initial" aria-hidden="true">{(known?.username ?? username).charAt(0).toUpperCase()}</span>
+          )}
+          <h1 className="page__title profile__name">{known?.username ?? username}</h1>
+        </span>
         {view.kind === 'profile' && view.profile.pronouns && (
           <p className="uprofile__pronouns">{view.profile.pronouns}</p>
         )}
@@ -107,7 +59,7 @@ export default function UserProfilePage({ username, account }) {
         {heading}
         <div className="profile__alert" role="alert">
           {LOAD_ERROR}{' '}
-          <button type="button" className="profile__link" onClick={() => setAttempt((n) => n + 1)}>
+          <button type="button" className="profile__link" onClick={retry}>
             Try again
           </button>
         </div>
@@ -146,11 +98,8 @@ export default function UserProfilePage({ username, account }) {
         {heading}
         <div className="uprofile">
           <span className="uprofile__tag">Private profile</span>
-          <p>
-            {view.user.username} keeps their profile private. Add them as a friend to see their
-            pronouns and bio.
-          </p>
-          <FriendAction user={view.user} relation={relation} ready={friends.status === 'ready'} />
+          <p>This profile is private. Add them as a friend to see their profile.</p>
+          <FriendAction user={view.user} relation={relation} ready={friendsReady} />
         </div>
       </section>
     )
@@ -168,65 +117,20 @@ export default function UserProfilePage({ username, account }) {
           <p className="uprofile__muted">No bio yet.</p>
         )}
         {signedIn ? (
-          <FriendAction user={profile} relation={relation} ready={friends.status === 'ready'} />
+          <FriendAction user={profile} relation={relation} ready={friendsReady} />
         ) : (
           <button type="button" className="btn" onClick={() => (window.location.hash = '/login')}>
             Log in to add friends
           </button>
         )}
       </div>
+      <TopMovies
+        tiers={list.tiers}
+        status={list.status}
+        onRetry={list.retry}
+        viewAllHref={userListHref(profile.username)}
+        onOpen={onOpen}
+      />
     </section>
-  )
-}
-
-// The button that matches how you're already connected to this person.
-function FriendAction({ user, relation, ready }) {
-  const [busy, setBusy] = useState(false)
-  const [flash, setFlash] = useState(null)
-
-  async function run(action, success) {
-    setBusy(true)
-    setFlash(null)
-    try {
-      const result = await action(user.id)
-      setFlash({ text: success(result), error: false })
-    } catch (e) {
-      setFlash({ text: e.message, error: true })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="uprofile__action">
-      {relation === 'friends' ? (
-        <span className="friends__tag">Friends</span>
-      ) : relation === 'outgoing' ? (
-        <span className="friends__tag">Requested</span>
-      ) : relation === 'incoming' ? (
-        <button
-          type="button"
-          className="btn btn--sm"
-          disabled={busy || !ready}
-          onClick={() => run(acceptFriendRequest, () => `You and ${user.username} are now friends`)}
-        >
-          Accept request
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="btn btn--sm"
-          disabled={busy || !ready}
-          onClick={() => run(sendFriendRequest, (result) => SEND_RESULTS[result] ?? 'Done')}
-        >
-          {busy ? 'Sending…' : 'Add friend'}
-        </button>
-      )}
-      {flash && (
-        <div className={`notice${flash.error ? ' notice--error' : ''}`} role={flash.error ? 'alert' : 'status'}>
-          <span>{flash.text}</span>
-        </div>
-      )}
-    </div>
   )
 }

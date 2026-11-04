@@ -2,10 +2,17 @@ import { describe, it, expect } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
 import {
   buildRecommendations,
+  FRIEND_WEIGHT,
+  friendAffinity,
+  friendSignals,
+  mergeTmdbRecs,
+  pickSeeds,
   positionWeights,
+  recLabel,
   RECS_UNLOCK,
   relatedness,
   scoreCandidates,
+  tasteSimilarity,
 } from '../../src/features/recommendations/recommend.js'
 
 const movie = (id, genres = [], similar = []) => ({ id, title: id, genres, similar })
@@ -125,5 +132,199 @@ describe('buildRecommendations', () => {
 
   it('returns no rows when everything has been ranked', () => {
     expect(buildRecommendations(singles(MOVIES), MOVIES)).toEqual({ locked: false, rows: [] })
+  })
+})
+
+describe('pickSeeds', () => {
+  const withTmdb = (n) => Array.from({ length: n }, (_, i) => ({ ...movie(`m${i}`), tmdb_id: i + 1 }))
+
+  it('takes the top movies as likes and the bottom ones as dislikes, worst first', () => {
+    const { likes, dislikes } = pickSeeds(singles(withTmdb(20)), { top: 3, bottom: 2 })
+    expect(likes.map((m) => m.id)).toEqual(['m0', 'm1', 'm2'])
+    expect(dislikes.map((m) => m.id)).toEqual(['m19', 'm18'])
+  })
+
+  it('skips movies without a TMDb id', () => {
+    const list = withTmdb(5)
+    delete list[0].tmdb_id
+    expect(pickSeeds(singles(list), { top: 1 }).likes[0].id).toBe('m1')
+  })
+
+  it('never uses a middle movie as a seed', () => {
+    const { likes, dislikes } = pickSeeds(singles(withTmdb(3)), { top: 5, bottom: 5 })
+    expect(likes.map((m) => m.id)).toEqual(['m0'])
+    expect(dislikes.map((m) => m.id)).toEqual(['m2'])
+  })
+})
+
+describe('mergeTmdbRecs', () => {
+  const seed = { ...movie('seed', ['Drama']), tmdb_id: 1 }
+  const row = (tmdb_id, extra = {}) => ({ tmdb_id, title: `T${tmdb_id}`, genres: ['Drama'], tmdb_votes: 500, ...extra })
+  const toMovie = (r) => ({ id: `tmdb-${r.tmdb_id}`, title: r.title, genres: r.genres, tmdb_id: r.tmdb_id })
+  const seeds = new Map([[1, seed]])
+
+  it('links each recommendation to its seed both ways, stronger for higher picks', () => {
+    const { candidates, links } = mergeTmdbRecs([{ seed: 1, movies: [row(10), row(11), row(12)] }], seeds, toMovie)
+    expect(candidates.map((m) => m.id)).toEqual(['tmdb-10', 'tmdb-11', 'tmdb-12'])
+    expect(links.get('seed').get('tmdb-10')).toBe(1)
+    expect(links.get('seed').get('tmdb-12')).toBe(0.5)
+    expect(links.get('tmdb-11').get('seed')).toBeCloseTo(0.75)
+  })
+
+  it('drops obscure titles, unknown seeds and rows toMovie rejects', () => {
+    const { candidates } = mergeTmdbRecs(
+      [{ seed: 1, movies: [row(10, { tmdb_votes: 3 }), row(11), row(12)] }, { seed: 99, movies: [row(20)] }],
+      seeds,
+      (r) => (r.tmdb_id === 12 ? null : toMovie(r)),
+    )
+    expect(candidates.map((m) => m.id)).toEqual(['tmdb-11'])
+  })
+
+  it('keeps one candidate when two seeds recommend the same movie, with the stronger link', () => {
+    const other = { ...movie('other'), tmdb_id: 2 }
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 1, movies: [row(5), row(10)] }, { seed: 2, movies: [row(10)] }],
+      new Map([[1, seed], [2, other]]),
+      toMovie,
+    )
+    expect(candidates).toHaveLength(2)
+    expect(links.get('tmdb-10').get('seed')).toBe(0.5)
+    expect(links.get('tmdb-10').get('other')).toBe(1)
+  })
+})
+
+describe('scoring with TMDb links', () => {
+  const ranked = Array.from({ length: 15 }, (_, i) => ({ ...movie(`r${i}`, ['Drama']), tmdb_id: i + 1 }))
+  const tiers = singles(ranked)
+  const toMovie = (r) => ({ id: `tmdb-${r.tmdb_id}`, title: r.title, genres: r.genres, tmdb_id: r.tmdb_id })
+  const seedsByTmdb = new Map(ranked.map((m) => [m.tmdb_id, m]))
+
+  it('recommends movies outside the catalog that TMDb links to favorites', () => {
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 1, movies: [{ tmdb_id: 500, title: 'Fresh', genres: ['Comedy'], tmdb_votes: 1000 }] }],
+      seedsByTmdb,
+      toMovie,
+    )
+    const scored = scoreCandidates(tiers, candidates, { links })
+    expect(scored[0].movie.id).toBe('tmdb-500')
+    expect(scored[0].because.id).toBe('r0')
+  })
+
+  it('pushes down movies TMDb links to disliked ones', () => {
+    const { candidates, links } = mergeTmdbRecs(
+      [{ seed: 15, movies: [{ tmdb_id: 600, title: 'Nope', genres: ['Comedy'], tmdb_votes: 1000 }] }],
+      seedsByTmdb,
+      toMovie,
+    )
+    expect(ids(scoreCandidates(tiers, candidates, { links }))).not.toContain('tmdb-600')
+  })
+
+  it('fills "because" rows with movies linked to that favorite first', () => {
+    const linked = [700, 701, 702].map((tmdb_id) => ({ tmdb_id, title: `L${tmdb_id}`, genres: ['Comedy'], tmdb_votes: 1000 }))
+    const { candidates, links } = mergeTmdbRecs([{ seed: 2, movies: linked }], seedsByTmdb, toMovie)
+    const genreMatches = Array.from({ length: 6 }, (_, i) => movie(`g${i}`, ['Drama']))
+    // The top row takes the two strongest links; r1's row should get the third, not a genre match.
+    const result = buildRecommendations(tiers, [...genreMatches, ...candidates], { links, perRow: 2 })
+    const row = result.rows.find((r) => r.id === 'because-r1')
+    expect(ids(row.items)[0]).toBe('tmdb-702')
+  })
+})
+
+describe('tasteSimilarity', () => {
+  const list = Array.from({ length: 10 }, (_, i) => movie(`m${i}`))
+
+  it('is positive for the same order and negative for the reverse', () => {
+    const same = tasteSimilarity(singles(list), singles(list))
+    const reversed = tasteSimilarity(singles(list), singles([...list].reverse()))
+    expect(same.shared).toBe(10)
+    expect(same.similarity).toBeGreaterThan(0.6)
+    expect(reversed.similarity).toBeCloseTo(-same.similarity)
+  })
+
+  it('trusts a few shared movies less than many', () => {
+    const few = tasteSimilarity(singles(list.slice(0, 3)), singles(list.slice(0, 3)))
+    const many = tasteSimilarity(singles(list), singles(list))
+    expect(few.similarity).toBeLessThan(many.similarity)
+  })
+
+  it('is zero with nothing in common', () => {
+    expect(tasteSimilarity(singles([movie('a')]), singles([movie('b')]))).toEqual({ similarity: 0, shared: 0 })
+  })
+})
+
+describe('friendAffinity', () => {
+  it('starts friends at a base weight and moves with similarity', () => {
+    expect(friendAffinity(0)).toBe(0.25)
+    expect(friendAffinity(1)).toBe(1)
+    expect(friendAffinity(-1)).toBe(0)
+    expect(friendAffinity(0.5)).toBeGreaterThan(friendAffinity(0))
+  })
+})
+
+describe('friend recommendations', () => {
+  // I like sci-fi; my list has 15 movies so recommendations unlock.
+  const mine = Array.from({ length: 15 }, (_, i) => movie(`me${i}`, ['Science Fiction']))
+  const tiers = singles(mine)
+  const hit = movie('hit', ['Comedy'])
+  const flop = movie('flop', ['Comedy'])
+  // Alex agrees with me on my movies, loves `hit`, hates `flop`.
+  const alex = { id: 'u1', username: 'alex', tiers: singles([mine[0], hit, mine[1], mine[13], flop, mine[14]]) }
+
+  it('turns friends\' top-half movies into candidates', () => {
+    const signals = friendSignals(tiers, [alex])
+    expect(signals.candidates.map((m) => m.id)).toContain('hit')
+    expect(signals.candidates.map((m) => m.id)).not.toContain('flop')
+    expect(signals.friends[0]).toMatchObject({ username: 'alex', shared: 4 })
+    expect(signals.friends[0].affinity).toBeGreaterThan(0.25)
+  })
+
+  it('boosts what friends love, sinks what they dislike, and credits the friend', () => {
+    const signals = friendSignals(tiers, [alex])
+    const scored = scoreCandidates(tiers, [hit, flop], { friends: signals })
+    expect(ids(scored)).toEqual(['hit'])
+    expect(scored[0]).toMatchObject({ becauseFriend: 'alex', fans: ['alex'] })
+    expect(scored[0].friendScore).toBeGreaterThan(0)
+    expect(scored[0].friendScore).toBeLessThanOrEqual(FRIEND_WEIGHT)
+  })
+
+  it('ignores friends with opposite taste', () => {
+    const contrarian = { id: 'u2', username: 'cole', tiers: singles([...mine].reverse().concat(hit)) }
+    const signals = friendSignals(tiers, [contrarian])
+    expect(signals.friends[0].affinity).toBeLessThan(0.25)
+  })
+
+  it('never recommends something I already ranked, even if a friend loves it', () => {
+    const signals = friendSignals(tiers, [alex])
+    expect(ids(scoreCandidates(tiers, mine, { friends: signals }))).toEqual([])
+  })
+
+  it('adds a "Your friends loved these" row', () => {
+    const others = Array.from({ length: 6 }, (_, i) => movie(`sf${i}`, ['Science Fiction']))
+    const result = buildRecommendations(tiers, others, { friends: friendSignals(tiers, [alex]), perRow: 2 })
+    const row = result.rows.find((r) => r.id === 'friends')
+    expect(row.title).toBe('Your friends loved these')
+    const shown = result.rows.flatMap((r) => ids(r.items))
+    expect(shown).toContain('hit')
+    expect(new Set(shown).size).toBe(shown.length)
+  })
+
+  it('works the same as before with no friends', () => {
+    expect(buildRecommendations(tiers, [hit], { friends: friendSignals(tiers, []) })).toEqual(
+      buildRecommendations(tiers, [hit]),
+    )
+  })
+})
+
+describe('recLabel', () => {
+  const m = { id: 'x', title: 'X', year: 2020 }
+  it('names friends in the friends row', () => {
+    expect(recLabel({ movie: m, fans: ['a'] }, 'friends')).toBe('Loved by a')
+    expect(recLabel({ movie: m, fans: ['a', 'b'] }, 'friends')).toBe('Loved by a and b')
+    expect(recLabel({ movie: m, fans: ['a', 'b', 'c'] }, 'friends')).toBe('Loved by a +2')
+  })
+  it('explains top picks by friend or by movie, else shows the year', () => {
+    expect(recLabel({ movie: m, becauseFriend: 'a', because: { title: 'Y' } }, 'top')).toBe('a loved it')
+    expect(recLabel({ movie: m, because: { title: 'Y' } }, 'top')).toBe('Because you liked Y')
+    expect(recLabel({ movie: m, because: { title: 'Y' } }, 'because-y')).toBe(2020)
   })
 })

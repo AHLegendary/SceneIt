@@ -132,6 +132,7 @@ async function seed() {
       user_id: ids.get(user.username),
       movie_id: r.tmdb_id,
       position: r.position,
+      category: r.category,
       created_at: r.created_at,
       updated_at: r.created_at,
     })),

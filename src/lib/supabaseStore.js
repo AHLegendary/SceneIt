@@ -11,14 +11,16 @@
 // "tmdb-12345" (anything else, see localStore.js); the database uses TMDb
 // ids. We convert at this boundary so no component has to care.
 
+import { isCategory, tiersInCategory } from '../features/ranking/scores.js'
 import { getMovie, getMovieByTmdbId, isCatalogMovie, movieFromDb } from './localStore.js'
-import { saveMovie } from './movies.js'
+import { saveMovie, UnauthorizedError } from './movies.js'
 import { supabase } from './supabase.js'
 
 export const LOAD_ERROR = "Couldn't load your list. Check your connection and try again."
 export const SAVE_ERROR = "Couldn't save your ranking. Check your connection and try again."
 export const REMOVE_ERROR = "Couldn't remove that movie. Check your connection and try again."
 export const SIGN_OUT_ERROR = "Couldn't log you out. Try again."
+export const SESSION_ERROR = 'Your login session has expired. Log in again and your ranking will be saved.'
 
 // TMDb ids known to be in the `movies` table: the seeded catalog, plus
 // anything we've loaded from or saved to the database this session.
@@ -67,15 +69,17 @@ export function isInList(id) {
   return state.tiers.some((tier) => tier.some((movie) => movie.id === id))
 }
 
-// Turns rankings rows ({ movie_id, position, movies: {...} }) into tiers of
-// movies. Rows sharing a position are a tie. The joined `movies` row covers
+// Turns rankings rows ({ movie_id, position, category, movies: {...} }) into
+// tiers of movies. Rows sharing a position are a tie. Each movie in the result
+// is a copy carrying its `category` ('loved' | 'okay' | 'meh'). The joined `movies` row covers
 // movies outside the catalog; rows we can't build a movie for are skipped,
 // and empty tiers dropped, so the result is always dense.
 export function rowsToTiers(rows) {
   const byPosition = new Map()
   for (const row of rows ?? []) {
-    const movie = getMovieByTmdbId(row.movie_id) || movieFromDb({ ...row.movies, tmdb_id: row.movie_id })
-    if (!movie) continue
+    const found = getMovieByTmdbId(row.movie_id) || movieFromDb({ ...row.movies, tmdb_id: row.movie_id })
+    if (!found) continue
+    const movie = { ...found, category: row.category ?? null }
     savedMovies.add(movie.tmdb_id)
     if (!byPosition.has(row.position)) byPosition.set(row.position, [])
     byPosition.get(row.position).push(movie)
@@ -92,7 +96,7 @@ export async function loadMyList() {
   if (!user) return
   const { data, error } = await supabase
     .from('rankings')
-    .select('movie_id, position, movies(tmdb_id, title, year, poster_path, genres, overview)')
+    .select('movie_id, position, category, movies(tmdb_id, title, year, poster_path, genres, overview)')
     .eq('user_id', user.id)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true })
@@ -157,33 +161,87 @@ function requireMovie(id) {
 async function ensureSaved(movie) {
   if (isCatalogMovie(movie) || savedMovies.has(movie.tmdb_id)) return
   const { data } = await supabase.auth.getSession()
-  const token = data?.session?.access_token
-  if (!token) throw new Error('Log in to rank movies.')
-  await saveMovie(movie.tmdb_id, token)
+  let token = data?.session?.access_token
+  if (!token) throw new Error(SESSION_ERROR)
+  try {
+    await saveMovie(movie.tmdb_id, token)
+  } catch (error) {
+    if (!(error instanceof UnauthorizedError)) throw error
+    // The server didn't accept the token even though the browser thought it
+    // was current: force a refresh and try once more.
+    const refreshed = await supabase.auth.refreshSession()
+    token = refreshed.data?.session?.access_token
+    if (!token) {
+      await supabase.auth.signOut().catch(() => {})
+      throw new Error(SESSION_ERROR)
+    }
+    await saveMovie(movie.tmdb_id, token)
+  }
   savedMovies.add(movie.tmdb_id)
 }
 
 // Puts a movie where head-to-head placement landed it, moving it if it was
-// already ranked (that's how reranking saves). Same arguments as before:
-//   tied = false: as its own tier at `index` (0 = best)
-//   tied = true:  into the existing tier at `index`
+// already ranked (that's how reranking saves). The placement is inside the
+// movie's category, the same list CompareView compared it against:
+//   category: 'loved' | 'okay' | 'meh'
+//   tied = false: as its own tier at `index` (0 = best in that category)
+//   tied = true:  into the category's existing tier at `index`
+// The database keeps the whole list ordered loved -> okay -> not a fan.
 // Throws an Error with a user-facing message if the save fails; the list
 // is left as it was.
-export async function placeMovie(id, { index, tied = false }) {
+// Makes sure the access token is still valid before a write. Supabase refreshes
+// it in the background, but a tab that has been open for hours can miss that;
+// getSession() refreshes an expired token, and returns null if it can't.
+async function requireFreshSession() {
+  const { data } = await supabase.auth.getSession()
+  const session = data?.session
+  if (!session) throw new Error(SESSION_ERROR)
+  // Expired (or about to): refresh now. If the refresh token is dead too
+  // (used up by another tab, for instance), the user has to log in again.
+  // (sessions without an expiry, like test doubles, are taken as fresh)
+  if (session.expires_at && session.expires_at * 1000 < Date.now() + 30_000) {
+    const { data: fresh, error } = await supabase.auth.refreshSession()
+    if (error || !fresh?.session) {
+      await supabase.auth.signOut().catch(() => {})
+      throw new Error(SESSION_ERROR)
+    }
+  }
+}
+
+function describe(error) {
+  const text = error?.message || error?.details || String(error ?? '')
+  return text && text !== SAVE_ERROR ? ` (${text})` : ''
+}
+
+export async function placeMovie(id, { category, index, tied = false }) {
   const movie = requireMovie(id)
   requireSignedIn()
-  const position = Math.max(0, Math.min(Number.isFinite(index) ? index : Infinity, state.tiers.length))
+  if (!isCategory(category)) throw new Error(`Unknown category: ${category}`)
+  const categoryTiers = tiersInCategory(state.tiers, category).length
+  const position = Math.max(0, Math.min(Number.isFinite(index) ? index : Infinity, categoryTiers))
+  await requireFreshSession()
   try {
     await ensureSaved(movie)
-  } catch {
-    throw new Error(SAVE_ERROR)
+  } catch (cause) {
+    console.error('Saving the movie before ranking failed:', cause)
+    // The API answers "Log in to rank movies." when it can't verify the token.
+    if (/log in/i.test(cause?.message ?? '')) {
+      await supabase.auth.signOut().catch(() => {})
+      throw new Error(SESSION_ERROR)
+    }
+    throw new Error(`${SAVE_ERROR}${describe(cause)}`)
   }
   const { error } = await supabase.rpc('save_ranking', {
     p_movie_id: movie.tmdb_id,
+    p_category: category,
     p_position: position,
     p_tied: Boolean(tied),
   })
-  if (error) throw new Error(SAVE_ERROR)
+  if (error) {
+    console.error('save_ranking failed:', error)
+    if (/not signed in|jwt|expired/i.test(error.message ?? '')) throw new Error(SESSION_ERROR)
+    throw new Error(`${SAVE_ERROR}${describe(error)}`)
+  }
   await loadMyList()
 }
 

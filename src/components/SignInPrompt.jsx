@@ -1,11 +1,7 @@
 // Shown in place of pages that need an account when nobody is logged in.
-//
-// TODO(login form): the signup/login form goes here. It must sign up with
-//   supabase.auth.signUp({ email, password, options: { data: { username } } })
-// (the database creates the profile from that username) and log in with
-//   supabase.auth.signInWithPassword({ email, password }).
-// Nothing else is needed: supabaseStore notices the login and loads the list.
-export function SignInPrompt() {
+// Login and signup happen on LoginPage; App remembers which page the user
+// wanted so they come back to it afterwards.
+export function SignInPrompt({ onLogin, onSignUp }) {
   return (
     <section className="page">
       <div className="empty">
@@ -17,9 +13,14 @@ export function SignInPrompt() {
           Your ranked list, scores and recommendations are saved to your SceneIt account,
           so they follow you to any device. The leaderboard is open to everyone.
         </p>
-        <button type="button" className="btn" onClick={() => { window.location.hash = '/login' }}>
-          Log in
-        </button>
+        <div className="empty__actions">
+          <button type="button" className="btn btn--accent" onClick={onLogin}>
+            Log in
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={onSignUp}>
+            Create an account
+          </button>
+        </div>
       </div>
     </section>
   )

@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import Icon from '../components/Icon.jsx'
 import Poster from '../components/Poster.jsx'
 import { tierRanks } from '../features/ranking/binaryInsertion.js'
 import Segmented from '../components/Segmented.jsx'
 import {
-  categoryOf,
+  categoryOfMovie,
   countByCategory,
   moviesUntilScores,
   SCORE_CATEGORIES,
   SCORE_UNLOCK,
   scoreTiers,
+  tierListOf,
 } from '../features/ranking/scores.js'
 import { posterUrl } from '../lib/localStore.js'
 import { removeMovie } from '../lib/supabaseStore.js'
@@ -16,7 +18,8 @@ import { useMyTiers } from '../lib/useMyList.js'
 
 // The signed-in user's ranked list. Starts empty; "Rank a movie" opens search.
 // Tied movies share a rank. Scores appear once 10+ movies are ranked, and
-// with them a filter by score category (Loved it / It was okay / Not a fan).
+// with them a filter by the category picked when ranking (Loved it / It was
+// okay / Not a fan). The same movies can also be shown as a tier list (S to F).
 // highlightId briefly marks the movie that was just ranked.
 export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const tiers = useMyTiers()
@@ -26,17 +29,19 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const toUnlock = moviesUntilScores(count)
   const [removing, setRemoving] = useState(null) // id of the movie being removed
   const [removeError, setRemoveError] = useState(null)
-  const [filter, setFilter] = useState('all')
-  // No scores (under 10 movies) means no categories, so show everything.
-  const activeFilter = scores ? filter : 'all'
-  const counts = countByCategory(scores)
-  const filterOptions = [
+  // 'all' | a category id | 'tiers'
+  const [view, setView] = useState('all')
+  // Categories need scores (10+ movies); without them only All and Tier list apply.
+  const activeView = view === 'tiers' || scores ? view : 'all'
+  const counts = countByCategory(tiers)
+  const options = [
     { id: 'all', label: `All · ${count}` },
-    ...SCORE_CATEGORIES.map((c) => ({ id: c.id, label: `${c.label} · ${counts[c.id]}` })),
+    ...(scores ? SCORE_CATEGORIES.map((c) => ({ id: c.id, label: `${c.label} · ${counts[c.id]}` })) : []),
+    { id: 'tiers', label: 'Tier list' },
   ]
-  const category = SCORE_CATEGORIES.find((c) => c.id === activeFilter)
-  const shows = (movie) => activeFilter === 'all' || categoryOf(scores.get(movie.id)) === activeFilter
-  const shownCount = activeFilter === 'all' ? count : counts[activeFilter]
+  const category = SCORE_CATEGORIES.find((c) => c.id === activeView)
+  const shows = (movie) => !category || categoryOfMovie(movie) === activeView
+  const shownCount = category ? counts[activeView] : count
 
   async function remove(movie) {
     setRemoving(movie.id)
@@ -54,7 +59,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
     <section className="page">
       <header className="page__head">
         <div>
-          <h1 className="page__title">My List</h1>
+          <h1 className="page__title"><Icon name="bookmark" size={30} />My List</h1>
           <p className="page__sub">
             {count
               ? `${count} ranked ${count === 1 ? 'movie' : 'movies'}`
@@ -62,7 +67,8 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
           </p>
         </div>
         {count > 0 && (
-          <button type="button" className="btn" onClick={onAdd}>
+          <button type="button" className="btn btn--accent" onClick={onAdd}>
+            <Icon name="swords" size={18} />
             Rank a movie
           </button>
         )}
@@ -79,7 +85,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         <div className="unlock" role="status">
           <div className="unlock__text">
             <strong>Rank {toUnlock} more {toUnlock === 1 ? 'movie' : 'movies'} to unlock scores</strong>
-            <span>Once you've ranked {SCORE_UNLOCK}, every movie gets a score out of 10 based on where it sits.</span>
+            <span>Once you've ranked {SCORE_UNLOCK}, every movie gets a score out of 10 based on how you felt about it and where it sits.</span>
           </div>
           <div
             className="unlock__bar"
@@ -94,17 +100,20 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         </div>
       )}
 
-      {scores && (
+      {count > 0 && (
         <div className="listfilter">
-          <Segmented label="Filter by how much you liked it" options={filterOptions} value={activeFilter} onChange={setFilter} />
+          <Segmented label="Filter or view" options={options} value={activeView} onChange={setView} />
           {category && <span className="listfilter__range">Scores {category.range}</span>}
+          {activeView === 'tiers' && <span className="listfilter__range">{scores ? 'Rows cut by score' : 'Rows cut by position until scores unlock'}</span>}
         </div>
       )}
 
-      {count > 0 && shownCount === 0 ? (
+      {count > 0 && activeView === 'tiers' ? (
+        <TierList tiers={tiers} onOpen={onOpen} highlightId={highlightId} />
+      ) : count > 0 && shownCount === 0 ? (
         <div className="notice" role="status">
           <span>No movies in “{category.label}” yet.</span>
-          <button type="button" className="row__btn" onClick={() => setFilter('all')}>Show all</button>
+          <button type="button" className="row__btn" onClick={() => setView('all')}>Show all</button>
         </div>
       ) : count === 0 ? (
         <div className="empty">
@@ -116,7 +125,8 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
             Add a movie you've watched to start your ranking. After the first one,
             SceneIt asks you to compare each new movie head-to-head.
           </p>
-          <button type="button" className="btn" onClick={onAdd}>
+          <button type="button" className="btn btn--accent" onClick={onAdd}>
+            <Icon name="swords" size={18} />
             Rank a movie
           </button>
         </div>
@@ -175,5 +185,34 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
         </ol>
       )}
     </section>
+  )
+}
+
+// Tier-maker view: one row per tier, S at the top, posters left to right in
+// rank order. Empty rows stay so the scale reads the same for everyone.
+function TierList({ tiers, onOpen, highlightId }) {
+  const rows = tierListOf(tiers)
+  return (
+    <div className="tierlist" role="list" aria-label="Tier list">
+      {rows.map((row) => (
+        <div key={row.id} className="tierlist__row" role="listitem" style={{ '--tier': row.color }}>
+          <span className="tierlist__label" aria-label={`Tier ${row.id}`}>{row.id}</span>
+          <div className="tierlist__movies">
+            {row.movies.map((movie) => (
+              <button
+                key={movie.id}
+                type="button"
+                className={`tierlist__movie${movie.id === highlightId ? ' is-new' : ''}`}
+                onClick={() => onOpen(movie.id)}
+                title={movie.title}
+                aria-label={movie.title}
+              >
+                <Poster title={movie.title} src={posterUrl(movie, 'w154')} size="sm" />
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

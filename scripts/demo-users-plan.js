@@ -60,9 +60,11 @@ function pickMovies(likes, catalog, count, rand) {
   return picked
 }
 
-// One user's ranked list: [{ tmdb_id, position, created_at }], best first,
-// positions dense from 0, tied movies sharing a position (same shape the
-// database's save_ranking keeps).
+// One user's ranked list: [{ tmdb_id, position, category, created_at }], best
+// first, positions dense from 0, tied movies sharing a position, and
+// categories in blocks: 'loved', then 'okay', then 'meh' (same shape the
+// database's save_ranking keeps). Roughly the top 45% of tiers are loved and
+// the bottom 30% not a fan.
 export function buildRankings(user, catalog, rand, now = Date.now()) {
   const count = Math.min(catalog.length, MIN_RANKED + Math.floor(rand() * (MAX_RANKED - MIN_RANKED + 1)))
   const taste = (movie) =>
@@ -74,13 +76,22 @@ export function buildRankings(user, catalog, rand, now = Date.now()) {
     .sort((a, b) => b.taste - a.taste)
 
   let position = -1
-  return ordered.map(({ movie }, i) => {
+  const rows = ordered.map(({ movie }, i) => {
     if (i === 0 || rand() >= TIE_CHANCE) position += 1
     // About 40% ranked this week, the rest earlier this month, so the weekly
     // and monthly leaderboards differ.
     const daysAgo = rand() < 0.4 ? rand() * 6.5 : 7 + rand() * 22
     return { tmdb_id: movie.tmdb_id, position, created_at: new Date(now - daysAgo * DAY_MS).toISOString() }
   })
+  const tierCount = position + 1
+  for (const row of rows) row.category = categoryForTier(row.position, tierCount)
+  return rows
+}
+
+// Category for the tier at `position` out of `tierCount`, by how far down it is.
+export function categoryForTier(position, tierCount) {
+  const fraction = position / tierCount
+  return fraction < 0.45 ? 'loved' : fraction < 0.7 ? 'okay' : 'meh'
 }
 
 // Friendships among demo users, plus with real accounts.

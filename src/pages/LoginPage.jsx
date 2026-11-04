@@ -1,15 +1,21 @@
 import { useState } from 'react'
+import Poster from '../components/Poster.jsx'
+import { getMovie, posterUrl } from '../lib/localStore.js'
 import { supabase } from '../lib/supabase.js'
 import { isEmail, validateLogin, validateSignUp } from '../lib/validation.js'
 import './LoginPage.css'
 
 const NETWORK_ERROR = "Couldn't reach SceneIt. Check your connection and try again."
 const SERVER_ERROR = 'Something went wrong on our end. Try again in a moment, or log in with your email.'
+// Two catalog movies for the hero's head-to-head.
+const HERO_A = getMovie('interstellar-2014') ?? { title: 'Interstellar' }
+const HERO_B = getMovie('inception-2010') ?? { title: 'Inception' }
+
 const DEV_API_MISSING =
   'Username login needs the API server. Log in with your email, or run the app with "npx vercel dev".'
 
-export default function LoginPage({ onSuccess }) {
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
+export default function LoginPage({ initialMode = 'login', onSuccess }) {
+  const [mode, setMode] = useState(initialMode) // 'login' | 'signup'
   const [username, setUsername] = useState('')
   const [identifier, setIdentifier] = useState('') // email or username, login only
   const [email, setEmail] = useState('')
@@ -136,21 +142,21 @@ export default function LoginPage({ onSuccess }) {
         <section className="login-hero" aria-hidden="true">
           <div className="versus">
             <div className="versus-side versus-a">
-              <span className="versus-poster" />
-              <span className="versus-poster versus-poster-back" />
+              <Poster title={HERO_A.title} src={posterUrl(HERO_A, 'w342')} size="md" />
             </div>
+            <span className="versus-vs">vs</span>
             <div className="versus-side versus-b">
-              <span className="versus-poster" />
-              <span className="versus-poster versus-poster-back" />
+              <Poster title={HERO_B.title} src={posterUrl(HERO_B, 'w342')} size="md" />
             </div>
           </div>
           <p className="login-hero-line">Which did you like more?</p>
+          <p className="login-hero-sub">Every comparison builds your ranked list. No stars, just picks.</p>
         </section>
 
         <section className="login-panel">
-          <h2 className="login-title">
+          <h1 className="login-title">
             {isSignUp ? 'Create your SceneIt account' : 'Log in to SceneIt'}
-          </h2>
+          </h1>
           <p className="login-subtitle">
             {isSignUp
               ? 'Save your rankings and get recommendations on any device.'

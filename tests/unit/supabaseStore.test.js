@@ -136,6 +136,16 @@ describe('rowsToTiers', () => {
     expect(tierIds(tiers)).toEqual([['dune-part-two-2024'], ['past-lives-2023']])
   })
 
+  it('puts each row\'s category on a copy of the movie', async () => {
+    const tiers = store.rowsToTiers([
+      { movie_id: DUNE, position: 0, category: 'loved' },
+      { movie_id: PAST_LIVES, position: 1, category: 'meh' },
+    ])
+    expect(tiers.map((t) => t[0].category)).toEqual(['loved', 'meh'])
+    const local = await import('../../src/lib/localStore.js')
+    expect(local.getMovie('dune-part-two-2024').category).toBeUndefined()
+  })
+
   it('handles no rows', () => {
     expect(store.rowsToTiers([])).toEqual([])
     expect(store.rowsToTiers(null)).toEqual([])
@@ -205,54 +215,72 @@ describe('login state', () => {
 describe('placeMovie', () => {
   it('saves with the TMDb id and reloads the list', async () => {
     await logIn()
-    db.rows = [{ movie_id: DUNE, position: 0 }]
-    await store.placeMovie('dune-part-two-2024', { index: 0 })
+    db.rows = [{ movie_id: DUNE, position: 0, category: 'loved' }]
+    await store.placeMovie('dune-part-two-2024', { category: 'loved', index: 0 })
     expect(db.rpcCalls).toEqual([
-      { name: 'save_ranking', args: { p_movie_id: DUNE, p_position: 0, p_tied: false } },
+      { name: 'save_ranking', args: { p_movie_id: DUNE, p_category: 'loved', p_position: 0, p_tied: false } },
     ])
     expect(tierIds(store.getMyTiers())).toEqual([['dune-part-two-2024']])
   })
 
   it('passes ties through', async () => {
-    db.rows = [{ movie_id: DUNE, position: 0 }]
+    db.rows = [{ movie_id: DUNE, position: 0, category: 'loved' }]
     await logIn()
-    await store.placeMovie('past-lives-2023', { index: 0, tied: true })
-    expect(db.rpcCalls[0].args).toEqual({ p_movie_id: PAST_LIVES, p_position: 0, p_tied: true })
+    await store.placeMovie('past-lives-2023', { category: 'loved', index: 0, tied: true })
+    expect(db.rpcCalls[0].args).toEqual({ p_movie_id: PAST_LIVES, p_category: 'loved', p_position: 0, p_tied: true })
   })
 
-  it('clamps the position to the list (Infinity = bottom, negative = top)', async () => {
-    db.rows = [{ movie_id: DUNE, position: 0 }, { movie_id: PAST_LIVES, position: 1 }]
+  it('clamps the position to the category (Infinity = bottom, negative = top)', async () => {
+    db.rows = [{ movie_id: DUNE, position: 0, category: 'loved' }, { movie_id: PAST_LIVES, position: 1, category: 'loved' }]
     await logIn()
-    await store.placeMovie('whiplash-2014', { index: Infinity })
-    await store.placeMovie('whiplash-2014', { index: -3 })
+    await store.placeMovie('whiplash-2014', { category: 'loved', index: Infinity })
+    await store.placeMovie('whiplash-2014', { category: 'loved', index: -3 })
     expect(db.rpcCalls.map((c) => c.args.p_position)).toEqual([2, 0])
   })
 
   it('throws a user-facing error and keeps the list when the save fails', async () => {
-    db.rows = [{ movie_id: DUNE, position: 0 }]
+    db.rows = [{ movie_id: DUNE, position: 0, category: 'loved' }]
     await logIn()
     const before = store.getMyTiers()
     db.failRpc = true
-    await expect(store.placeMovie('past-lives-2023', { index: 0 })).rejects.toThrow(store.SAVE_ERROR)
+    await expect(store.placeMovie('past-lives-2023', { category: 'loved', index: 0 })).rejects.toThrow(store.SAVE_ERROR)
     expect(store.getMyTiers()).toBe(before)
   })
 
   it('refuses when nobody is logged in', async () => {
     db.authCallback('INITIAL_SESSION', null)
     await settle()
-    await expect(store.placeMovie('dune-part-two-2024', { index: 0 })).rejects.toThrow('Log in')
+    await expect(store.placeMovie('dune-part-two-2024', { category: 'loved', index: 0 })).rejects.toThrow('Log in')
+    expect(db.rpcCalls).toEqual([])
+  })
+
+  it('sends the position inside the category, clamped to that category', async () => {
+    db.rows = [
+      { movie_id: DUNE, position: 0, category: 'loved' },
+      { movie_id: PAST_LIVES, position: 1, category: 'okay' },
+    ]
+    await logIn()
+    await store.placeMovie('whiplash-2014', { category: 'okay', index: Infinity })
+    await store.placeMovie('whiplash-2014', { category: 'meh', index: 5 })
+    expect(db.rpcCalls.map((c) => [c.args.p_category, c.args.p_position])).toEqual([['okay', 1], ['meh', 0]])
+  })
+
+  it('refuses an unknown category without calling the server', async () => {
+    await logIn()
+    await expect(store.placeMovie('dune-part-two-2024', { category: 'great', index: 0 })).rejects.toThrow('Unknown category')
+    await expect(store.placeMovie('dune-part-two-2024', { index: 0 })).rejects.toThrow('Unknown category')
     expect(db.rpcCalls).toEqual([])
   })
 
   it('refuses movies it has never seen', async () => {
     await logIn()
-    await expect(store.placeMovie('not-a-movie', { index: 0 })).rejects.toThrow('Unknown movie')
+    await expect(store.placeMovie('not-a-movie', { category: 'loved', index: 0 })).rejects.toThrow('Unknown movie')
     expect(db.rpcCalls).toEqual([])
   })
 
   it('does not ask the server to save catalog movies', async () => {
     await logIn()
-    await store.placeMovie('dune-part-two-2024', { index: 0 })
+    await store.placeMovie('dune-part-two-2024', { category: 'loved', index: 0 })
     expect(db.saveCalls).toEqual([])
   })
 
@@ -260,11 +288,11 @@ describe('placeMovie', () => {
     await logIn()
     const local = await import('../../src/lib/localStore.js')
     local.movieFromDb(PADDINGTON_ROW) // what search does with an API result
-    await store.placeMovie('tmdb-346648', { index: 0 })
+    await store.placeMovie('tmdb-346648', { category: 'loved', index: 0 })
     expect(db.saveCalls).toEqual([{ tmdbId: PADDINGTON, token: 'token-123' }])
     expect(db.rpcCalls[0].args.p_movie_id).toBe(PADDINGTON)
     // Second time it's known to be saved.
-    await store.placeMovie('tmdb-346648', { index: 0 })
+    await store.placeMovie('tmdb-346648', { category: 'loved', index: 0 })
     expect(db.saveCalls).toHaveLength(1)
   })
 
@@ -273,14 +301,14 @@ describe('placeMovie', () => {
     const local = await import('../../src/lib/localStore.js')
     local.movieFromDb(PADDINGTON_ROW)
     db.failSaveMovie = true
-    await expect(store.placeMovie('tmdb-346648', { index: 0 })).rejects.toThrow(store.SAVE_ERROR)
+    await expect(store.placeMovie('tmdb-346648', { category: 'loved', index: 0 })).rejects.toThrow(store.SAVE_ERROR)
     expect(db.rpcCalls).toEqual([])
   })
 
   it('treats movies loaded from the database as already saved', async () => {
-    db.rows = [{ movie_id: PADDINGTON, position: 0, movies: PADDINGTON_ROW }]
+    db.rows = [{ movie_id: PADDINGTON, position: 0, category: 'loved', movies: PADDINGTON_ROW }]
     await logIn()
-    await store.placeMovie('tmdb-346648', { index: 0 })
+    await store.placeMovie('tmdb-346648', { category: 'loved', index: 0 })
     expect(db.saveCalls).toEqual([])
   })
 })

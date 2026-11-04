@@ -1,9 +1,11 @@
 import { getAdminClient, getUserFromRequest } from '../_lib/supabaseAdmin.js';
 import { tmdbFetch, toMovie } from '../_lib/tmdb.js';
+import { pickDetails } from '../../src/lib/movieDetails.js';
 
 const MOVIE_COLUMNS = 'tmdb_id, title, year, poster_path, genres, overview';
 
-// GET  /api/movies/27205   movie info from TMDb
+// GET  /api/movies/27205   movie info from TMDb, with the details the panel
+//                          shows (runtime, director, cast, tagline, backdrop)
 // POST /api/movies/27205   makes sure the movie is in our `movies` table so it
 //                          can be ranked (rankings.movie_id points at it).
 //                          Logged-in users only. Returns the saved row.
@@ -20,8 +22,9 @@ export default async function handler(req, res) {
   if (req.method === 'POST') return saveMovie(req, res, Number(id));
 
   try {
-    const data = await tmdbFetch(`/movie/${id}`);
-    return res.status(200).json({ movie: toMovie(data) });
+    const data = await tmdbFetch(`/movie/${id}`, { append_to_response: 'credits' });
+    res.setHeader?.('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
+    return res.status(200).json({ movie: { ...toMovie(data), ...pickDetails(data) } });
   } catch (error) {
     if (error.status === 404) {
       return res.status(404).json({ error: 'Movie not found' });

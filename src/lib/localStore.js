@@ -47,6 +47,7 @@ export function movieFromDb(row) {
     if (!BY_ID.has(known.id)) {
       if (!known.genres.length && Array.isArray(row.genres)) known.genres = row.genres
       if (!known.overview && row.overview?.trim()) known.overview = row.overview.trim()
+      if (!known.backdrop_path && row.backdrop_path) known.backdrop_path = row.backdrop_path
     }
     return known
   }
@@ -58,6 +59,7 @@ export function movieFromDb(row) {
     year: Number.isFinite(row.year) ? row.year : null,
     genres: Array.isArray(row.genres) ? row.genres : [],
     poster_path: row.poster_path || null,
+    backdrop_path: row.backdrop_path || null,
     overview: row.overview?.trim() || null,
   }
   EXTRA.set(movie.id, movie)

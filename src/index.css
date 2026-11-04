@@ -1,41 +1,53 @@
 /* Global tokens and base styles.
-   Soft neutral look: warm grey page, off-white surfaces, near-black pills. */
+   Cinematic dark look: near-black navy page, blue-gray surfaces, sky-blue accents. */
 
 :root {
-  --bg: #eceae6;          /* page */
-  --surface: #f7f6f4;     /* boards, cards */
-  --paper: #ffffff;       /* raised controls */
-  --ink: #1d1c1a;         /* text + primary actions */
-  --ink-2: #55524c;       /* secondary text */
-  --ink-3: #6e6a63;       /* hints, placeholders */
-  --muted: #8b867d;       /* inactive tab labels (large text only) */
-  --line: #dedad3;
-  --line-2: #b8b3aa;      /* dashed outlines */
-  --hover: #e4e1db;
-  --accent: #1d1c1a;
-  --accent-ink: #ffffff;
-  --gold: #b8892c;
-  --shadow-rgb: 29 28 26;
+  --bg: #07090f;            /* page */
+  --bg-2: #0b0f18;          /* header, hero base */
+  --surface: #111724;       /* boards, cards, dialogs */
+  --surface-2: #171f2e;     /* raised controls */
+  --paper: #1c2536;         /* hover surfaces */
+  --ink: #ffffff;           /* primary text */
+  --ink-2: #c3cbd8;         /* secondary text */
+  --ink-3: #8b96a8;         /* hints, placeholders */
+  --muted: #65708a;         /* inactive labels */
+  --line: #223049;          /* subtle borders */
+  --line-2: #2f4160;        /* stronger borders */
+  --hover: #182134;
+  --accent: #66d1ff;        /* sky blue */
+  --accent-2: #9ae5ff;      /* lighter cyan */
+  --accent-ink: #06121b;    /* text on accent */
+  --accent-rgb: 102 209 255;
+  --gold: #f2c14e;
+  --danger: #ff6b7a;
+  --shadow-rgb: 0 0 0;
 
   --r-sm: 10px;
   --r-md: 16px;
-  --r-lg: 28px;
+  --r-lg: 24px;
   --r-pill: 999px;
-  --shadow-sm: 0 2px 8px rgb(var(--shadow-rgb) / 0.06);
-  --shadow-md: 0 8px 24px rgb(var(--shadow-rgb) / 0.12);
+  --shadow-sm: 0 2px 10px rgb(var(--shadow-rgb) / 0.35);
+  --shadow-md: 0 12px 32px rgb(var(--shadow-rgb) / 0.5);
+  --glow: 0 0 0 1px rgb(var(--accent-rgb) / 0.45), 0 0 18px rgb(var(--accent-rgb) / 0.25);
+  --glow-strong: 0 0 0 1px rgb(var(--accent-rgb) / 0.8), 0 0 28px rgb(var(--accent-rgb) / 0.45);
 
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --fast: 160ms;
   --mid: 280ms;
 
-  --font: "Albert Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  color-scheme: light;
+  --nav-h: 68px;
+  --page-x: clamp(16px, 2.6vw, 44px);
+
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
 html, body, #root { min-height: 100%; }
+
+html { scrollbar-color: var(--line-2) transparent; }
 
 body {
   margin: 0;
@@ -44,9 +56,12 @@ body {
   font-family: var(--font);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-h1, h2, p { margin: 0; }
+h1, h2, h3, p { margin: 0; }
+
+a { color: var(--accent); }
 
 button {
   font: inherit;
@@ -56,14 +71,26 @@ button {
   background: none;
   padding: 0;
 }
-button:focus-visible, a:focus-visible, input:focus-visible {
-  outline: 2px solid var(--ink);
+input, textarea { font: inherit; }
+
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+
+::selection { background: rgb(var(--accent-rgb) / 0.35); }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
