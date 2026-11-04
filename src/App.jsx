@@ -17,6 +17,7 @@ import LeaderboardPage from './pages/LeaderboardPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
+import UserListPage from './pages/UserListPage.jsx'
 import UserProfilePage from './pages/UserProfilePage.jsx'
 
 function App() {
@@ -89,9 +90,11 @@ function App() {
         ) : page === 'login' ? (
           <LoginPage onSuccess={() => navigate('my-list')} />
         ) : page === 'profile' ? (
-          <ProfilePage account={account} />
+          <ProfilePage account={account} onOpen={openDetails} />
         ) : page === 'user' ? (
-          <UserProfilePage username={route.username} account={account} />
+          <UserProfilePage username={route.username} account={account} onOpen={openDetails} />
+        ) : page === 'user-list' ? (
+          <UserListPage username={route.username} account={account} onOpen={openDetails} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (

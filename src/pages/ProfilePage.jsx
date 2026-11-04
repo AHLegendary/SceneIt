@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import TopMovies from '../components/TopMovies.jsx'
 import { fetchProfile, saveProfile } from '../lib/profileQueries.js'
 import {
   BIO_MAX,
@@ -7,6 +8,7 @@ import {
   toProfileUpdate,
   validateProfile,
 } from '../lib/profileValidation.js'
+import { useMyTiers } from '../lib/useMyList.js'
 import './ProfilePage.css'
 
 const LOAD_ERROR = "Couldn't load your profile. Check your connection and try again."
@@ -29,8 +31,9 @@ function sameForm(a, b) {
   return a.bio.trim() === b.bio.trim() && a.pronouns.trim() === b.pronouns.trim() && a.isPublic === b.isPublic
 }
 
-export default function ProfilePage({ account }) {
+export default function ProfilePage({ account, onOpen }) {
   const userId = account.user.id
+  const tiers = useMyTiers()
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [saved, setSaved] = useState(null) // form values as last stored
   const [form, setForm] = useState(null)
@@ -214,6 +217,8 @@ export default function ProfilePage({ account }) {
           )}
         </div>
       </form>
+
+      <TopMovies tiers={tiers} viewAllHref="#/my-list" onOpen={onOpen} />
     </section>
   )
 }

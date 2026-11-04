@@ -11,4 +11,4 @@ export const PAGES = [
 
 // 'user' is someone else's profile (#/u/name); it isn't a sidebar tab.
 // Pages anyone can see without logging in. Everything else needs an account.
-export const PUBLIC_PAGES = new Set(['leaderboard', 'login', 'user'])
+export const PUBLIC_PAGES = new Set(['leaderboard', 'login', 'user', 'user-list'])
