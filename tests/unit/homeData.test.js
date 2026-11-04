@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { catalogPopular, rowsToActivity } from '../../src/lib/homeData.js'
+
+// homeData imports the Supabase client, which throws without env vars (CI has none).
+vi.mock('../../src/lib/supabase.js', () => ({ supabase: {} }))
+
+const { catalogPopular, rowsToActivity } = await import('../../src/lib/homeData.js')
 
 const kevin = { id: 'k', username: 'kevin' }
 const maria = { id: 'm', username: 'maria' }
