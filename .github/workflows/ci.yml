@@ -25,7 +25,13 @@ jobs:
         run: npm ci
 
       - name: Run unit tests
-        run: npm run test:run
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration
 
       - name: Build application
         run: npm run build
+
+      - name: Lint
+        run: npm run lint
