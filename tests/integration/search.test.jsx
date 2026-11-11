@@ -171,14 +171,43 @@ describe('header search genres', () => {
     expect(optionTitles()).toEqual(['Zebra Crossing', 'Zebra Nights'])
   })
 
-  it('names the genre when nothing matches', async () => {
+  it('names the genre when nothing matches, and offers all matches', async () => {
     const { user } = await open()
     await user.type(box(), 'zebra')
     await waitFor(() => expect(options()).toHaveLength(2))
 
     await user.click(screen.getByRole('button', { name: 'Romance' }))
 
-    expect(await screen.findByText('No romance movies match “zebra”.')).toBeTruthy()
+    expect(await screen.findByText(/No romance movies match “zebra”\./)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Show all 2 matches' }))
+    expect(optionTitles()).toEqual(['Zebra Crossing', 'Zebra Nights'])
+  })
+
+  it('says when a genre is hiding matches', async () => {
+    const { user } = await open()
+    await user.type(box(), 'zebra')
+    await waitFor(() => expect(options()).toHaveLength(2))
+
+    await user.click(screen.getByRole('button', { name: 'Horror' }))
+    expect(screen.getByRole('status').textContent).toContain('Showing Horror only · 1 more match in all genres')
+
+    await user.click(screen.getByRole('button', { name: 'Show all' }))
+    expect(optionTitles()).toEqual(['Zebra Crossing', 'Zebra Nights'])
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('forgets the genre once the search is closed', async () => {
+    const { user } = await open()
+    await user.type(box(), 'zebra')
+    await waitFor(() => expect(options()).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: 'Horror' }))
+    expect(optionTitles()).toEqual(['Zebra Nights'])
+
+    await user.keyboard('{Escape}')
+    await user.clear(box())
+    await user.type(box(), 'zebra')
+    await waitFor(() => expect(options()).toHaveLength(2))
+    expect(screen.getByRole('button', { name: 'Horror' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('also lists catalog movies of that genre from just a chip, up to seven', async () => {
