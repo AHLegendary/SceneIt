@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
 
 const ids = (n) => MOVIES.slice(0, n).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
@@ -33,25 +33,13 @@ const captions = (name) => [...rowEl(name).querySelectorAll('.card:not(.card--sk
 const rowNames = () => [...document.querySelectorAll('section.row-section')].map((s) => s.getAttribute('aria-label'))
 
 describe('the welcome strip', () => {
-  it('welcomes you and offers head-to-head ranking, with nothing rotating', async () => {
+  it('welcomes you, with nothing rotating and no idle button', async () => {
     await open({ as: null })
 
     expect(screen.getByRole('heading', { level: 1, name: 'Welcome to SceneIt' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Play Head-to-Head/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Play Head-to-Head/ })).toBeNull()
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(document.querySelector('.hero')).toBeNull()
-  })
-
-  it('opens the ranking dialog from "Play Head-to-Head" when you are logged in', async () => {
-    const { user } = await open()
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
-    expect(await screen.findByRole('dialog', { name: 'Rank a movie' })).toBeTruthy()
-  })
-
-  it('sends you to log in from "Play Head-to-Head" when you are not', async () => {
-    const { user } = await open({ as: null })
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
-    expect(window.location.hash).toBe('#/login')
   })
 })
 
@@ -177,7 +165,7 @@ describe('community rows', () => {
     const { user } = await open()
     await row('Top Ranked by the Community').findByText(/Be the first/)
 
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
+    await useMenu(user, 'Rank Movies')
     const dialog = await screen.findByRole('dialog', { name: 'Rank a movie' })
     backend.tmdbKnows(A)
     await user.type(within(dialog).getByRole('searchbox'), title(A))

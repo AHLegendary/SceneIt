@@ -232,7 +232,7 @@ describe('header search when live search is down', () => {
 
 describe('the Rank a movie dialog', () => {
   const openDialog = async (user) => {
-    await user.click(await screen.findByRole('button', { name: /Play Head-to-Head/ }))
+    await useMenu(user, 'Rank Movies')
     return screen.findByRole('dialog', { name: 'Rank a movie' })
   }
 
@@ -340,17 +340,6 @@ describe('the Rank a movie dialog when logged out', () => {
     await ready({ loggedIn: true })
   }
 
-  it('sends you to log in from "Play Head-to-Head" instead of opening the dialog', async () => {
-    const { user } = await open({ as: null })
-
-    await user.click(await screen.findByRole('button', { name: /Play Head-to-Head/ }))
-
-    expect(window.location.hash).toBe('#/login')
-    expect(screen.queryByRole('dialog', { name: 'Rank a movie' })).toBeNull()
-    await logIn(user)
-    await waitFor(() => expect(window.location.hash).toBe('#/home'))
-  })
-
   it('says "Log in to rank" on a movie\'s details, and sends you to log in', async () => {
     const { user } = await open({ as: null })
     await user.type(box(), 'zebra crossing')
@@ -368,7 +357,6 @@ describe('the Rank a movie dialog when logged out', () => {
   // Known gap: after logging in, App.jsx opens the remembered dialog from a setTimeout inside an
   // effect that also changes the page. The page change re-runs the effect and clears the timer
   // first, so the dialog never opens. (Returning to a remembered *page* works; see auth.test.jsx.)
-  it.todo('opens the Rank a movie dialog after logging in from "Play Head-to-Head"')
   it.todo('reopens the movie\'s details after logging in from "Log in to rank"')
 })
 

@@ -4,13 +4,12 @@ import MovieRow from '../components/MovieRow.jsx'
 import { buildRecommendations, RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { loadFriendsActivity, loadTrending } from '../lib/homeData.js'
 import { fetchLeaderboard } from '../lib/leaderboard.js'
-import Icon from '../components/Icon.jsx'
 import { getCatalog } from '../lib/localStore.js'
 import { useFriendGroups, useFriends } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
-// Homepage: a one-line welcome with the head-to-head button, then
-// Netflix-style rows starting at Trending. Public rows (Trending, Top Ranked,
+// Homepage: a one-line welcome, then Netflix-style rows starting at
+// Trending. Ranking starts from the nav's Profile menu or a movie's details. Public rows (Trending, Top Ranked,
 // Most Watched) show for everyone; personalized rows (recommendations,
 // Friends Are Watching) only once the user is logged in and only from
 // their real data.
@@ -22,14 +21,8 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
   return (
     <div className="home">
       <section className="welcome" aria-label="Welcome to SceneIt">
-        <div>
-          <h1 className="welcome__title">Welcome to <em>SceneIt</em></h1>
-          <p className="welcome__text">Rank the movies you've seen head-to-head, and see what your friends think.</p>
-        </div>
-        <button type="button" className="btn btn--accent" onClick={onRank}>
-          <Icon name="play" size={18} />
-          Play Head-to-Head
-        </button>
+        <h1 className="welcome__title">Welcome to <em>SceneIt</em></h1>
+        <p className="welcome__text">Rank the movies you've seen head-to-head, and see what your friends think.</p>
       </section>
       <div className="home__rows">
         <TrendingRow onOpen={onOpen} inList={inList} />

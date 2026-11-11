@@ -366,19 +366,11 @@
 /* ------------------------------------------------------------------ home */
 .home { display: flex; flex-direction: column; }
 
-/* welcome strip: one line and the head-to-head button, nothing idle */
-.welcome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
-  padding: 26px var(--page-x) 6px;
-}
+/* welcome strip: a heading and one line, nothing idle */
+.welcome { padding: 26px var(--page-x) 4px; }
 .welcome__title { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
 .welcome__title em { font-style: normal; color: var(--accent); }
 .welcome__text { margin: 4px 0 0; font-size: 14px; color: var(--ink-3); }
-.welcome .btn { height: 44px; padding: 0 22px; font-size: 15px; }
 .home__rows {
   display: flex;
   flex-direction: column;
