@@ -364,11 +364,11 @@ describe('Friends Are Watching', () => {
     expect(rowEl('Friends Are Watching')).toBeNull()
   })
 
-  it('keeps the order of the rows: trending, top ranked, picks, friends, most watched', async () => {
+  it('keeps the order of the rows: picks, trending, top ranked, friends, most watched', async () => {
     backend.seedList(bob, ids(2))
     backend.addFriendship(alice, bob, 'accepted')
     await open()
     await waitFor(() => expect(cardTitles('Most Watched This Month').length).toBeGreaterThan(0))
-    expect(rowNames()).toEqual(['Trending Now', 'Top Ranked by the Community', 'Picked for You', 'Friends Are Watching', 'Most Watched This Month'])
+    expect(rowNames()).toEqual(['Picked for You', 'Trending Now', 'Top Ranked by the Community', 'Friends Are Watching', 'Most Watched This Month'])
   })
 })
