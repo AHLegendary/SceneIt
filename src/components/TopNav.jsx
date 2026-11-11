@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
@@ -69,6 +68,19 @@ const SHORTCUT_ICONS = { friends: 'friends', 'my-list': 'bookmark', rank: 'sword
 // while open the page behind is dimmed and blurred, and Escape or a click
 // anywhere outside closes it. Each shortcut is its own circular button so
 // it works with keyboard and touch.
+// Where each circle sits, in px from the Profile button's bottom-right corner
+// (x grows leftward as it goes negative). A shallow arc: My Profile tucked
+// under the button, then stepping down-left and back up. The connector line
+// and the expand animation use the same numbers.
+const FAN_SPOTS = {
+  profile: { x: -36, y: 62 },
+  rank: { x: -126, y: 92 },
+  'my-list': { x: -216, y: 108 },
+  friends: { x: -306, y: 92 },
+}
+const FAN_W = 420
+const FAN_ORDER = ['friends', 'my-list', 'rank', 'profile']
+
 function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -87,11 +99,16 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
     if (!open) return undefined
     const onKey = (e) => e.key === 'Escape' && close()
     const onDown = (e) => wrap.current && !wrap.current.contains(e.target) && close()
+    // Scrolling closes it too: with no backdrop, the circles would otherwise
+    // float over whatever the page scrolls under them.
+    const onScroll = () => close()
     window.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onDown)
+    window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       window.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('scroll', onScroll)
     }
   }, [open, close])
 
@@ -119,7 +136,6 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
 
   return (
     <div className="pmenu" ref={wrap}>
-      {open && createPortal(<div className="wheel-backdrop" aria-hidden="true" />, document.body)}
       <button
         type="button"
         className={`nav__link nav__link--profile${active ? ' is-active' : ''}`}
@@ -138,36 +154,38 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
         <Icon name="chevronDown" size={16} className="nav__caret" />
       </button>
 
-      <div id={menuId} className={`wheel${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!open}>
-        <svg className="wheel__lines" viewBox="0 0 360 190" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M180 0 L180 190" />
-          <path d="M180 0 L45.6 134.4" />
-          <path d="M180 0 L314.4 134.4" />
+      {/* Fan menu: four circles on an arc down and to the left of the button,
+          no panel behind them. Positions are CSS variables per item so the
+          expand animation can start every circle at the button. */}
+      <div id={menuId} className={`fan${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!open}>
+        <svg className="fan__lines" viewBox={`0 0 ${FAN_W} 200`} width={FAN_W} height={200} aria-hidden="true">
+          <polyline
+            className="fan__trace"
+            points={FAN_ORDER.map((id) => `${FAN_W + FAN_SPOTS[id].x},${FAN_SPOTS[id].y}`).join(' ')}
+          />
         </svg>
-        <span className="wheel__avatar" aria-hidden="true">
-          <Icon name="user" size={30} strokeWidth={2.2} />
-        </span>
-        <span className="wheel__name" title={username ?? undefined}>{username ?? 'You'}</span>
-        {PROFILE_SHORTCUTS.map((item) => (
+        {PROFILE_SHORTCUTS.map((item, i) => (
           <button
             key={item.id}
             type="button"
             role="menuitem"
-            className={`wheel__item wheel__item--${item.id}`}
+            className={`fan__item fan__item--${item.id}`}
+            style={{ '--i': i, '--x': `${FAN_SPOTS[item.id].x}px`, '--y': `${FAN_SPOTS[item.id].y}px` }}
             onClick={() => go(item.id)}
           >
-            <span className="wheel__icon">
+            <span className="fan__icon">
               <Icon name={SHORTCUT_ICONS[item.id]} size={22} />
               {item.id === 'friends' && requests > 0 && <span className="badge badge--dot" aria-hidden="true" />}
             </span>
-            <span className="wheel__label">{item.label}</span>
+            <span className="fan__label">{item.label}</span>
           </button>
         ))}
-        <button type="button" role="menuitem" className="wheel__logout" onClick={logOut} disabled={busy}>
+        <span className="fan__name" title={username ?? undefined}>{username ?? 'You'}</span>
+        <button type="button" role="menuitem" className="fan__logout" style={{ '--i': 4 }} onClick={logOut} disabled={busy}>
           <Icon name="logout" size={14} />
           {busy ? 'Logging out…' : 'Log out'}
         </button>
-        {error && <span className="wheel__error" role="alert">{error}</span>}
+        {error && <span className="fan__error" role="alert">{error}</span>}
       </div>
     </div>
   )
