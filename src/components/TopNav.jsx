@@ -3,11 +3,14 @@ import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
+import { RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { NAV_PAGES, PROFILE_SHORTCUTS } from '../lib/pages.js'
 import { signOut } from '../lib/supabaseStore.js'
 import { useFriendGroups } from '../lib/useFriends.js'
+import { useMyTiers } from '../lib/useMyList.js'
 
-// Header: Logo | search | Home · Leaderboard · Profile (or Log in / Sign up).
+// Header: Logo | search | Home · Leaderboard · For You · Profile (or Log in /
+// Sign up). For You only shows when logged in, since it needs your rankings.
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).
 // Nothing account-specific renders until the saved session has been checked,
 // so logged-out visitors never see a flash of private controls.
@@ -36,6 +39,8 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
             </button>
           ))}
 
+          {signedIn && <ForYouLink active={current === 'for-you'} onNavigate={onNavigate} />}
+
           {checking ? (
             <span className="nav__placeholder" aria-hidden="true" />
           ) : signedIn ? (
@@ -60,6 +65,32 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
         </nav>
       </div>
     </header>
+  )
+}
+
+// Recommendations used to be hidden on the homepage and people couldn't find
+// them (issue #38). This keeps them one click away, and until they unlock it
+// shows progress ("6/15") so it's clear what unlocks them.
+function ForYouLink({ active, onNavigate }) {
+  const count = useMyTiers().reduce((n, tier) => n + tier.length, 0)
+  const locked = count < RECS_UNLOCK
+  return (
+    <button
+      type="button"
+      className={`nav__link${active ? ' is-active' : ''}`}
+      aria-current={active ? 'page' : undefined}
+      onClick={() => onNavigate('for-you')}
+      aria-label={locked ? `For You, locked: ${count} of ${RECS_UNLOCK} movies ranked` : 'For You'}
+      title={locked ? `Rank ${RECS_UNLOCK} movies to unlock recommendations` : undefined}
+    >
+      <Icon name="sparkle" size={20} />
+      <span>For You</span>
+      {locked && (
+        <span className="badge badge--progress" aria-hidden="true">
+          {count}/{RECS_UNLOCK}
+        </span>
+      )}
+    </button>
   )
 }
 
