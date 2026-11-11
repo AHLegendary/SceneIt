@@ -139,14 +139,6 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
       </button>
 
       <div id={menuId} className={`wheel${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!open}>
-        <svg className="wheel__lines" viewBox="0 0 360 190" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M180 0 L180 190" />
-          <path d="M180 0 L45.6 134.4" />
-          <path d="M180 0 L314.4 134.4" />
-        </svg>
-        <span className="wheel__avatar" aria-hidden="true">
-          <Icon name="user" size={30} strokeWidth={2.2} />
-        </span>
         <span className="wheel__name" title={username ?? undefined}>{username ?? 'You'}</span>
         {PROFILE_SHORTCUTS.map((item) => (
           <button
