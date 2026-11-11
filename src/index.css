@@ -2,14 +2,14 @@
    Cinematic dark look: near-black navy page, blue-gray surfaces, sky-blue accents. */
 
 :root {
-  --bg: #07090f;            /* page */
-  --bg-2: #0b0f18;          /* header, hero base */
-  --surface: #111724;       /* boards, cards, dialogs */
-  --surface-2: #171f2e;     /* raised controls */
+  --bg: #080b12;            /* page */
+  --bg-2: #0b0f18;          /* header base */
+  --surface: #101722;       /* boards, cards, dialogs */
+  --surface-2: #151e2b;     /* raised controls */
   --paper: #1c2536;         /* hover surfaces */
-  --ink: #ffffff;           /* primary text */
+  --ink: #f8fafc;           /* primary text */
   --ink-2: #c3cbd8;         /* secondary text */
-  --ink-3: #8b96a8;         /* hints, placeholders */
+  --ink-3: #94a3b8;         /* hints, placeholders */
   --muted: #65708a;         /* inactive labels */
   --line: #223049;          /* subtle borders */
   --line-2: #2f4160;        /* stronger borders */

@@ -74,9 +74,7 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   padding: 4px 4px 10px;
   display: flex;
   gap: var(--favs-gap);
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
+  touch-action: pan-y pinch-zoom;
 }
 .profile-favs__list::-webkit-scrollbar { display: none; }
 .profile-favs__item {

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { LazyMotion, MotionConfig, domAnimation } from 'motion/react'
+import CursorGlow from './components/CursorGlow.jsx'
 import MovieDetails from './components/MovieDetails.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
@@ -106,7 +108,10 @@ function App() {
   const loginPage = page === 'login' || page === 'signup'
 
   return (
+    <LazyMotion features={domAnimation} strict>
+    <MotionConfig reducedMotion="user">
     <div className="app">
+      <CursorGlow />
       <TopNav
         current={page}
         account={account}
@@ -171,6 +176,8 @@ function App() {
         />
       )}
     </div>
+    </MotionConfig>
+    </LazyMotion>
   )
 }
 

@@ -168,6 +168,15 @@
   height: 0;
   z-index: 50;
 }
+.fan__body {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  /* shrink back toward the Profile button on close */
+  transform-origin: var(--fan-origin-x) var(--fan-origin-y);
+}
 .fan__lines {
   position: absolute;
   top: 0;
@@ -409,17 +418,24 @@
 .row-more:hover { color: var(--accent); }
 
 .row-wrap { position: relative; }
+/* Embla: the viewport clips, the strip inside is translated (drag/swipe/snap) */
+.row-viewport {
+  overflow: hidden;
+  cursor: grab;
+  /* fade the strip's edges so cut-off cards read as "more this way" */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--page-x), #000 calc(100% - var(--page-x)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--page-x), #000 calc(100% - var(--page-x)), transparent 100%);
+}
+.row-viewport:active { cursor: grabbing; }
 .row-scroller {
   display: flex;
   gap: 12px;
   padding: 6px var(--page-x) 10px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-padding-inline: var(--page-x);
-  scrollbar-width: none;
+  touch-action: pan-y pinch-zoom;
+  backface-visibility: hidden;
 }
-.row-scroller::-webkit-scrollbar { display: none; }
+.row-scroller > * { user-select: none; -webkit-user-drag: none; }
+.row-scroller img { pointer-events: none; }
 .row-arrow {
   position: absolute;
   top: 50%;
@@ -476,10 +492,9 @@
   color: var(--ink);
   text-align: left;
   border: 1px solid rgb(255 255 255 / 0.06);
-  transition: transform var(--mid) var(--ease), box-shadow var(--mid) var(--ease), border-color var(--mid) var(--ease);
+  transition: box-shadow var(--mid) var(--ease), border-color var(--mid) var(--ease);
 }
 .card:hover, .card:focus-visible {
-  transform: translateY(-4px) scale(1.04);
   border-color: rgb(var(--accent-rgb) / 0.7);
   box-shadow: var(--glow), var(--shadow-md);
   z-index: 1;
@@ -1676,7 +1691,7 @@
   background: var(--line);
   overflow: hidden;
 }
-.compare__bar span { display: block; height: 100%; background: linear-gradient(90deg, #2aa6e6, var(--accent)); box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.7); transition: width var(--mid) var(--ease); }
+.compare__bar span { display: block; height: 100%; background: linear-gradient(90deg, #2aa6e6, var(--accent)); box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.7); }
 .pick { overflow: visible; }
 .duel.is-animating .pick { pointer-events: none; }
 .duel.is-animating .pick:hover { transform: none; }
@@ -1764,3 +1779,18 @@
 }
 .placed__list--scroll { max-height: 300px; overflow-y: auto; scrollbar-width: thin; scroll-behavior: smooth; }
 .placed__scrollhint { font-size: 12px; color: var(--ink-3); margin-top: -4px; }
+
+/* ---- cursor glow (CursorGlow.jsx): mouse pointers only, off with reduced motion ---- */
+.cursor-glow {
+  position: fixed;
+  top: -140px;
+  left: -140px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.18) 0%, rgb(var(--accent-rgb) / 0.06) 35%, transparent 70%);
+  mix-blend-mode: screen;
+  will-change: transform;
+}

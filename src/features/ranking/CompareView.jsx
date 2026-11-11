@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { m } from 'motion/react'
 import Icon from '../../components/Icon.jsx'
 import Poster from '../../components/Poster.jsx'
 import Sparkles from '../../components/Sparkles.jsx'
@@ -187,7 +188,11 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
             {getCategory(category).label} · Comparison {state.comparisons + 1} of up to {maxComparisons(state.tiers.length)}
           </p>
           <span className="compare__bar" aria-hidden="true">
-            <span style={{ width: `${Math.min(100, ((state.comparisons + 1) / Math.max(1, maxComparisons(state.tiers.length))) * 100)}%` }} />
+            <m.span
+              initial={false}
+              animate={{ width: `${Math.min(100, ((state.comparisons + 1) / Math.max(1, maxComparisons(state.tiers.length))) * 100)}%` }}
+              transition={{ type: 'spring', stiffness: 160, damping: 26 }}
+            />
           </span>
         </header>
 
@@ -335,7 +340,12 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, sa
   }
 
   return (
-    <div className="placed">
+    <m.div
+      className="placed"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
+    >
       <Sparkles count={34} seed={3} />
       <p className="placed__eyebrow">{eyebrow}</p>
       <span className="placed__burst" aria-hidden="true">
@@ -400,6 +410,6 @@ function Placed({ titleId, movie, category, tiers, tied, oldRank, saveStatus, sa
         )}
       </div>
 
-    </div>
+    </m.div>
   )
 }

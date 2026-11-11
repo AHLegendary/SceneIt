@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AnimatePresence, m } from 'motion/react'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
@@ -83,6 +84,10 @@ const FAN_ORDER = ['friends', 'my-list', 'rank', 'profile']
 
 function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
   const [open, setOpen] = useState(false)
+  // Stays true while the circles animate back into the button after closing,
+  // so the menu isn't yanked out of the page mid-exit (Motion's AnimatePresence
+  // tells us when that's done). `hidden` follows this, aria-expanded follows `open`.
+  const [present, setPresent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const wrap = useRef(null)
@@ -142,7 +147,10 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setPresent(true)
+          setOpen((v) => !v)
+        }}
       >
         <Icon name="user" size={20} />
         <span>Profile</span>
@@ -157,35 +165,46 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
       {/* Fan menu: four circles on an arc down and to the left of the button,
           no panel behind them. Positions are CSS variables per item so the
           expand animation can start every circle at the button. */}
-      <div id={menuId} className={`fan${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!open}>
-        <svg className="fan__lines" viewBox={`0 0 ${FAN_W} 200`} width={FAN_W} height={200} aria-hidden="true">
-          <polyline
-            className="fan__trace"
-            points={FAN_ORDER.map((id) => `${FAN_W + FAN_SPOTS[id].x},${FAN_SPOTS[id].y}`).join(' ')}
-          />
-        </svg>
-        {PROFILE_SHORTCUTS.map((item, i) => (
-          <button
-            key={item.id}
-            type="button"
-            role="menuitem"
-            className={`fan__item fan__item--${item.id}`}
-            style={{ '--i': i, '--x': `${FAN_SPOTS[item.id].x}px`, '--y': `${FAN_SPOTS[item.id].y}px` }}
-            onClick={() => go(item.id)}
-          >
-            <span className="fan__icon">
-              <Icon name={SHORTCUT_ICONS[item.id]} size={22} />
-              {item.id === 'friends' && requests > 0 && <span className="badge badge--dot" aria-hidden="true" />}
-            </span>
-            <span className="fan__label">{item.label}</span>
-          </button>
-        ))}
-        <span className="fan__name" title={username ?? undefined}>{username ?? 'You'}</span>
-        <button type="button" role="menuitem" className="fan__logout" style={{ '--i': 4 }} onClick={logOut} disabled={busy}>
-          <Icon name="logout" size={14} />
-          {busy ? 'Logging out…' : 'Log out'}
-        </button>
-        {error && <span className="fan__error" role="alert">{error}</span>}
+      <div id={menuId} className={`fan${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!present}>
+        <AnimatePresence onExitComplete={() => setPresent(false)}>
+          {open && (
+            <m.div
+              key="fan"
+              className="fan__body"
+              initial={false}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.14, ease: 'easeIn' } }}
+            >
+              <svg className="fan__lines" viewBox={`0 0 ${FAN_W} 200`} width={FAN_W} height={200} aria-hidden="true">
+                <polyline
+                  className="fan__trace"
+                  points={FAN_ORDER.map((id) => `${FAN_W + FAN_SPOTS[id].x},${FAN_SPOTS[id].y}`).join(' ')}
+                />
+              </svg>
+              {PROFILE_SHORTCUTS.map((item, i) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  className={`fan__item fan__item--${item.id}`}
+                  style={{ '--i': i, '--x': `${FAN_SPOTS[item.id].x}px`, '--y': `${FAN_SPOTS[item.id].y}px` }}
+                  onClick={() => go(item.id)}
+                >
+                  <span className="fan__icon">
+                    <Icon name={SHORTCUT_ICONS[item.id]} size={22} />
+                    {item.id === 'friends' && requests > 0 && <span className="badge badge--dot" aria-hidden="true" />}
+                  </span>
+                  <span className="fan__label">{item.label}</span>
+                </button>
+              ))}
+              <span className="fan__name" title={username ?? undefined}>{username ?? 'You'}</span>
+              <button type="button" role="menuitem" className="fan__logout" style={{ '--i': 4 }} onClick={logOut} disabled={busy}>
+                <Icon name="logout" size={14} />
+                {busy ? 'Logging out…' : 'Log out'}
+              </button>
+              {error && <span className="fan__error" role="alert">{error}</span>}
+            </m.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

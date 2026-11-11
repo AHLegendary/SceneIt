@@ -69,6 +69,13 @@ function polyfill() {
     unobserve() {}
     disconnect() {}
   }
+  // Embla (the card rows) watches which slides are in view with this.
+  globalThis.IntersectionObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() { return [] }
+  }
 }
 
 beforeEach(() => {

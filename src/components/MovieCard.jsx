@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { m } from 'motion/react'
 import { imageUrl, posterUrl } from '../lib/localStore.js'
 
 // Wide movie card for the homepage rows: backdrop (or poster) with the
@@ -10,12 +11,17 @@ export default function MovieCard({ movie, onOpen, rank, caption, badge, ranked 
   const src = wide || posterUrl(movie, 'w342')
   const showImage = src && state !== 'failed'
 
+  // Motion drives the lift on hover and the press on tap (a spring, so it
+  // settles rather than snaps); colour and glow stay in CSS (.card:hover).
   return (
-    <button
+    <m.button
       type="button"
       className={`card${wide ? '' : ' card--poster'}${state === 'loading' && src ? ' is-loading' : ''}`}
       onClick={() => onOpen(movie.id)}
       aria-label={`${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
+      whileHover={{ y: -4, scale: 1.04 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.6 }}
     >
       {showImage ? (
         <img
@@ -42,6 +48,6 @@ export default function MovieCard({ movie, onOpen, rank, caption, badge, ranked 
           movie.year && <span className="card__caption">{movie.year}</span>
         )}
       </span>
-    </button>
+    </m.button>
   )
 }
