@@ -44,7 +44,7 @@
   flex-shrink: 0;
   filter: drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.25));
 }
-.logo__s { display: block; margin-right: -7px; margin-top: -4px; }
+.logo__s { display: block; margin-right: 2px; margin-top: -2px; }
 .logo__word {
   font-size: calc(var(--logo-size, 30px) * 1.05);
   font-weight: 800;
