@@ -38,27 +38,15 @@
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: 0;
   text-decoration: none;
-  color: var(--ink);
   flex-shrink: 0;
-  filter: drop-shadow(0 0 10px rgb(var(--accent-rgb) / 0.25));
 }
-.logo__s { display: block; margin-right: -7px; margin-top: -4px; }
-.logo__word {
-  font-size: calc(var(--logo-size, 30px) * 1.05);
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1;
-}
-.logo__word em {
-  font-style: italic;
-  color: var(--accent);
-  background: linear-gradient(90deg, #9ae5ff, #66d1ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  padding-right: 0.08em;
+/* the artwork carries its own glow; height follows the nav's logo size */
+.logo__img {
+  display: block;
+  height: calc(var(--logo-size, 30px) * 1.5);
+  width: auto;
+  user-select: none;
 }
 
 .nav__search {
