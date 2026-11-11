@@ -21,7 +21,7 @@ export const PROFILE_SHORTCUTS = [
   { id: 'friends', label: 'Friends' },
   { id: 'my-list', label: 'My List' },
   { id: 'rank', label: 'Rank Movies' },
-  { id: 'profile', label: 'Bio' },
+  { id: 'profile', label: 'My Profile' },
 ]
 
 // 'user' is someone else's profile (#/u/name, see route.js); it has no tab.
