@@ -32,26 +32,14 @@ const cardTitles = (name) => [...rowEl(name).querySelectorAll('.card:not(.card--
 const captions = (name) => [...rowEl(name).querySelectorAll('.card:not(.card--skeleton) .card__caption')].map((n) => n.textContent)
 const rowNames = () => [...document.querySelectorAll('section.row-section')].map((s) => s.getAttribute('aria-label'))
 
-describe('the hero', () => {
-  it('welcomes you and offers head-to-head ranking', async () => {
+describe('the welcome strip', () => {
+  it('welcomes you and offers head-to-head ranking, with nothing rotating', async () => {
     await open({ as: null })
 
     expect(screen.getByRole('heading', { level: 1, name: 'Welcome to SceneIt' })).toBeTruthy()
-    expect(screen.getByText('Rank · Review · Watch Together')).toBeTruthy()
-    expect(screen.getByText(/A social movie platform to watch, review,/)).toBeTruthy()
-  })
-
-  it('has a picture selector for three backdrops, starting on the first', async () => {
-    const { user } = await open({ as: null })
-    const tabs = within(screen.getByRole('tablist', { name: 'Hero image' })).getAllByRole('tab')
-
-    expect(tabs.map((t) => t.getAttribute('aria-label'))).toEqual([title('the-dark-knight-2008'), title('dune-part-two-2024'), title('interstellar-2014')])
-    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
-
-    await user.click(tabs[2])
-    expect(tabs[2].getAttribute('aria-selected')).toBe('true')
-    expect(tabs[0].getAttribute('aria-selected')).toBe('false')
-    expect(document.querySelectorAll('.hero__img.is-on')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /Play Head-to-Head/ })).toBeTruthy()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(document.querySelector('.hero')).toBeNull()
   })
 
   it('opens the ranking dialog from "Play Head-to-Head" when you are logged in', async () => {
