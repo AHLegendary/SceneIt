@@ -112,6 +112,21 @@ const SUGGESTION_IDS = [
   'whiplash-2014',
 ]
 
-export function getSuggestions(limit = 8) {
-  return SUGGESTION_IDS.slice(0, limit).map(getMovie).filter(Boolean)
+// Catalog movies most people have rated on IMDb, used to top up the picks.
+const BY_VOTES = [...MOVIES].sort((a, b) => (b.ratings?.imdb_votes ?? 0) - (a.ratings?.imdb_votes ?? 0))
+
+// Popular picks for the Rank a movie dialog, leaving out movies already
+// ranked (ids in `exclude`) and filling their spots from the rest of the
+// catalog. Without this, ranking the picks left a list of greyed-out "Ranked"
+// buttons and nothing new to rank (issue #42).
+export function getSuggestions({ exclude = new Set(), limit = 8 } = {}) {
+  const picks = []
+  const seen = new Set()
+  for (const movie of [...SUGGESTION_IDS.map(getMovie), ...BY_VOTES]) {
+    if (picks.length >= limit) break
+    if (!movie || seen.has(movie.id) || exclude.has(movie.id)) continue
+    seen.add(movie.id)
+    picks.push(movie)
+  }
+  return picks
 }

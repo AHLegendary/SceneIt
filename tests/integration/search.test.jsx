@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
 
 const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
 const byId = (id) => MOVIES.find((m) => m.id === id)
@@ -324,6 +324,44 @@ describe('the Rank a movie dialog', () => {
     const done = await within(dialog).findByRole('button', { name: `${title('dune-part-two-2024')} is already ranked` })
     expect(done.disabled).toBe(true)
     expect(done.textContent).toBe('Ranked')
+  })
+
+  // Issue #42: ranked picks used to stay in the list, greyed out, with nothing new to rank.
+  it('leaves already ranked movies out of the popular picks and shows new ones instead', async () => {
+    const pickTitles = (dialog) => within(dialog).getAllByRole('button', { name: /^Rank / }).map((b) => b.getAttribute('aria-label').slice(5))
+    const { user } = await open()
+    const before = pickTitles(await openDialog(user))
+    expect(before).toHaveLength(8)
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    // Rank three of them, each with a different feeling so there are no
+    // head-to-head questions, then open the dialog again.
+    const rankedIds = MOVIES.filter((m) => before.slice(0, 3).includes(m.title)).map((m) => m.id)
+    const feelings = ['Loved it', 'It was okay', 'Not a fan']
+    for (const [i, id] of rankedIds.entries()) {
+      const dialog = await openDialog(user)
+      await user.click(within(dialog).getByRole('button', { name: `Rank ${title(id)}` }))
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${feelings[i]}`) }))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
+      await user.click(screen.getByRole('button', { name: 'See my list' }))
+      await goTo('#/home')
+    }
+    const dialog = await openDialog(user)
+
+    const after = pickTitles(dialog)
+    expect(after).toHaveLength(8)
+    for (const id of rankedIds) expect(after).not.toContain(title(id))
+    expect(within(dialog).queryByRole('button', { name: /is already ranked$/ })).toBeNull()
+  })
+
+  it('says so once every popular pick has been ranked', async () => {
+    backend.seedList(alice, MOVIES.map((m) => m.id))
+    const { user, store } = await open()
+    await waitFor(() => expect(store.getState().tiers.flat()).toHaveLength(MOVIES.length))
+    const dialog = await openDialog(user)
+
+    expect(within(dialog).getByText("You've ranked all our popular picks. Search above for any other movie.")).toBeTruthy()
+    expect(within(dialog).queryByText('Popular picks')).toBeNull()
   })
 
   it('opens a movie\'s details from its title, on top of the dialog', async () => {
