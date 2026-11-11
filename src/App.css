@@ -198,7 +198,7 @@
   align-items: center;
   gap: 6px;
   width: 92px;
-  margin: -27px -46px 0 0; /* centre the 54px circle on (--x, --y) */
+  margin: -25px -46px 0 0; /* centre the 50px circle on (--x, --y) */
   transform: translate(calc(var(--x) * var(--fan-scale)), calc(var(--y) * var(--fan-scale)));
   color: var(--ink);
   border-radius: 14px;
@@ -213,8 +213,8 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   background: rgb(11 15 24 / 0.96);
   border: 1.5px solid rgb(var(--accent-rgb) / 0.7);
@@ -236,18 +236,7 @@
   box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.3), 0 0 18px rgb(var(--accent-rgb) / 0.55), 0 6px 18px rgb(0 0 0 / 0.45);
 }
 .fan__item:focus-visible { outline: none; }
-.fan__name {
-  position: absolute;
-  top: 0;
-  right: 0;
-  transform: translate(calc(-34px * var(--fan-scale) + 50%), calc(12px * var(--fan-scale)));
-  margin-right: 0;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-3);
-  pointer-events: none;
-}
+.fan__name { display: none; }
 .fan__logout {
   position: absolute;
   top: 0;
@@ -258,8 +247,8 @@
   height: 28px;
   padding: 0 12px;
   border-radius: var(--r-pill);
-  margin: -14px -36px 0 0;
-  transform: translate(calc(-150px * var(--fan-scale)), calc(250px * var(--fan-scale)));
+  margin: -14px -46px 0 0;
+  transform: translate(calc(-36px * var(--fan-scale)), calc(142px * var(--fan-scale)));
   background: rgb(11 15 24 / 0.96);
   border: 1px solid var(--line-2);
   color: var(--ink-3);
@@ -276,7 +265,7 @@
   position: absolute;
   top: 0;
   right: 0;
-  transform: translate(calc(-150px * var(--fan-scale)), calc(286px * var(--fan-scale)));
+  transform: translate(calc(-36px * var(--fan-scale)), calc(180px * var(--fan-scale)));
   white-space: nowrap;
   font-size: 12px;
   color: var(--danger);
@@ -285,7 +274,6 @@
   /* the nav wraps to two rows here, so hang the fan below the whole bar */
   .fan { --fan-scale: 0.8; --fan-origin-x: -40px; --fan-origin-y: -60px; position: fixed; top: var(--nav-h); right: 14px; }
   .fan__label { font-size: 12px; }
-  .fan__name { display: none; }
 }
 @media (max-width: 520px) { .fan { --fan-scale: 0.66; } .fan__icon { width: 46px; height: 46px; } .fan__item { width: 76px; margin: -23px -38px 0 0; } .fan__label { font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) {

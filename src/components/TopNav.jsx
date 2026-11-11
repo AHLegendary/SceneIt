@@ -73,10 +73,10 @@ const SHORTCUT_ICONS = { friends: 'friends', 'my-list': 'bookmark', rank: 'sword
 // under the button, then stepping down-left and back up. The connector line
 // and the expand animation use the same numbers.
 const FAN_SPOTS = {
-  profile: { x: -34, y: 86 },
-  rank: { x: -134, y: 124 },
-  'my-list': { x: -234, y: 146 },
-  friends: { x: -334, y: 124 },
+  profile: { x: -36, y: 62 },
+  rank: { x: -126, y: 92 },
+  'my-list': { x: -216, y: 108 },
+  friends: { x: -306, y: 92 },
 }
 const FAN_W = 420
 const FAN_ORDER = ['friends', 'my-list', 'rank', 'profile']
@@ -99,11 +99,16 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
     if (!open) return undefined
     const onKey = (e) => e.key === 'Escape' && close()
     const onDown = (e) => wrap.current && !wrap.current.contains(e.target) && close()
+    // Scrolling closes it too: with no backdrop, the circles would otherwise
+    // float over whatever the page scrolls under them.
+    const onScroll = () => close()
     window.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onDown)
+    window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       window.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('scroll', onScroll)
     }
   }, [open, close])
 
