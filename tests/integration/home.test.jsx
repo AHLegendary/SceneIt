@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
 
 const ids = (n) => MOVIES.slice(0, n).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
@@ -32,38 +32,14 @@ const cardTitles = (name) => [...rowEl(name).querySelectorAll('.card:not(.card--
 const captions = (name) => [...rowEl(name).querySelectorAll('.card:not(.card--skeleton) .card__caption')].map((n) => n.textContent)
 const rowNames = () => [...document.querySelectorAll('section.row-section')].map((s) => s.getAttribute('aria-label'))
 
-describe('the hero', () => {
-  it('welcomes you and offers head-to-head ranking', async () => {
+describe('the welcome strip', () => {
+  it('welcomes you, with nothing rotating and no idle button', async () => {
     await open({ as: null })
 
     expect(screen.getByRole('heading', { level: 1, name: 'Welcome to SceneIt' })).toBeTruthy()
-    expect(screen.getByText('Rank · Review · Watch Together')).toBeTruthy()
-    expect(screen.getByText(/A social movie platform to watch, review,/)).toBeTruthy()
-  })
-
-  it('has a picture selector for three backdrops, starting on the first', async () => {
-    const { user } = await open({ as: null })
-    const tabs = within(screen.getByRole('tablist', { name: 'Hero image' })).getAllByRole('tab')
-
-    expect(tabs.map((t) => t.getAttribute('aria-label'))).toEqual([title('the-dark-knight-2008'), title('dune-part-two-2024'), title('interstellar-2014')])
-    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
-
-    await user.click(tabs[2])
-    expect(tabs[2].getAttribute('aria-selected')).toBe('true')
-    expect(tabs[0].getAttribute('aria-selected')).toBe('false')
-    expect(document.querySelectorAll('.hero__img.is-on')).toHaveLength(1)
-  })
-
-  it('opens the ranking dialog from "Play Head-to-Head" when you are logged in', async () => {
-    const { user } = await open()
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
-    expect(await screen.findByRole('dialog', { name: 'Rank a movie' })).toBeTruthy()
-  })
-
-  it('sends you to log in from "Play Head-to-Head" when you are not', async () => {
-    const { user } = await open({ as: null })
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
-    expect(window.location.hash).toBe('#/login')
+    expect(screen.queryByRole('button', { name: /Play Head-to-Head/ })).toBeNull()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(document.querySelector('.hero')).toBeNull()
   })
 })
 
@@ -189,7 +165,7 @@ describe('community rows', () => {
     const { user } = await open()
     await row('Top Ranked by the Community').findByText(/Be the first/)
 
-    await user.click(screen.getByRole('button', { name: /Play Head-to-Head/ }))
+    await useMenu(user, 'Rank Movies')
     const dialog = await screen.findByRole('dialog', { name: 'Rank a movie' })
     backend.tmdbKnows(A)
     await user.type(within(dialog).getByRole('searchbox'), title(A))
