@@ -1,20 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import Icon from '../components/Icon.jsx'
 import MovieCard from '../components/MovieCard.jsx'
 import MovieRow from '../components/MovieRow.jsx'
 import { buildRecommendations, RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { loadFriendsActivity, loadTrending } from '../lib/homeData.js'
 import { fetchLeaderboard } from '../lib/leaderboard.js'
-import { getCatalog, getMovie, imageUrl } from '../lib/localStore.js'
+import { getCatalog } from '../lib/localStore.js'
 import { useFriendGroups, useFriends } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
-// Backdrops for the hero, from the catalog (so they're real TMDb images the
-// app already shows elsewhere). Rotates slowly; the dots pick one.
-const HERO_IDS = ['the-dark-knight-2008', 'dune-part-two-2024', 'interstellar-2014']
-const HERO_INTERVAL = 8000
-
-// Homepage: hero + Netflix-style rows. Public rows (Trending, Top Ranked,
+// Homepage: a one-line welcome, then Netflix-style rows starting at
+// Trending. Ranking starts from the nav's Profile menu or a movie's details. Public rows (Trending, Top Ranked,
 // Most Watched) show for everyone; personalized rows (recommendations,
 // Friends Are Watching) only once the user is logged in and only from
 // their real data.
@@ -25,7 +20,10 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
 
   return (
     <div className="home">
-      <Hero onRank={onRank} />
+      <section className="welcome" aria-label="Welcome to SceneIt">
+        <h1 className="welcome__title">Welcome to <em>SceneIt</em></h1>
+        <p className="welcome__text">Rank the movies you've seen head-to-head, and see what your friends think.</p>
+      </section>
       <div className="home__rows">
         <TrendingRow onOpen={onOpen} inList={inList} />
         <CommunityRow
@@ -51,69 +49,6 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
         />
       </div>
     </div>
-  )
-}
-
-function Hero({ onRank }) {
-  const slides = useMemo(() => HERO_IDS.map(getMovie).filter(Boolean), [])
-  const [index, setIndex] = useState(0)
-
-  useEffect(() => {
-    if (slides.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
-    const timer = setInterval(() => setIndex((i) => (i + 1) % slides.length), HERO_INTERVAL)
-    return () => clearInterval(timer)
-  }, [slides.length])
-
-  return (
-    <section className="hero" aria-label="Welcome to SceneIt">
-      <div className="hero__art" aria-hidden="true">
-        {slides.map((movie, i) => (
-          <img
-            key={movie.id}
-            className={`hero__img${i === index ? ' is-on' : ''}`}
-            src={imageUrl(movie.backdrop_path, 'w1280')}
-            alt=""
-            loading={i === 0 ? 'eager' : 'lazy'}
-            decoding="async"
-          />
-        ))}
-        <span className="hero__fade" />
-      </div>
-
-      <div className="hero__content">
-        <p className="hero__eyebrow">Rank · Review · Watch Together</p>
-        <h1 className="hero__title">
-          Welcome to <em>SceneIt</em>
-        </h1>
-        <p className="hero__text">
-          A social movie platform to watch, review,
-          <br />
-          and rank your favorite movies.
-        </p>
-        <div className="hero__actions">
-          <button type="button" className="btn btn--accent" onClick={onRank}>
-            <Icon name="play" size={18} />
-            Play Head-to-Head
-          </button>
-        </div>
-      </div>
-
-      {slides.length > 1 && (
-        <div className="hero__dots" role="tablist" aria-label="Hero image">
-          {slides.map((movie, i) => (
-            <button
-              key={movie.id}
-              type="button"
-              role="tab"
-              aria-selected={i === index}
-              aria-label={movie.title}
-              className={`hero__dot${i === index ? ' is-on' : ''}`}
-              onClick={() => setIndex(i)}
-            />
-          ))}
-        </div>
-      )}
-    </section>
   )
 }
 
