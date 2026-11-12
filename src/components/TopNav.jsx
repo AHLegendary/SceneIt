@@ -3,12 +3,16 @@ import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
+import { useBlends } from '../features/blends/useBlends.js'
 import { RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { NAV_PAGES, PROFILE_SHORTCUTS } from '../lib/pages.js'
 import { signOut } from '../lib/supabaseStore.js'
 import { useFriendGroups } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
+const NAV_ICONS = { home: 'home', leaderboard: 'chart', blends: 'people' }
+
+// Header: Logo | search | Home · Leaderboard · Movie Blend · Profile (or Log in / Sign up).
 // Header: Logo | search | Home · Leaderboard · For You · Profile (or Log in /
 // Sign up). For You only shows when logged in, since it needs your rankings.
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).
@@ -18,6 +22,7 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
   const signedIn = account.status === 'ready' || account.status === 'error'
   const checking = account.status === 'loading' && !account.user
   const requests = useFriendGroups().incoming.length
+  const blendInvites = useBlends().invites.length
 
   return (
     <header className="nav">
@@ -34,8 +39,13 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
               aria-current={current === page.id ? 'page' : undefined}
               onClick={() => onNavigate(page.id)}
             >
-              <Icon name={page.id === 'home' ? 'home' : 'chart'} size={20} />
+              <Icon name={NAV_ICONS[page.id]} size={20} />
               <span>{page.label}</span>
+              {page.id === 'blends' && blendInvites > 0 && (
+                <span className="badge" aria-label={`${blendInvites} pending blend ${blendInvites === 1 ? 'invite' : 'invites'}`}>
+                  {blendInvites > 9 ? '9+' : blendInvites}
+                </span>
+              )}
             </button>
           ))}
 

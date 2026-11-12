@@ -1443,6 +1443,10 @@
 .frow__meta { font-size: 13px; color: var(--ink-3); }
 .frow__actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
+/* ------------------------------------------------------------------ movie blend */
+.blend-form { display: flex; flex-direction: column; gap: 12px; animation: rise var(--mid) var(--ease); }
+.blend-form__pick { cursor: pointer; }
+.blend-form__actions { display: flex; align-items: center; gap: 8px; }
 /* ------------------------------------------------------------------ recommendations unlock */
 /* "6/15" on the For You nav link until recommendations unlock. */
 .badge--progress {

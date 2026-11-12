@@ -3,6 +3,7 @@
 - `migrations/20261031000000_init_schema.sql`: tables, RLS policies, and database functions
 - `migrations/20261102000000_friend_requests.sql`: `get_friendships` and `send_friend_request`
 - `migrations/20261103000000_ranking_categories.sql`: `rankings.category` (loved / okay / meh), category-aware `save_ranking` and leaderboard scores
+- `migrations/20261104000000_movie_blends.sql`: Movie Blend tables, invites, the 5-member limit and group recommendations
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -29,6 +30,9 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `rankings` | `(user_id, movie_id, position, category)`. `position` is the tier index, 0 = best, and ties share a position. `category` is `loved`, `okay` or `meh`, and the list is always ordered loved → okay → meh | same as the owner's profile | the owner, through `save_ranking` / `remove_ranking` |
 | `watchlist` | `(user_id, movie_id, added_at)` | same as the owner's profile | the owner |
 | `friendships` | `requester_id → addressee_id`, `pending` or `accepted` | the two people involved | requester inserts, addressee accepts, either one deletes |
+| `blends` | `owner_id` of a Movie Blend | its members | through the blend functions only |
+| `blend_members` | `(blend_id, user_id, joined_at)`, 5 at most per blend (enforced by a trigger) | the blend's members | through the blend functions only |
+| `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
 
@@ -64,6 +68,18 @@ await supabase.rpc('send_friend_request', { p_user_id: otherUserId })
 await supabase.from('friendships').update({ status: 'accepted' })
   .eq('requester_id', otherUserId).eq('addressee_id', myId)
 // Decline, cancel, or unfriend: delete the row (either person can).
+
+// Movie Blend. Use src/features/blends/blends.js from the UI instead of calling these.
+// Failures raise short messages like 'blend_full' or 'invite_expired'.
+const { data: blendId } = await supabase.rpc('create_blend', { p_friend_ids: [friendId] })  // 15+ rankings, 1 to 4 friends
+await supabase.rpc('invite_to_blend', { p_blend_id: blendId, p_user_id: friendId })         // owner only
+await supabase.rpc('respond_to_blend_invite', { p_invite_id: inviteId, p_accept: true })
+await supabase.rpc('leave_blend', { p_blend_id: blendId })  // returns 'left' | 'transferred' | 'deleted'
+await supabase.rpc('get_my_blends')
+await supabase.rpc('get_my_blend_invites')
+await supabase.rpc('get_blend_members', { p_blend_id: blendId })
+await supabase.rpc('get_blend_sent_invites', { p_blend_id: blendId })
+await supabase.rpc('get_blend_recommendations', { p_blend_id: blendId })  // group totals only
 ```
 
 Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.
@@ -72,4 +88,4 @@ Scores and leaderboards are calculated when you ask for them, not stored. `get_l
 
 ## Not here yet (later migrations)
 
-These are `reviews`, `comments`, `reports`, `blends`, `blend_members` and achievements. Add each one as a new file in `migrations/`, and don't edit this one after it has been applied.
+These are `reviews`, `comments`, `reports` and achievements. Add each one as a new file in `migrations/`, and don't edit this one after it has been applied.
