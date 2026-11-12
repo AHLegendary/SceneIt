@@ -20,7 +20,7 @@ function openBlend(blendId) {
 
 // The Movie Blend widget: invites waiting for you, your blends, and a way to
 // start a new one.
-export default function BlendsPage() {
+export default function BlendsPage({ onRank }) {
   const { status, blends, invites, error, notice } = useBlends()
   const { status: friendsStatus, error: friendsError } = useFriends()
   const { friends } = useFriendGroups()
@@ -30,6 +30,8 @@ export default function BlendsPage() {
   // { text, retry } shown after an invite answer fails
   const [flash, setFlash] = useState(null)
 
+  // Not in a blend and no invite waiting. Only known once the first load is done.
+  const hasNothingYet = status === 'ready' && blends.length === 0 && invites.length === 0
   const needsRankings = rankedCount < BLEND_MIN_RANKINGS
   const needsFriends = friendsStatus === 'ready' && friends.length === 0
   const canCreate = !needsRankings && friendsStatus === 'ready' && friends.length > 0
@@ -92,12 +94,14 @@ export default function BlendsPage() {
         </div>
       )}
 
-      {needsRankings ? (
+      {needsRankings && status === 'loading' ? null : needsRankings && hasNothingYet ? (
+        <BlendLocked count={rankedCount} onRank={onRank} />
+      ) : needsRankings ? (
         <div className="notice" role="status">
           <span>
-            You've ranked {rankedCount} of the {BLEND_MIN_RANKINGS} movies needed to create a blend. You can still join a friend's.
+            You've ranked {rankedCount} of the {BLEND_MIN_RANKINGS} movies needed to create a blend.
           </span>
-          <a className="btn btn--sm" href="#/my-list">Rank more movies</a>
+          <button type="button" className="btn btn--sm" onClick={onRank}>Rank more movies</button>
         </div>
       ) : friendsStatus === 'loading' ? (
         <div className="notice" role="status"><span>Loading your friends…</span></div>
@@ -162,6 +166,14 @@ export default function BlendsPage() {
             </section>
           )}
 
+          {hasNothingYet && canCreate && !creating && (
+            <div className="notice" role="status">
+              <span>No blends yet. Start one and invite up to {BLEND_MAX_MEMBERS - 1} friends.</span>
+              <button type="button" className="btn btn--sm" onClick={() => setCreating(true)}>New blend</button>
+            </div>
+          )}
+
+          {(blends.length > 0 || invites.length > 0) && (
           <section className="friends__section" aria-label="Your blends">
             <h2 className="recs__title">
               Your blends <span className="friends__count">{blends.length}</span>
@@ -186,6 +198,7 @@ export default function BlendsPage() {
               )}
             </ul>
           </section>
+          )}
         </>
       )}
     </section>
@@ -195,4 +208,35 @@ export default function BlendsPage() {
 function formatDate(iso) {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? 'soon' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+// What a blend is and how far you are from making one. Shown instead of an
+// empty "Your blends: 0" list. Joining a friend's blend needs no rankings, so
+// that's a quiet second line rather than the headline.
+function BlendLocked({ count, onRank }) {
+  return (
+    <div className="empty blend-locked">
+      <h2 className="empty__title">Rank {BLEND_MIN_RANKINGS} movies to start a blend</h2>
+      <p className="blend-locked__how">
+        <span>Rank movies</span>
+        <span aria-hidden="true">→</span>
+        <span>Invite friends</span>
+        <span aria-hidden="true">→</span>
+        <span>Get group picks</span>
+      </p>
+      <div
+        className="unlock__bar unlock__bar--wide"
+        role="progressbar"
+        aria-label="Movies ranked toward creating a blend"
+        aria-valuemin={0}
+        aria-valuemax={BLEND_MIN_RANKINGS}
+        aria-valuenow={Math.min(count, BLEND_MIN_RANKINGS)}
+      >
+        <span style={{ width: `${(Math.min(count, BLEND_MIN_RANKINGS) / BLEND_MIN_RANKINGS) * 100}%` }} />
+      </div>
+      <p className="empty__note">{count}/{BLEND_MIN_RANKINGS} ranked</p>
+      <button type="button" className="btn btn--accent" onClick={onRank}>Rank more movies</button>
+      <p className="empty__note">You can still join a friend's blend if they invite you.</p>
+    </div>
+  )
 }

@@ -74,7 +74,7 @@ await supabase.from('friendships').update({ status: 'accepted' })
 const { data: blendId } = await supabase.rpc('create_blend', { p_friend_ids: [friendId] })  // 15+ rankings, 1 to 4 friends
 await supabase.rpc('invite_to_blend', { p_blend_id: blendId, p_user_id: friendId })         // owner only
 await supabase.rpc('respond_to_blend_invite', { p_invite_id: inviteId, p_accept: true })
-await supabase.rpc('leave_blend', { p_blend_id: blendId })  // returns 'left' | 'transferred' | 'deleted'
+await supabase.rpc('leave_blend', { p_blend_id: blendId })  // returns 'left' | 'deleted' (the owner leaving disbands the blend)
 await supabase.rpc('get_my_blends')
 await supabase.rpc('get_my_blend_invites')
 await supabase.rpc('get_blend_members', { p_blend_id: blendId })
@@ -84,7 +84,7 @@ await supabase.rpc('get_blend_recommendations', { p_blend_id: blendId })  // gro
 
 Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.
 
-Scores and leaderboards are calculated when you ask for them, not stored. `get_leaderboard` uses the same 10-to-1 formula as `src/features/ranking/scores.js`.
+Scores and leaderboards are calculated when you ask for them, not stored. In SQL the formula lives in one place, `user_movie_scores()`, which `get_leaderboard` and `get_blend_recommendations` both read. `src/features/ranking/scores.js` is the only other copy (the browser scores a list it already has), so change the two together.
 
 ## Not here yet (later migrations)
 

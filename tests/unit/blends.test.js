@@ -233,8 +233,8 @@ describe('writes', () => {
       expect(callsTo('get_my_blends')).toHaveLength(1)
     })
     it('leaveBlend returns what happened, and reports a blend that is gone', async () => {
-      db.responses.leave_blend = { data: 'transferred', error: null }
-      expect(await blends.leaveBlend(BLEND)).toBe('transferred')
+      db.responses.leave_blend = { data: 'deleted', error: null }
+      expect(await blends.leaveBlend(BLEND)).toBe('deleted')
 
       db.responses.leave_blend = { data: null, error: { message: 'blend_not_found' } }
       await expect(blends.leaveBlend(BLEND)).rejects.toMatchObject({ code: 'blend_not_found' })

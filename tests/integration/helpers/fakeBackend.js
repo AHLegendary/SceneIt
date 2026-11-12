@@ -654,6 +654,10 @@ class FakeClient {
           return { data: b.sendFriendRequest(uid, args.p_user_id), error: null }
         case 'search_users':
           return { data: b.searchUsers(uid, args.q), error: null }
+        // Movie Blend isn't simulated: everyone just has no blends and no invites.
+        case 'get_my_blends':
+        case 'get_my_blend_invites':
+          return { data: [], error: null }
         case 'get_leaderboard':
           return { data: b.getLeaderboard(args.p_period, args.p_category, args.p_limit), error: null }
         default:
