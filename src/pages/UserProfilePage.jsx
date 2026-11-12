@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import FriendAction from '../components/FriendAction.jsx'
-import TopMovies from '../components/TopMovies.jsx'
+import ProfileHighlights from '../components/ProfileHighlights.jsx'
+import RecentlyRanked from '../components/RecentlyRanked.jsx'
 import { userListHref } from '../lib/route.js'
 import { profileImageUrl } from '../lib/profileMedia.js'
 import { useProfileLookup } from '../lib/useProfileLookup.js'
@@ -124,13 +125,27 @@ export default function UserProfilePage({ username, account, onOpen }) {
           </button>
         )}
       </div>
-      <TopMovies
-        tiers={list.tiers}
-        status={list.status}
-        onRetry={list.retry}
-        viewAllHref={userListHref(profile.username)}
-        onOpen={onOpen}
-      />
+      {list.status === 'error' ? (
+        <div className="profile__alert" role="alert">
+          Couldn't load these movies.{' '}
+          <button type="button" className="profile__link" onClick={list.retry}>
+            Try again
+          </button>
+        </div>
+      ) : list.status !== 'ready' ? (
+        <p className="uprofile__muted">Loading movies…</p>
+      ) : (
+        <>
+          <ProfileHighlights tiers={list.tiers} onOpen={onOpen} />
+          <RecentlyRanked
+            key={profile.id}
+            userId={profile.id}
+            tiers={list.tiers}
+            fullListHref={userListHref(profile.username)}
+            onOpen={onOpen}
+          />
+        </>
+      )}
     </section>
   )
 }

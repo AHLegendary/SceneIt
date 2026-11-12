@@ -25,6 +25,7 @@ const PATHS = {
   plus: 'M12 5v14M5 12h14',
   undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
   equal: 'M5 9h14M5 15h14',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
 }
 
 export default function Icon({ name, size = 18, strokeWidth = 2, className = '', label }) {
