@@ -11,6 +11,7 @@
 // calls and the errors.
 
 import { getMovie, getMovieByTmdbId } from './localStore.js'
+import { moderateText } from './moderation.js'
 import { getState as getAccount } from './supabaseStore.js'
 import { supabase } from './supabase.js'
 
@@ -100,6 +101,16 @@ function cleanBody(text, max, what) {
   return body
 }
 
+// cleanBody, plus the content check. For anything other people will read
+// (reviews, edits, comments), so every write path goes through it even if a
+// form forgot to check first. Throws the moderation message when flagged.
+function cleanPublicBody(text, max, what) {
+  const body = cleanBody(text, max, what)
+  const verdict = moderateText(body)
+  if (!verdict.ok) throw new Error(verdict.reason)
+  return body
+}
+
 // ------------------------------------------------------------------ reviews
 
 // Creates or replaces the signed-in user's review of a movie (one per movie).
@@ -108,7 +119,7 @@ function cleanBody(text, max, what) {
 export async function saveReview(movieId, { body, isSpoiler = false }) {
   const userId = requireUserId()
   const movie = tmdbIdOf(movieId)
-  const text = cleanBody(body, MAX_REVIEW_LENGTH, 'review')
+  const text = cleanPublicBody(body, MAX_REVIEW_LENGTH, 'review')
   const fields = { body: text, is_spoiler: Boolean(isSpoiler) }
 
   // Not an upsert: edits may only touch body and is_spoiler (column grants),
@@ -141,7 +152,7 @@ export async function saveReview(movieId, { body, isSpoiler = false }) {
 export async function updateReview(reviewId, { body, isSpoiler = false }) {
   requireUserId()
   requireId(reviewId, 'review')
-  const text = cleanBody(body, MAX_REVIEW_LENGTH, 'review')
+  const text = cleanPublicBody(body, MAX_REVIEW_LENGTH, 'review')
   const { data, error } = await supabase
     .from('reviews')
     .update({ body: text, is_spoiler: Boolean(isSpoiler) })
@@ -218,7 +229,7 @@ export async function addComment(reviewId, body, parentId = null) {
   const userId = requireUserId()
   requireId(reviewId, 'review')
   if (parentId !== null) requireId(parentId, 'comment')
-  const text = cleanBody(body, MAX_COMMENT_LENGTH, 'comment')
+  const text = cleanPublicBody(body, MAX_COMMENT_LENGTH, 'comment')
   const { data, error } = await supabase
     .from('review_comments')
     .insert({ review_id: reviewId, user_id: userId, parent_id: parentId, body: text })
@@ -235,7 +246,7 @@ export async function addComment(reviewId, body, parentId = null) {
 export async function updateComment(commentId, body) {
   requireUserId()
   requireId(commentId, 'comment')
-  const text = cleanBody(body, MAX_COMMENT_LENGTH, 'comment')
+  const text = cleanPublicBody(body, MAX_COMMENT_LENGTH, 'comment')
   const { data, error } = await supabase
     .from('review_comments')
     .update({ body: text })

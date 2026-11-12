@@ -89,6 +89,7 @@ export class FakeBackend {
     this.movie_ratings = [] // cache of OMDb scores: { tmdb_id, imdb_id, imdb, imdb_votes, rt, checked_at }
     this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
+    this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
     this.buckets = new Map()
     this.files = new Map()
     this.validTokens = new Set()
@@ -431,7 +432,8 @@ export class FakeBackend {
     this.rankings.push({ user_id: uid, movie_id: movieId, position: at, category, created_at: firstRanked ?? stamp, updated_at: stamp })
   }
 
-  // Port of remove_ranking in the init migration.
+  // Port of remove_ranking (init migration, replaced in
+  // 20261113000000_reviews_comments_reports.sql: it also deletes the review).
   removeRanking(uid, movieId) {
     if (!uid) throw pgError('Not signed in', '28000')
     const at = this.rankings.findIndex((r) => r.user_id === uid && r.movie_id === movieId)
@@ -440,6 +442,17 @@ export class FakeBackend {
     if (!this.rankings.some((r) => r.user_id === uid && r.position === old.position)) {
       for (const r of this.rankings) if (r.user_id === uid && r.position > old.position) r.position -= 1
     }
+    this.reviews = this.reviews.filter((r) => !(r.user_id === uid && r.movie_id === movieId))
+  }
+
+  // Test helper: a review as if the user had written it (the movie must be
+  // ranked, like the real policy requires).
+  addReview(user, movieId, { body = 'A review.', isSpoiler = false, createdAt } = {}) {
+    const tmdbId = typeof movieId === 'number' ? movieId : this.catalog(movieId).tmdb_id
+    const stamp = createdAt ?? this.now()
+    const review = { id: this.id(), user_id: user.id, movie_id: tmdbId, body, is_spoiler: isSpoiler, created_at: stamp, updated_at: stamp }
+    this.reviews.push(review)
+    return review
   }
 
   getFriendships(uid) {
@@ -965,6 +978,7 @@ class Query {
       case 'profiles': return b.canView(ctx.uid, row.id)
       case 'rankings': return b.canView(ctx.uid, row.user_id)
       case 'friendships': return ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid)
+      case 'reviews': return b.canView(ctx.uid, row.user_id)
       case 'movies': return true
       case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)
@@ -1041,20 +1055,46 @@ class Query {
         if (this.table === 'profiles') return row.id === ctx.uid
         // addressee accepts: only `status`, and only to 'accepted'
         if (this.table === 'friendships') return row.addressee_id === ctx.uid && Object.keys(this.patch).every((k) => k === 'status') && this.patch.status === 'accepted'
+        // Column grants: an author may change only the text and the spoiler flag.
+        if (this.table === 'reviews') {
+          if (ctx.uid === null || row.user_id !== ctx.uid) return false
+          if (!Object.keys(this.patch).every((k) => k === 'body' || k === 'is_spoiler')) throw pgError('permission denied for table reviews', '42501')
+          return true
+        }
         return false
       }
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
       for (const row of hit) Object.assign(row, clone(this.patch))
       if (this.table === 'profiles') this.checkProfiles(hit)
+      if (this.table === 'reviews') {
+        this.checkReviews(hit)
+        for (const row of hit) row.updated_at = b.now()
+      }
       return out(hit)
     }
 
     if (this.op === 'delete') {
-      const allowed = (row) => ctx.service || (this.table === 'friendships' && ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid))
+      const allowed = (row) =>
+        ctx.service
+        || (this.table === 'friendships' && ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid))
+        || (this.table === 'reviews' && ctx.uid !== null && row.user_id === ctx.uid)
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
       const keep = this.rowsOfTable.filter((r) => !hit.includes(r))
       b[this.table].splice(0, b[this.table].length, ...keep)
       return out(hit)
+    }
+
+    if (this.op === 'insert' && this.table === 'reviews') {
+      // Policy: as yourself, for a movie you've ranked. Unique per user and movie.
+      const row = clone(this.row)
+      const ranked = b.rankings.some((r) => r.user_id === ctx.uid && r.movie_id === row.movie_id)
+      if (ctx.uid === null || row.user_id !== ctx.uid || !ranked) throw pgError('new row violates row-level security policy for table "reviews"', '42501')
+      if (b.reviews.some((r) => r.user_id === row.user_id && r.movie_id === row.movie_id)) throw pgError('duplicate key value violates unique constraint "reviews_user_id_movie_id_key"', '23505')
+      const stamp = b.now()
+      const saved = { id: b.id(), user_id: row.user_id, movie_id: row.movie_id, body: row.body, is_spoiler: row.is_spoiler ?? false, created_at: stamp, updated_at: stamp }
+      this.checkReviews([saved])
+      b.reviews.push(saved)
+      return out([saved])
     }
 
     if (this.op === 'insert' || this.op === 'upsert') {
@@ -1069,6 +1109,14 @@ class Query {
       return out([this.rowsOfTable.find((r) => r[key] === row[key])])
     }
     throw new Error(`fake: unsupported operation ${this.op}`)
+  }
+
+  // The body check on reviews: 1 to 2000 characters.
+  checkReviews(rows) {
+    for (const row of rows) {
+      const length = [...row.body].length
+      if (length < 1 || length > 2000) throw pgError('new row for relation "reviews" violates check constraint "reviews_body_check"', '23514')
+    }
   }
 
   // Check constraints on profiles (see the init migration).

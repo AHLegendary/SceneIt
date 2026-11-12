@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import MOVIES from '../../src/data/movies.json'
 import { formatVotes } from '../../src/lib/movieDetails.js'
-import { FakeBackend, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, launch, ready, screen, skipReview, waitFor, within } from './helpers/harness.js'
 
 const DUNE = MOVIES.find((m) => m.id === 'dune-part-two-2024')
 const ids = (n) => MOVIES.filter((m) => m.id !== DUNE.id).slice(0, n).map((m) => m.id)
@@ -198,6 +198,7 @@ describe('community rank', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Rank it' }))
     await user.click(await screen.findByRole('button', { name: /^Loved it/ }))
+    await skipReview(user)
     await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
     expect(backend.rankingOf(alice, DUNE.tmdb_id)).not.toBeNull()
   })

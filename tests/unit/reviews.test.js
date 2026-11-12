@@ -142,7 +142,7 @@ describe('saveReview', () => {
 
   it('accepts exactly the limit', async () => {
     db.results = [ok([REVIEW_ROW])]
-    await expect(reviews.saveReview('dune-part-two-2024', { body: 'x'.repeat(2000) })).resolves.toBeTruthy()
+    await expect(reviews.saveReview('dune-part-two-2024', { body: 'ab'.repeat(1000) })).resolves.toBeTruthy()
   })
 
   it('needs a login', async () => {
@@ -302,5 +302,24 @@ describe('reportContent', () => {
     db.account = { user: null }
     await expect(reviews.reportContent('review', REVIEW_ID, 'x')).rejects.toThrow('Log in')
     expect(db.calls).toHaveLength(0)
+  })
+})
+
+describe('content check', () => {
+  const FLAGGED = "That text can't be posted because it may break our community rules. Edit it and try again."
+
+  it('blocks flagged text on every write path before calling the database', async () => {
+    await expect(reviews.saveReview('dune-part-two-2024', { body: 'just kys' })).rejects.toThrow(FLAGGED)
+    await expect(reviews.updateReview(REVIEW_ID, { body: 'just kys' })).rejects.toThrow(FLAGGED)
+    await expect(reviews.addComment(REVIEW_ID, 'just kys')).rejects.toThrow(FLAGGED)
+    await expect(reviews.addComment(REVIEW_ID, 'just kys', PARENT_ID)).rejects.toThrow(FLAGGED)
+    await expect(reviews.updateComment(COMMENT_ID, 'just kys')).rejects.toThrow(FLAGGED)
+    expect(db.calls).toHaveLength(0)
+  })
+
+  it('does not run on report reasons (people may quote what they are reporting)', async () => {
+    db.results = [ok(null)]
+    await expect(reviews.reportContent('comment', COMMENT_ID, 'They said "kys"')).resolves.toBeUndefined()
+    expect(db.calls).toHaveLength(1)
   })
 })

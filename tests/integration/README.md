@@ -27,7 +27,8 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
-`send_friend_request`, `search_users`, `get_leaderboard`).
+`send_friend_request`, `search_users`, `get_leaderboard`) and the `reviews` table's
+policies (`review_comments` and `reports` are added with the features that use them).
 
 **What this cannot catch:** mistakes in the real SQL or policies. The fake is a
 port of them, pinned by `fakeBackend.test.js`. If you change a migration, change

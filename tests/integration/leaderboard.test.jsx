@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, launch, ready, screen, skipReview, useMenu, waitFor, within } from './helpers/harness.js'
 
 const [A, B, C, D, E] = MOVIES.slice(0, 5).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
@@ -255,6 +255,7 @@ describe('when you rank something', () => {
     await user.type(within(dialog).getByRole('searchbox'), title(A))
     await user.click(await within(dialog).findByRole('button', { name: `Rank ${title(A)}` }))
     await user.click(await screen.findByRole('button', { name: /^Loved it/ }))
+    await skipReview(user)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Rank another' }).disabled).toBe(false))
 
     await waitFor(() => expect(rowTitles()).toEqual([title(A)]))

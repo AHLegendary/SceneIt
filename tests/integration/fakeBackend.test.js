@@ -271,6 +271,96 @@ describe('row level security', () => {
   })
 })
 
+describe('reviews', () => {
+  const DUNE = 'dune-part-two-2024'
+  const INCEPTION = 'inception-2010'
+
+  const insertReview = (client, user, id, body = 'Great') =>
+    client.from('reviews').insert({ user_id: user.id, movie_id: tmdb(id), body, is_spoiler: false }).select('*').single()
+
+  it('can be written for a movie you have ranked, by you', async () => {
+    b.seedList(alice, [DUNE])
+    const client = await clientFor(alice)
+    const { data, error } = await insertReview(client, alice, DUNE)
+    expect(error).toBeNull()
+    expect(data).toMatchObject({ user_id: alice.id, movie_id: tmdb(DUNE), body: 'Great', is_spoiler: false })
+    expect(b.reviews).toHaveLength(1)
+  })
+
+  it('is refused for a movie you have not ranked, or as someone else', async () => {
+    b.seedList(alice, [DUNE])
+    b.seedList(bob, [INCEPTION])
+    const client = await clientFor(alice)
+    expect((await insertReview(client, alice, INCEPTION)).error.code).toBe('42501')
+    expect((await insertReview(client, bob, INCEPTION)).error.code).toBe('42501')
+    expect(b.reviews).toEqual([])
+  })
+
+  it('allows one review per user and movie, and 1 to 2000 characters', async () => {
+    b.seedList(alice, [DUNE])
+    const client = await clientFor(alice)
+    await insertReview(client, alice, DUNE)
+    expect((await insertReview(client, alice, DUNE, 'Again')).error.code).toBe('23505')
+    b.reviews.length = 0
+    expect((await insertReview(client, alice, DUNE, '')).error.code).toBe('23514')
+    expect((await insertReview(client, alice, DUNE, 'a'.repeat(2001))).error.code).toBe('23514')
+    expect((await insertReview(client, alice, DUNE, 'a'.repeat(2000))).error).toBeNull()
+  })
+
+  it('follows profile privacy: public, own and friends can read; strangers cannot', async () => {
+    b.seedList(cara, [DUNE])
+    b.addReview(cara, DUNE, { body: 'Private thoughts' })
+    b.seedList(bob, [INCEPTION])
+    b.addReview(bob, INCEPTION, { body: 'Public thoughts' })
+
+    const asAlice = await clientFor(alice)
+    const seen = (await asAlice.from('reviews').select('body')).data.map((r) => r.body)
+    expect(seen).toEqual(['Public thoughts']) // cara is private and not a friend
+
+    b.addFriendship(alice, cara)
+    expect((await asAlice.from('reviews').select('body')).data.map((r) => r.body).sort()).toEqual(['Private thoughts', 'Public thoughts'])
+
+    const asCara = await clientFor(cara)
+    expect((await asCara.from('reviews').select('body')).data.map((r) => r.body).sort()).toEqual(['Private thoughts', 'Public thoughts'])
+  })
+
+  it('lets only the author edit, and only the text and spoiler flag', async () => {
+    b.seedList(alice, [DUNE])
+    const review = b.addReview(alice, DUNE, { body: 'Before' })
+    const asAlice = await clientFor(alice)
+    const asBob = await clientFor(bob)
+
+    const edited = await asAlice.from('reviews').update({ body: 'After', is_spoiler: true }).eq('id', review.id).select('*')
+    expect(edited.data).toHaveLength(1)
+    expect(edited.data[0]).toMatchObject({ body: 'After', is_spoiler: true })
+    expect(edited.data[0].updated_at > edited.data[0].created_at).toBe(true)
+
+    expect((await asBob.from('reviews').update({ body: 'Hijacked' }).eq('id', review.id).select('*')).data).toEqual([])
+    expect((await asAlice.from('reviews').update({ movie_id: 1 }).eq('id', review.id).select('*')).error.code).toBe('42501')
+    expect(b.reviews[0].body).toBe('After')
+  })
+
+  it('lets only the author delete', async () => {
+    b.seedList(alice, [DUNE])
+    const review = b.addReview(alice, DUNE)
+    const asBob = await clientFor(bob)
+    await asBob.from('reviews').delete().eq('id', review.id)
+    expect(b.reviews).toHaveLength(1)
+    const asAlice = await clientFor(alice)
+    await asAlice.from('reviews').delete().eq('id', review.id)
+    expect(b.reviews).toEqual([])
+  })
+
+  it('is deleted when the movie is un-ranked (remove_ranking)', async () => {
+    b.seedList(alice, [DUNE, INCEPTION])
+    b.addReview(alice, DUNE)
+    b.addReview(alice, INCEPTION)
+    const client = await clientFor(alice)
+    await client.rpc('remove_ranking', { p_movie_id: tmdb(DUNE) })
+    expect(b.reviews.map((r) => r.movie_id)).toEqual([tmdb(INCEPTION)])
+  })
+})
+
 describe('get_leaderboard', () => {
   it('scores a lone loved movie 8.0 and spreads several across 10 to 6', async () => {
     const client = await clientFor(bob)

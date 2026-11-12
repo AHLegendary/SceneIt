@@ -1336,6 +1336,58 @@
 .placed__val { font-weight: 800; color: var(--accent); }
 .placed__actions { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
 
+/* Review step: shown after the ranking saves, before the result screen */
+.reviewstep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(560px, 100%);
+  text-align: center;
+  animation: rise var(--mid) var(--ease);
+}
+.reviewstep .compare__title { font-size: 26px; }
+.reviewstep .compare__progress { margin-top: 0; }
+.reviewstep__actions { display: flex; gap: 12px; justify-content: center; }
+
+/* Textarea + counter + spoiler toggle (components/ReviewEditor.jsx) */
+.reviewbox { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; }
+.reviewbox__label { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.reviewbox__input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.reviewbox__input:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--glow); }
+.reviewbox__input[aria-invalid="true"] { border-color: var(--danger); }
+.reviewbox__input:disabled { opacity: 0.6; }
+.reviewbox__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reviewbox__spoiler { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); cursor: pointer; }
+.reviewbox__spoiler input { accent-color: var(--accent); width: 16px; height: 16px; }
+.reviewbox__count { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.reviewbox__count.is-near { color: var(--danger); font-weight: 700; }
+.reviewbox__error { font-size: 13px; color: #ffb3bb; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ------------------------------------------------------------------ recommendations grid */
 .recs { display: flex; flex-direction: column; gap: 12px; }
 .recs__title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
