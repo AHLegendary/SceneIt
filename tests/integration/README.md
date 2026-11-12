@@ -82,4 +82,5 @@ await user.click(await screen.findByRole('button', { name: /^Rerank / }))
 ## Known gaps
 
 Tests marked `it.todo` describe behavior that is currently missing or broken.
-Search for `Known gap` to read why. When you fix one, turn the `todo` into a test.
+Each one should carry a `// Known gap:` comment saying why. When you fix one, turn the `todo` into a test.
+There are none right now.

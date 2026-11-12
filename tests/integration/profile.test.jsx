@@ -296,9 +296,19 @@ describe('editing', () => {
     expect(screen.queryByLabelText('Bio')).toBeNull()
   })
 
-  // Known gap: "Profile saved." is rendered inside the edit form, but the form closes on save,
-  // so nobody ever sees it. Turn this into a real test when the message is moved out of the form.
-  it.todo('confirms with "Profile saved." after saving (the message currently disappears with the form)')
+  it('confirms with "Profile saved." after saving, and clears it when you edit again', async () => {
+    const { user } = await open()
+    await startEditing(user)
+    await setField(user, 'Bio', 'New bio')
+
+    await user.click(save())
+
+    expect((await screen.findByRole('status')).textContent).toBe('Profile saved.')
+    expect(screen.queryByLabelText('Bio')).toBeNull()
+
+    await startEditing(user)
+    expect(screen.queryByText('Profile saved.')).toBeNull()
+  })
 
   it('keeps what you saved after a reload', async () => {
     const app = await open()

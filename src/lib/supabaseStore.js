@@ -239,7 +239,12 @@ export async function placeMovie(id, { category, index, tied = false }) {
   })
   if (error) {
     console.error('save_ranking failed:', error)
-    if (/not signed in|jwt|expired/i.test(error.message ?? '')) throw new Error(SESSION_ERROR)
+    if (/not signed in|jwt|expired/i.test(error.message ?? '')) {
+      // Log out locally too, like the other expiry paths, so "Log in" goes to
+      // the login page instead of bouncing a still-"logged in" user home.
+      await supabase.auth.signOut().catch(() => {})
+      throw new Error(SESSION_ERROR)
+    }
     throw new Error(`${SAVE_ERROR}${describe(error)}`)
   }
   await loadMyList()

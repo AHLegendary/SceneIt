@@ -432,11 +432,29 @@ describe('the Rank a movie dialog when logged out', () => {
     await logIn(user)
   })
 
-  // Known gap: after logging in, App.jsx opens the remembered dialog from a setTimeout inside an
-  // effect that also changes the page. The page change re-runs the effect and clears the timer
-  // first, so the dialog never opens. (Returning to a remembered *page* works; see auth.test.jsx.)
-  it.todo('opens the Rank a movie dialog after logging in from "Play Head-to-Head"')
-  it.todo('reopens the movie\'s details after logging in from "Log in to rank"')
+  it('opens the Rank a movie dialog after logging in from "Play Head-to-Head"', async () => {
+    const { user } = await open({ as: null })
+    await user.click(await screen.findByRole('button', { name: /Play Head-to-Head/ }))
+
+    await logIn(user)
+
+    expect(await screen.findByRole('dialog', { name: 'Rank a movie' })).toBeTruthy()
+    expect(window.location.hash).toBe('#/home')
+  })
+
+  it('reopens the movie\'s details after logging in from "Log in to rank"', async () => {
+    const { user } = await open({ as: null })
+    await user.type(box(), 'zebra crossing')
+    await waitFor(() => expect(options()).toHaveLength(1))
+    await user.click(options()[0])
+    const details = await screen.findByRole('dialog', { name: 'Zebra Crossing' })
+    await user.click(within(details).getByRole('button', { name: 'Log in to rank' }))
+
+    await logIn(user)
+
+    const reopened = await screen.findByRole('dialog', { name: 'Zebra Crossing' })
+    expect(within(reopened).queryByRole('button', { name: 'Log in to rank' })).toBeNull()
+  })
 })
 
 describe('from the Profile menu', () => {

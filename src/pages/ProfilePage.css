@@ -115,7 +115,6 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
 .profile__error { font-size: 12px; color: #ffb3bb; }
 .profile__actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .profile__link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.profile__notice { font-size: 14px; color: var(--accent); }
 .profile__alert {
   padding: 12px 14px;
   border-radius: 12px;
