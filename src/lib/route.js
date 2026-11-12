@@ -14,6 +14,7 @@ function decode(part) {
 //   #/my-list                -> { page: 'my-list', username: null }
 //   #/u/reil_99              -> { page: 'user', username: 'reil_99' }
 //   #/u/reil_99/my-list      -> { page: 'user-list', username: 'reil_99' }
+//   #/u/reil_99/review/<id>  -> { page: 'review', username: 'reil_99', reviewId: '<id>' }
 //   #/blends/abc             -> { page: 'blend', username: null, blendId: 'abc' }
 // Anything unknown falls back to the default page.
 export function parseHash(hash) {
@@ -24,6 +25,14 @@ export function parseHash(hash) {
     const blendId = decode(blendMatch[1])
     if (blendId === null) return { page: DEFAULT_PAGE, username: null }
     return { page: 'blend', username: null, blendId }
+  }
+
+  const reviewMatch = raw.match(/^u\/([^/?#]+)\/review\/([^/?#]+)$/)
+  if (reviewMatch) {
+    const username = decode(reviewMatch[1])
+    const reviewId = decode(reviewMatch[2])
+    if (username === null || reviewId === null) return { page: DEFAULT_PAGE, username: null }
+    return { page: 'review', username, reviewId }
   }
 
   const listMatch = raw.match(/^u\/([^/?#]+)\/my-list$/)
@@ -51,4 +60,9 @@ export function userHref(username) {
 // Link to another user's full ranked list.
 export function userListHref(username) {
   return `#/u/${encodeURIComponent(username)}/my-list`
+}
+
+// Link to the discussion page of a review: the review, then its comments.
+export function reviewHref(username, reviewId) {
+  return `#/u/${encodeURIComponent(username)}/review/${encodeURIComponent(reviewId)}`
 }

@@ -27,8 +27,9 @@ export const PROFILE_SHORTCUTS = [
 ]
 
 // 'user' is someone else's profile (#/u/name, see route.js); it has no tab.
+// 'review' is one review and its comments (#/u/name/review/id); it has no tab, and anyone can read it.
 // 'blend' is one Movie Blend (#/blends/id); it has no tab either, and needs an account.
 // Pages anyone can see without logging in. Everything else needs an account.
-export const PUBLIC_PAGES = new Set(['home', 'leaderboard', 'login', 'signup', 'user', 'user-list'])
+export const PUBLIC_PAGES = new Set(['home', 'leaderboard', 'login', 'signup', 'user', 'user-list', 'review'])
 
 export const DEFAULT_PAGE = 'home'

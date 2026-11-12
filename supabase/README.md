@@ -8,6 +8,7 @@
 - `migrations/20261108000100_omdb_budget.sql`: `omdb_usage` and `claim_omdb_call`, a shared daily budget (900) for OMDb lookups
 - `migrations/20261113000000_reviews_comments_reports.sql`: `reviews`, `review_comments` (one level of replies) and `reports`, with RLS; `remove_ranking` now also deletes the movie's review
 - `migrations/20261113000100_reviews_grants.sql`: table grants for the three tables above (without them the API can't reach them)
+- `migrations/20261114000000_review_discussion.sql`: signed-out visitors can read public reviews and comments, and `get_review_comments` (a review's comments with commenters' usernames)
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -37,8 +38,8 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `blends` | `owner_id` of a Movie Blend | its members | through the blend functions only |
 | `blend_members` | `(blend_id, user_id, joined_at)`, 5 at most per blend (enforced by a trigger) | the blend's members | through the blend functions only |
 | `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
-| `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters. Only for movies the user has ranked; un-ranking deletes it | same as the author's profile | the author; edits can change only `body` and `is_spoiler` |
-| `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
+| `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters. Only for movies the user has ranked; un-ranking deletes it | same as the author's profile (signed-out visitors too, for public profiles) | the author; edits can change only `body` and `is_spoiler` |
+| `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review (use `get_review_comments` to also get usernames) | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
 | `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
@@ -75,6 +76,12 @@ await supabase.rpc('send_friend_request', { p_user_id: otherUserId })
 await supabase.from('friendships').update({ status: 'accepted' })
   .eq('requester_id', otherUserId).eq('addressee_id', myId)
 // Decline, cancel, or unfriend: delete the row (either person can).
+
+// Comments on a review, oldest first, each with the commenter's username (even
+// when their own profile is private). Empty if you can't see the review.
+// Use src/lib/reviews.js (fetchComments) from the UI.
+//   [{ id, review_id, user_id, parent_id, body, created_at, updated_at, username }]
+await supabase.rpc('get_review_comments', { p_review_id: reviewId })
 
 // Movie Blend. Use src/features/blends/blends.js from the UI instead of calling these.
 // Failures raise short messages like 'blend_full' or 'invite_expired'.

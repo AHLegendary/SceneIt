@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import ReviewCard from './ReviewCard.jsx'
 import { scoreTiers } from '../features/ranking/scores.js'
+import { useNavMemory } from '../lib/navMemory.js'
 import { fetchRankingOrder } from '../lib/rankingsQueries.js'
+import { reviewHref } from '../lib/route.js'
 import { deleteReview, fetchReviewsForMovies, updateReview } from '../lib/reviews.js'
 import { useNearBottom } from '../lib/useNearBottom.js'
 
@@ -22,24 +24,31 @@ const REVIEWS_ERROR = "Couldn't load some of the reviews. Check your connection 
 //
 // Give it `key={userId}`: all of its state belongs to one user's list.
 //
+// After Back (see lib/navMemory.js) it comes back as you left it: the search
+// text, how many cards were loaded, and the reviews already fetched, so the
+// scroll position still points at the same card. The reviews are asked for
+// again in the background, so comment counts are fresh.
+//
 //   userId        whose list this is
+//   username      their username, for the links to each review's comments
 //   tiers         that user's ranked list
 //   isOwner       your own profile: reviews can be edited and deleted
 //   fullListHref  link to the plain ranked list
 //   onOpen        opens a movie's details (movie id)
-export default function RecentlyRanked({ userId, tiers, isOwner = false, fullListHref, onOpen }) {
-  const [query, setQuery] = useState('')
-  const [limit, setLimit] = useState(PAGE_SIZE)
+export default function RecentlyRanked({ userId, username, tiers, isOwner = false, fullListHref, onOpen }) {
+  const { recalled, save } = useNavMemory(`recent:${userId}`)
+  const [query, setQuery] = useState(recalled?.query ?? '')
+  const [limit, setLimit] = useState(recalled?.limit ?? PAGE_SIZE)
   // TMDb ids, newest first. null until the first load finishes; after that a
   // failed reload keeps the old order and just reports the error.
-  const [order, setOrder] = useState(null)
+  const [order, setOrder] = useState(recalled?.order ?? null)
   const [orderError, setOrderError] = useState(false)
   const [orderAttempt, setOrderAttempt] = useState(0)
   // Reviews by movie id, and the movies whose review lookup has finished
   // (found or not). `asked` remembers which movies a request was sent for, so
   // each page is requested once.
-  const [reviews, setReviews] = useState(() => new Map())
-  const [settled, setSettled] = useState(() => new Set())
+  const [reviews, setReviews] = useState(() => recalled?.reviews ?? new Map())
+  const [settled, setSettled] = useState(() => recalled?.settled ?? new Set())
   const [reviewsError, setReviewsError] = useState(false)
   const asked = useRef(new Set())
 
@@ -59,6 +68,11 @@ export default function RecentlyRanked({ userId, tiers, isOwner = false, fullLis
       current = false
     }
   }, [userId, tiers, orderAttempt])
+
+  // Hold the state for Back.
+  useEffect(() => {
+    save({ query, limit, order, reviews, settled })
+  }, [save, query, limit, order, reviews, settled])
 
   const total = useMemo(() => tiers.reduce((n, tier) => n + tier.length, 0), [tiers])
 
@@ -151,6 +165,7 @@ export default function RecentlyRanked({ userId, tiers, isOwner = false, fullLis
               onOpenMovie={onOpen}
               onSaveReview={saveReview}
               onDeleteReview={removeReview}
+              commentsHref={reviews.has(movie.id) && username ? reviewHref(username, reviews.get(movie.id).id) : undefined}
             />
           </li>
         ))}

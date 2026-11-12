@@ -10,7 +10,7 @@
 // is decided by RLS (see supabase/README.md); these functions only shape the
 // calls and the errors.
 
-import { getMovie, getMovieByTmdbId } from './localStore.js'
+import { getMovie, getMovieByTmdbId, movieFromDb } from './localStore.js'
 import { moderateText } from './moderation.js'
 import { getState as getAccount } from './supabaseStore.js'
 import { supabase } from './supabase.js'
@@ -53,9 +53,12 @@ export function rowToReview(row) {
   }
 }
 
-// Comment row -> { id, reviewId, userId, parentId, body, createdAt, updatedAt }.
+// Comment row -> { id, reviewId, userId, parentId, body, createdAt, updatedAt,
+// username }. username is only there when the row came from
+// get_review_comments (null otherwise).
 export function rowToComment(row) {
   return {
+    username: row.username ?? null,
     id: row.id,
     reviewId: row.review_id,
     userId: row.user_id,
@@ -192,6 +195,45 @@ export async function fetchReview(reviewId) {
   return data ? rowToReview(data) : null
 }
 
+// Everything the review's discussion page shows: { review, author, movie }, or
+// null when the review doesn't exist or you aren't allowed to see it (those
+// look the same on purpose). `author` is { id, username }; `movie` is the movie
+// object (the catalog's, or one built from the `movies` table).
+export async function fetchReviewPage(reviewId) {
+  requireId(reviewId, 'review')
+  const { data: row, error } = await supabase.from('reviews').select(REVIEW_COLUMNS).eq('id', reviewId).maybeSingle()
+  if (error) {
+    console.error('fetchReviewPage failed', error)
+    throw new Error(REVIEW_LOAD_ERROR)
+  }
+  if (!row) return null
+
+  let movie = getMovieByTmdbId(row.movie_id)
+  if (!movie) {
+    const found = await supabase
+      .from('movies')
+      .select('tmdb_id, title, year, poster_path, genres, overview')
+      .eq('tmdb_id', row.movie_id)
+      .maybeSingle()
+    if (found.error) {
+      console.error('fetchReviewPage failed', found.error)
+      throw new Error(REVIEW_LOAD_ERROR)
+    }
+    movie = found.data ? movieFromDb(found.data) : null
+  }
+
+  const profile = await supabase.from('profiles').select('id, username').eq('id', row.user_id).maybeSingle()
+  if (profile.error) {
+    console.error('fetchReviewPage failed', profile.error)
+    throw new Error(REVIEW_LOAD_ERROR)
+  }
+  return {
+    review: rowToReview(row),
+    author: { id: row.user_id, username: profile.data?.username ?? null },
+    movie,
+  }
+}
+
 // A user's review of one movie, or null. Used to pre-fill the review step
 // when someone re-ranks a movie.
 export async function fetchMyReview(movieId) {
@@ -233,14 +275,13 @@ export async function fetchReviewsForMovies(userId, movieIds) {
 
 // ------------------------------------------------------------------ comments
 
-// Every comment on a review, as a flat list (see threadComments to nest it).
+// Every comment on a review, oldest first, as a flat list with each
+// commenter's username (see threadComments to nest it). Goes through
+// get_review_comments rather than the table: a commenter's profile may be
+// private, and then their username can't be read from `profiles` directly.
 export async function fetchComments(reviewId) {
   requireId(reviewId, 'review')
-  const { data, error } = await supabase
-    .from('review_comments')
-    .select(COMMENT_COLUMNS)
-    .eq('review_id', reviewId)
-    .order('created_at', { ascending: true })
+  const { data, error } = await supabase.rpc('get_review_comments', { p_review_id: reviewId })
   if (error) {
     console.error('fetchComments failed', error)
     throw new Error(COMMENT_LOAD_ERROR)

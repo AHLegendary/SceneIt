@@ -361,6 +361,204 @@ describe('reviews', () => {
   })
 })
 
+describe('review comments', () => {
+  const DUNE = 'dune-part-two-2024'
+  let review
+
+  // alice's public review; bob and cara can see it (cara is private, but the review isn't hers)
+  beforeEach(() => {
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Thoughts.' })
+  })
+
+  const comment = (client, user, body = 'Agreed', parentId = null) =>
+    client.from('review_comments').insert({ review_id: review.id, user_id: user.id, parent_id: parentId, body }).select('*').single()
+
+  it('can be written as yourself on a review you can see', async () => {
+    const asBob = await clientFor(bob)
+    const { data, error } = await comment(asBob, bob)
+    expect(error).toBeNull()
+    expect(data).toMatchObject({ review_id: review.id, user_id: bob.id, parent_id: null, body: 'Agreed' })
+    expect((await comment(asBob, alice)).error.code).toBe('42501') // as someone else
+  })
+
+  it('cannot be written on a review you cannot see', async () => {
+    b.seedList(cara, [DUNE])
+    const hidden = b.addReview(cara, DUNE) // cara is private
+    const asBob = await clientFor(bob)
+    const { error } = await asBob.from('review_comments').insert({ review_id: hidden.id, user_id: bob.id, body: 'Hi' })
+    expect(error.code).toBe('42501')
+  })
+
+  it('takes 1 to 2000 characters', async () => {
+    const asBob = await clientFor(bob)
+    expect((await comment(asBob, bob, '')).error.code).toBe('23514')
+    expect((await comment(asBob, bob, 'a'.repeat(2001))).error.code).toBe('23514')
+    expect((await comment(asBob, bob, 'a'.repeat(2000))).error).toBeNull()
+  })
+
+  it('allows one level of replies and refuses replies to replies', async () => {
+    const asBob = await clientFor(bob)
+    const top = (await comment(asBob, bob, 'Top')).data
+    const reply = await comment(asBob, bob, 'Reply', top.id)
+    expect(reply.error).toBeNull()
+    expect((await comment(asBob, bob, 'Reply to reply', reply.data.id)).error.code).toBe('23514')
+    expect((await comment(asBob, bob, 'Orphan', '00000000-0000-4000-8000-0000000000ff')).error.code).toBe('23503')
+  })
+
+  it('refuses a reply that points at a comment on another review', async () => {
+    b.seedList(bob, [DUNE])
+    const other = b.addReview(bob, DUNE)
+    const elsewhere = b.addComment(bob, other, { body: 'Elsewhere' })
+    const asBob = await clientFor(bob)
+    expect((await comment(asBob, bob, 'Cross', elsewhere.id)).error.code).toBe('23514')
+  })
+
+  it('lets only the commenter edit, and only the body', async () => {
+    const mine = b.addComment(bob, review, { body: 'Before' })
+    const asBob = await clientFor(bob)
+    const asAlice = await clientFor(alice)
+
+    const edited = await asBob.from('review_comments').update({ body: 'After' }).eq('id', mine.id).select('*')
+    expect(edited.data[0].body).toBe('After')
+    expect(edited.data[0].updated_at > edited.data[0].created_at).toBe(true)
+    expect((await asAlice.from('review_comments').update({ body: 'Hijack' }).eq('id', mine.id).select('*')).data).toEqual([])
+    expect((await asBob.from('review_comments').update({ review_id: 'x' }).eq('id', mine.id).select('*')).error.code).toBe('42501')
+  })
+
+  it('lets the commenter or the review author delete, and nobody else', async () => {
+    const byBob = b.addComment(bob, review)
+    const byBob2 = b.addComment(bob, review)
+    const asCara = await clientFor(cara)
+    await asCara.from('review_comments').delete().eq('id', byBob.id)
+    expect(b.review_comments).toHaveLength(2) // a stranger can't
+
+    const asBob = await clientFor(bob)
+    await asBob.from('review_comments').delete().eq('id', byBob.id)
+    expect(b.review_comments.map((c) => c.id)).toEqual([byBob2.id]) // the commenter can
+
+    const asAlice = await clientFor(alice)
+    await asAlice.from('review_comments').delete().eq('id', byBob2.id)
+    expect(b.review_comments).toEqual([]) // the review's author can delete anyone's
+  })
+
+  it('deleting a comment deletes its replies, and deleting a review deletes its comments', async () => {
+    const top = b.addComment(bob, review)
+    b.addComment(cara, review, { parentId: top.id })
+    const asBob = await clientFor(bob)
+    await asBob.from('review_comments').delete().eq('id', top.id)
+    expect(b.review_comments).toEqual([])
+
+    b.addComment(bob, review)
+    const asAlice = await clientFor(alice)
+    await asAlice.from('reviews').delete().eq('id', review.id)
+    expect(b.review_comments).toEqual([])
+  })
+
+  it('un-ranking the movie deletes the review and its comments', async () => {
+    b.addComment(bob, review)
+    const asAlice = await clientFor(alice)
+    await asAlice.rpc('remove_ranking', { p_movie_id: tmdb(DUNE) })
+    expect(b.reviews).toEqual([])
+    expect(b.review_comments).toEqual([])
+  })
+
+  it('get_review_comments returns the thread with usernames, even for a private commenter', async () => {
+    b.addComment(cara, review, { body: 'From a private profile' }) // cara is private, bob is not her friend
+    b.addComment(bob, review, { body: 'Second' })
+    const asBob = await clientFor(bob)
+    const { data, error } = await asBob.rpc('get_review_comments', { p_review_id: review.id })
+    expect(error).toBeNull()
+    expect(data.map((c) => [c.username, c.body])).toEqual([['cara', 'From a private profile'], ['bob', 'Second']])
+  })
+
+  it('get_review_comments returns nothing for a review you cannot see', async () => {
+    b.seedList(cara, [DUNE])
+    const hidden = b.addReview(cara, DUNE)
+    b.addComment(cara, hidden)
+    const asBob = await clientFor(bob)
+    expect((await asBob.rpc('get_review_comments', { p_review_id: hidden.id })).data).toEqual([])
+    const asCara = await clientFor(cara)
+    expect((await asCara.rpc('get_review_comments', { p_review_id: hidden.id })).data).toHaveLength(1)
+  })
+})
+
+describe('reports', () => {
+  const DUNE = 'dune-part-two-2024'
+  let review
+  let commentRow
+
+  beforeEach(() => {
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE)
+    commentRow = b.addComment(alice, review)
+  })
+
+  const report = (client, user, type, id, reason = 'Spam') =>
+    client.from('reports').insert({ reporter_id: user.id, target_type: type, target_id: id, reason })
+
+  it('can be filed as yourself about a review or a comment you can see', async () => {
+    const asBob = await clientFor(bob)
+    expect((await report(asBob, bob, 'review', review.id)).error).toBeNull()
+    expect((await report(asBob, bob, 'comment', commentRow.id)).error).toBeNull()
+    expect(b.reports.map((r) => r.target_type)).toEqual(['review', 'comment'])
+  })
+
+  it('is refused as someone else, or about something you cannot see or that does not exist', async () => {
+    b.seedList(cara, [DUNE])
+    const hidden = b.addReview(cara, DUNE)
+    const asBob = await clientFor(bob)
+    expect((await report(asBob, alice, 'review', review.id)).error.code).toBe('42501')
+    expect((await report(asBob, bob, 'review', hidden.id)).error.code).toBe('42501')
+    expect((await report(asBob, bob, 'comment', '00000000-0000-4000-8000-0000000000ff')).error.code).toBe('42501')
+    expect((await report(asBob, bob, 'user', review.id)).error.code).toBe('42501')
+  })
+
+  it('takes a reason of 1 to 500 characters, once per reporter and target', async () => {
+    const asBob = await clientFor(bob)
+    expect((await report(asBob, bob, 'review', review.id, '')).error.code).toBe('23514')
+    expect((await report(asBob, bob, 'review', review.id, 'a'.repeat(501))).error.code).toBe('23514')
+    expect((await report(asBob, bob, 'review', review.id)).error).toBeNull()
+    expect((await report(asBob, bob, 'review', review.id, 'Again')).error.code).toBe('23505')
+  })
+
+  it('cannot be read back through the API', async () => {
+    const asBob = await clientFor(bob)
+    await report(asBob, bob, 'review', review.id)
+    const read = await asBob.from('reports').select('*')
+    expect(read.error?.code).toBe('42501') // no select privilege at all
+  })
+})
+
+describe('table privileges on the review tables', () => {
+  const DUNE = 'dune-part-two-2024'
+  const anonClient = () => b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+
+  it('lets a signed-out visitor read the reviews and comments of public profiles, and only those', async () => {
+    b.seedList(bob, [DUNE])
+    const open = b.addReview(bob, DUNE, { body: 'Public' })
+    b.addComment(alice, open)
+    b.seedList(cara, [DUNE])
+    b.addReview(cara, DUNE, { body: 'Private' })
+
+    const anon = anonClient()
+    expect((await anon.from('reviews').select('body')).data.map((r) => r.body)).toEqual(['Public'])
+    expect((await anon.from('review_comments').select('body')).data).toHaveLength(1)
+    expect((await anon.rpc('get_review_comments', { p_review_id: open.id })).data).toHaveLength(1)
+  })
+
+  it('does not let a signed-out visitor write anything', async () => {
+    b.seedList(bob, [DUNE])
+    const review = b.addReview(bob, DUNE)
+    const anon = anonClient()
+    expect((await anon.from('reviews').insert({ user_id: bob.id, movie_id: tmdb(DUNE), body: 'x' })).error.code).toBe('42501')
+    expect((await anon.from('review_comments').insert({ review_id: review.id, user_id: bob.id, body: 'x' })).error.code).toBe('42501')
+    expect((await anon.from('reports').insert({ reporter_id: bob.id, target_type: 'review', target_id: review.id, reason: 'x' })).error.code).toBe('42501')
+    expect((await anon.from('reviews').delete().eq('id', review.id)).error.code).toBe('42501')
+    expect(b.reviews).toHaveLength(1)
+  })
+})
+
 describe('get_leaderboard', () => {
   it('scores a lone loved movie 8.0 and spreads several across 10 to 6', async () => {
     const client = await clientFor(bob)

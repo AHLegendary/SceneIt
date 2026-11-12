@@ -90,7 +90,8 @@ export class FakeBackend {
     this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
     this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
-    this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at } (read-only so far)
+    this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at }
+    this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at }
     this.buckets = new Map()
     this.files = new Map()
     this.validTokens = new Set()
@@ -443,11 +444,29 @@ export class FakeBackend {
     if (!this.rankings.some((r) => r.user_id === uid && r.position === old.position)) {
       for (const r of this.rankings) if (r.user_id === uid && r.position > old.position) r.position -= 1
     }
-    this.reviews = this.reviews.filter((r) => !(r.user_id === uid && r.movie_id === movieId))
+    this.deleteReviews((r) => r.user_id === uid && r.movie_id === movieId)
   }
 
-  // Test helper: a comment as if the user had written it. Comments can't be
-  // posted through the fake client yet, only counted and read.
+  // Deletes reviews and, like the foreign keys do, their comments.
+  deleteReviews(test) {
+    const gone = new Set(this.reviews.filter(test).map((r) => r.id))
+    this.reviews = this.reviews.filter((r) => !gone.has(r.id))
+    this.review_comments = this.review_comments.filter((c) => !gone.has(c.review_id))
+  }
+
+  // Port of get_review_comments in 20261114000000_review_discussion.sql: the
+  // comments of a review you may see, each with the commenter's username
+  // (readable even when their own profile isn't).
+  getReviewComments(uid, reviewId) {
+    const review = this.reviews.find((r) => r.id === reviewId)
+    if (!review || !this.canView(uid, review.user_id)) return []
+    return this.review_comments
+      .filter((c) => c.review_id === reviewId)
+      .sort((a, b) => (a.created_at === b.created_at ? (a.id < b.id ? -1 : 1) : a.created_at < b.created_at ? -1 : 1))
+      .map((c) => ({ ...clone(c), username: this.profiles.find((p) => p.id === c.user_id)?.username ?? null }))
+  }
+
+  // Test helper: a comment as if the user had written it.
   addComment(user, review, { body = 'A comment.', parentId = null } = {}) {
     const stamp = this.now()
     const comment = { id: this.id(), review_id: review.id, user_id: user.id, parent_id: parentId, body, created_at: stamp, updated_at: stamp }
@@ -748,6 +767,8 @@ class FakeClient {
         case 'get_my_blends':
         case 'get_my_blend_invites':
           return { data: [], error: null }
+        case 'get_review_comments':
+          return { data: b.getReviewComments(uid, args.p_review_id), error: null }
         case 'get_leaderboard':
           return { data: b.getLeaderboard(args.p_period, args.p_category, args.p_limit), error: null }
         case 'claim_omdb_call':
@@ -912,6 +933,17 @@ class FakeClient {
 // The column an upsert conflicts on, per table.
 const UPSERT_KEYS = { movies: 'tmdb_id', movie_ratings: 'tmdb_id' }
 
+// Table privileges for the tables whose migrations grant them explicitly
+// (20261113000100_reviews_grants.sql, 20261114000000_review_discussion.sql).
+// Without a matching grant the API refuses before RLS is even looked at, which
+// is what "API DISABLED" in the dashboard means. (UPDATE is column-limited in
+// the database; the per-column part is checked where the update runs.)
+const GRANTS = {
+  reviews: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
+  review_comments: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
+  reports: { anon: [], authenticated: ['insert'] },
+}
+
 // Which table an embedded select (movies(...)) points at, per table.
 // `count: true` is PostgREST's `table(count)`: [{ count: n }] of the rows pointing back at this one.
 const EMBEDS = {
@@ -997,6 +1029,7 @@ class Query {
         const review = b.reviews.find((r) => r.id === row.review_id)
         return review ? b.canView(ctx.uid, review.user_id) : false
       }
+      case 'reports': return false // nobody reads reports through the API
       case 'movies': return true
       case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)
@@ -1058,6 +1091,15 @@ class Query {
     const matches = (row) => this.canSee(row, ctx) && this.filters.every((f) => f(row))
     const out = (rows) => rows.map((r) => clone(this.project(r, this.cols)))
 
+    // Table privileges come before RLS.
+    const grants = GRANTS[this.table]
+    if (grants && !ctx.service) {
+      const role = ctx.uid ? 'authenticated' : 'anon'
+      const needed = this.op === 'upsert' ? ['insert', 'update'] : [this.op]
+      if (this.returning) needed.push('select') // RETURNING reads the row back
+      if (!needed.every((op) => grants[role].includes(op))) throw pgError(`permission denied for table ${this.table}`, '42501')
+    }
+
     if (this.op === 'select') {
       let rows = this.rowsOfTable.filter(matches)
       rows = [...rows].sort((x, y) => {
@@ -1083,6 +1125,11 @@ class Query {
           if (!Object.keys(this.patch).every((k) => k === 'body' || k === 'is_spoiler')) throw pgError('permission denied for table reviews', '42501')
           return true
         }
+        if (this.table === 'review_comments') {
+          if (ctx.uid === null || row.user_id !== ctx.uid) return false
+          if (!Object.keys(this.patch).every((k) => k === 'body')) throw pgError('permission denied for table review_comments', '42501')
+          return true
+        }
         return false
       }
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
@@ -1090,6 +1137,10 @@ class Query {
       if (this.table === 'profiles') this.checkProfiles(hit)
       if (this.table === 'reviews') {
         this.checkReviews(hit)
+        for (const row of hit) row.updated_at = b.now()
+      }
+      if (this.table === 'review_comments') {
+        this.checkComments(hit)
         for (const row of hit) row.updated_at = b.now()
       }
       return out(hit)
@@ -1100,9 +1151,21 @@ class Query {
         ctx.service
         || (this.table === 'friendships' && ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid))
         || (this.table === 'reviews' && ctx.uid !== null && row.user_id === ctx.uid)
+        // the commenter, or the author of the review it is on
+        || (this.table === 'review_comments' && ctx.uid !== null
+          && (row.user_id === ctx.uid || b.reviews.find((r) => r.id === row.review_id)?.user_id === ctx.uid))
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
       const keep = this.rowsOfTable.filter((r) => !hit.includes(r))
       b[this.table].splice(0, b[this.table].length, ...keep)
+      // on delete cascade: a review takes its comments with it, a comment its replies.
+      if (this.table === 'reviews') {
+        const gone = new Set(hit.map((r) => r.id))
+        b.review_comments = b.review_comments.filter((c) => !gone.has(c.review_id))
+      }
+      if (this.table === 'review_comments') {
+        const gone = new Set(hit.map((c) => c.id))
+        b.review_comments = b.review_comments.filter((c) => !gone.has(c.parent_id))
+      }
       return out(hit)
     }
 
@@ -1119,6 +1182,45 @@ class Query {
       return out([saved])
     }
 
+    if (this.op === 'insert' && this.table === 'review_comments') {
+      // Policy: as yourself, on a review you can see. Trigger: replies go on top-level comments of the same review.
+      const row = clone(this.row)
+      const review = b.reviews.find((r) => r.id === row.review_id)
+      const visible = Boolean(review) && b.canView(ctx.uid, review.user_id)
+      if (ctx.uid === null || row.user_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "review_comments"', '42501')
+      const saved = { id: b.id(), review_id: row.review_id, user_id: row.user_id, parent_id: row.parent_id ?? null, body: row.body, created_at: null, updated_at: null }
+      this.checkComments([saved])
+      if (saved.parent_id !== null) {
+        const parent = b.review_comments.find((c) => c.id === saved.parent_id)
+        if (!parent) throw pgError('Reply target not found', '23503')
+        if (parent.parent_id !== null) throw pgError("Replies can't have replies", '23514')
+        if (parent.review_id !== saved.review_id) throw pgError('Reply must be on the same review', '23514')
+      }
+      saved.created_at = saved.updated_at = b.now()
+      b.review_comments.push(saved)
+      return out([saved])
+    }
+
+    if (this.op === 'insert' && this.table === 'reports') {
+      // Policy: as yourself, about a review or comment you can see. One per reporter and target.
+      const row = clone(this.row)
+      const seen = (list, check) => list.some((x) => x.id === row.target_id && check(x))
+      const visible = row.target_type === 'review'
+        ? seen(b.reviews, (r) => b.canView(ctx.uid, r.user_id))
+        : row.target_type === 'comment'
+          ? seen(b.review_comments, (c) => b.canView(ctx.uid, b.reviews.find((r) => r.id === c.review_id)?.user_id))
+          : false
+      if (ctx.uid === null || row.reporter_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "reports"', '42501')
+      const length = [...(row.reason ?? '')].length
+      if (length < 1 || length > 500) throw pgError('new row for relation "reports" violates check constraint "reports_reason_check"', '23514')
+      if (b.reports.some((r) => r.reporter_id === row.reporter_id && r.target_type === row.target_type && r.target_id === row.target_id)) {
+        throw pgError('duplicate key value violates unique constraint "reports_reporter_id_target_type_target_id_key"', '23505')
+      }
+      const saved = { id: b.id(), reporter_id: row.reporter_id, target_type: row.target_type, target_id: row.target_id, reason: row.reason, created_at: b.now() }
+      b.reports.push(saved)
+      return out([saved])
+    }
+
     if (this.op === 'insert' || this.op === 'upsert') {
       if (!ctx.service) throw pgError(`new row violates row-level security policy for table "${this.table}"`, '42501')
       const key = UPSERT_KEYS[this.table]
@@ -1131,6 +1233,14 @@ class Query {
       return out([this.rowsOfTable.find((r) => r[key] === row[key])])
     }
     throw new Error(`fake: unsupported operation ${this.op}`)
+  }
+
+  // The body check on comments: 1 to 2000 characters.
+  checkComments(rows) {
+    for (const row of rows) {
+      const length = [...row.body].length
+      if (length < 1 || length > 2000) throw pgError('new row for relation "review_comments" violates check constraint "review_comments_body_check"', '23514')
+    }
   }
 
   // The body check on reviews: 1 to 2000 characters.
