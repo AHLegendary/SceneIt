@@ -43,7 +43,10 @@ export default function SearchDialog({ initialQuery = '', signedIn = true, onClo
   const searching = Boolean(trimmed) && !done
   // While a search is running, keep showing the previous results instead of
   // flashing an empty list.
-  const results = !trimmed ? getSuggestions() : done ? done.results : live?.results ?? []
+  // Popular picks skip what's already ranked; search results keep them,
+  // marked "Ranked", since the user went looking for that title.
+  const results = !trimmed ? getSuggestions({ exclude: inList }) : done ? done.results : live?.results ?? []
+  const outOfPicks = !trimmed && results.length === 0
 
   useEffect(() => {
     const el = input.current
@@ -97,7 +100,9 @@ export default function SearchDialog({ initialQuery = '', signedIn = true, onClo
         </label>
 
         <p className="dialog__section" aria-live="polite">
-          {!trimmed
+          {outOfPicks
+            ? ''
+            : !trimmed
             ? 'Popular picks'
             : searching
               ? 'Searching…'
@@ -112,7 +117,9 @@ export default function SearchDialog({ initialQuery = '', signedIn = true, onClo
           </p>
         )}
 
-        {done && results.length === 0 ? (
+        {outOfPicks ? (
+          <p className="dialog__empty">You've ranked all our popular picks. Search above for any other movie.</p>
+        ) : done && results.length === 0 ? (
           <p className="dialog__empty">No movies match “{trimmed}”. Try another title.</p>
         ) : (
           <ul className={`results${searching ? ' is-stale' : ''}`}>

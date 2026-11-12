@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import MovieDetails from './components/MovieDetails.jsx'
+import RecsUnlockedDialog from './components/RecsUnlockedDialog.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
 import BlendDetailPage from './features/blends/BlendDetailPage.jsx'
 import BlendsPage from './features/blends/BlendsPage.jsx'
+import { justUnlockedRecs } from './features/recommendations/unlockNotice.js'
 import TopNav from './components/TopNav.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
@@ -44,6 +46,21 @@ function App() {
   const openDetails = useCallback((id) => setDetailsId(id), [])
   const closeDetails = useCallback(() => setDetailsId(null), [])
   const detailsMovie = detailsId ? getMovie(detailsId) : null
+
+  // Watch the ranked count and announce recommendations the moment it
+  // reaches the unlock line. The count is forgotten when the user changes,
+  // so loading someone's existing list never counts as "just unlocked".
+  const rankedCount = account.tiers.reduce((n, tier) => n + tier.length, 0)
+  const userId = account.status === 'ready' ? account.user?.id : null
+  const lastCount = useRef({ userId: null, count: null })
+  const [recsUnlocked, setRecsUnlocked] = useState(false)
+  useEffect(() => {
+    if (!userId) return
+    const prev = lastCount.current.userId === userId ? lastCount.current.count : null
+    lastCount.current = { userId, count: rankedCount }
+    if (justUnlockedRecs(prev, rankedCount)) setRecsUnlocked(true)
+  }, [userId, rankedCount])
+  const closeRecsUnlocked = useCallback(() => setRecsUnlocked(false), [])
 
   // Runs `go` now if logged in; otherwise remembers what the user wanted and
   // sends them to log in, so the login page can bring them back to it.
@@ -165,6 +182,18 @@ function App() {
       )}
       {detailsMovie && (
         <MovieDetails movie={detailsMovie} signedIn={signedIn} onClose={closeDetails} onRank={startRanking} onRerank={startRerank} />
+      )}
+      {/* Waits for the ranking result screen to close so it doesn't cover it. */}
+      {recsUnlocked && !ranking && (
+        <RecsUnlockedDialog
+          onClose={closeRecsUnlocked}
+          onSeeRecs={() => {
+            setRecsUnlocked(false)
+            setSearch(null)
+            setDetailsId(null)
+            navigate('for-you')
+          }}
+        />
       )}
       {ranking && (
         <CompareView

@@ -27,6 +27,8 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
     <div className="home">
       <Hero onRank={onRank} />
       <div className="home__rows">
+        {/* Picks go first so people actually find them (issue #38). */}
+        {signedIn && <RecommendationRows tiers={tiers} onOpen={onOpen} onRank={onRank} onNavigate={onNavigate} />}
         <TrendingRow onOpen={onOpen} inList={inList} />
         <CommunityRow
           key="highest"
@@ -38,7 +40,6 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
           tiers={tiers}
           required
         />
-        {signedIn && <RecommendationRows tiers={tiers} onOpen={onOpen} onRank={onRank} />}
         {signedIn && <FriendsRow onOpen={onOpen} onNavigate={onNavigate} inList={inList} tiers={tiers} />}
         <CommunityRow
           key="watched"
@@ -189,7 +190,7 @@ function CommunityRow({ category, title, icon, onOpen, inList, tiers, required =
 // "Because you ranked X highly" from the existing recommendation engine.
 // Unlocks at RECS_UNLOCK ranked movies; until then the row shows progress
 // instead of guessing.
-function RecommendationRows({ tiers, onOpen, onRank }) {
+function RecommendationRows({ tiers, onOpen, onRank, onNavigate }) {
   const recs = useMemo(() => buildRecommendations(tiers, getCatalog(), { perRow: 12, becauseRows: 3 }), [tiers])
   const count = tiers.reduce((n, tier) => n + tier.length, 0)
 
@@ -202,7 +203,7 @@ function RecommendationRows({ tiers, onOpen, onRank }) {
           <div className="row-unlock">
             <div>
               <strong>Rank {recs.remaining} more {recs.remaining === 1 ? 'movie' : 'movies'} to unlock recommendations</strong>
-              <span>SceneIt learns from what you put at the top of your list and steers away from the bottom.</span>
+              <span>SceneIt learns from what you put at the top of your list and steers away from the bottom. Once unlocked, find your picks here and under For You in the top bar.</span>
               <span className="unlock__bar" role="progressbar" aria-valuemin={0} aria-valuemax={RECS_UNLOCK} aria-valuenow={count} aria-label="Movies ranked toward recommendations">
                 <span style={{ width: `${(count / RECS_UNLOCK) * 100}%` }} />
               </span>
@@ -225,6 +226,8 @@ function RecommendationRows({ tiers, onOpen, onRank }) {
       key={row.id}
       title={row.because ? `Because You Ranked ${row.because.title} Highly` : 'Top Picks for You'}
       icon="clapper"
+      seeAll="See all picks"
+      onSeeAll={() => onNavigate('for-you')}
     >
       {row.items.map(({ movie }) => (
         <MovieCard key={movie.id} movie={movie} onOpen={onOpen} />

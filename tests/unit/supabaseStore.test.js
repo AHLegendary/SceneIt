@@ -16,6 +16,8 @@ const db = vi.hoisted(() => ({
 
 // Fake API client: records which movies the store asked the server to save.
 vi.mock('../../src/lib/movies.js', () => ({
+  // supabaseStore checks `error instanceof UnauthorizedError`, so the mock has to export it.
+  UnauthorizedError: class UnauthorizedError extends Error {},
   saveMovie: async (tmdbId, token) => {
     db.saveCalls.push({ tmdbId, token })
     if (db.failSaveMovie) throw new Error('server down')

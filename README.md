@@ -82,7 +82,8 @@ SceneIt/
 ├── supabase/                      # Database migrations, seed data, and database docs
 │
 ├── tests/
-│   └── unit/                      # Unit tests (Vitest)
+│   ├── unit/                      # Unit tests (Vitest)
+│   └── integration/               # Page-level tests in jsdom with a fake backend (Vitest)
 │
 ├── .gitignore                     # Files Git should ignore
 ├── .env.example                   # Template for required environment variables
@@ -104,10 +105,11 @@ SceneIt/
 - **`src/pages/`**: Full pages, such as the home page, leaderboard, and user profile.
 - **`src/lib/`**: Shared utilities, Supabase queries, and configuration helpers.
 - **`tests/unit/`**: Tests for individual functions or modules.
+- **`tests/integration/`**: Tests that render whole pages against a fake backend and click through them. See `tests/integration/README.md` for how the harness works.
 - **`.github/workflows/`**: Automated GitHub Actions workflows for testing and other development tasks.
 - **`supabase/`**: Database migrations and seed files. See `supabase/README.md` for the tables and database functions.
 
-**Planned:** `tests/integration/` for tests that check several modules working together (for example, an API route talking to the database), and `tests/e2e/` for browser tests (for example, with Playwright) that click through complete user workflows.
+**Planned:** `tests/e2e/` for browser tests (for example, with Playwright) that click through complete user workflows against a real deployment.
 
 ## Getting Started
 
@@ -149,16 +151,19 @@ This installs the project's dependencies using `package-lock.json`, including Re
 **No environment variables are needed for this step.** Run from the project root:
 
 ```bash
-npm run test:run   # runs all Vitest unit tests once
+npm run test:run   # runs every Vitest test (unit + integration) once
 npm run build      # builds the app for production into dist/
 ```
 
-- **`npm run test:run`** — Runs the project's unit tests once and prints the results.
+- **`npm run test:run`** — Runs all tests once and prints the results.
+- **`npm run test:unit`** / **`npm run test:integration`** — Run just one of the two suites.
 - **`npm test`** — Runs the tests in watch mode (reruns on file changes) while you develop.
 - **`npm run build`** — Checks that the application compiles for deployment.
 - **`npm run lint`** — Runs the oxlint linter (optional).
 
 If the tests pass and the build succeeds, the project is set up correctly. These are the same checks CI runs on every pull request.
+
+**Reading the test summary.** A healthy run ends with a line like `Tests  899 passed | 4 todo`. The `todo` entries are **not failures**: they are `it.todo(...)` placeholders that describe behavior we know is missing or broken and plan to fix (listed under "Known gaps" below). A real failure shows as `failed` in red with the assertion that broke. If `npm ci` complains that `package.json` and `package-lock.json` are out of sync, run `npm install` once and try again.
 
 ## 4. Configure Environment Variables
 
@@ -256,9 +261,20 @@ This makes about one or two TMDb requests per movie, once. Commit the updated `m
 
 SceneIt uses Vitest for unit testing and GitHub Actions for continuous integration (CI).
 
-- **Vitest:** Unit tests in `tests/unit/` cover the ranking logic, recommendations, leaderboard, friends, login, validation, API handlers, and Supabase queries (with the network mocked).
+- **Vitest:** Unit tests in `tests/unit/` cover the ranking logic, recommendations, leaderboard, friends, login, validation, API handlers, and Supabase queries (with the network mocked). Integration tests in `tests/integration/` render each page in jsdom against a fake backend and exercise real user flows (search, ranking, friends, profile, leaderboard).
 - **GitHub Actions:** `.github/workflows/ci.yml` installs dependencies, runs `npm run test:run`, and runs `npm run build` on every pull request that targets `main` and on every push to `main`.
 - **Production build:** Verifies that the application can be compiled for deployment.
+
+### Known gaps (tests marked `todo`)
+
+These show up as `todo` in the test summary. Each is a behavior that is missing or broken today; search the test file for `Known gap` to read the details, and turn the `todo` into a real test when you fix it.
+
+| Where | What's missing |
+|---|---|
+| `tests/integration/ranking.test.jsx` | After the server rejects an expired session mid-save, "Log in" should take you to the login page. |
+| `tests/integration/search.test.jsx` | Logging in from "Play Head-to-Head" should reopen the Rank a movie dialog afterwards. |
+| `tests/integration/search.test.jsx` | Logging in from a movie's "Log in to rank" button should reopen that movie's details afterwards. |
+| `tests/integration/profile.test.jsx` | "Profile saved." should stay visible after saving (it currently disappears with the form). |
 
 Passing CI checks does not replace teammate review. Both the required checks and approvals must be satisfied before merging into `main`.
 

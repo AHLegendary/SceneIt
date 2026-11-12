@@ -52,9 +52,13 @@ export default function SearchBar({ onOpen }) {
     }
   }, [open])
 
+  // Closing the panel ends the search, so a genre chip never silently
+  // carries over into the next search (usability study: popular titles
+  // "missing" because Action was still selected from earlier).
   function close() {
     setOpen(false)
     setActive(-1)
+    setGenre(null)
     input.current?.blur()
   }
 
@@ -62,6 +66,8 @@ export default function SearchBar({ onOpen }) {
   const searching = Boolean(q) && !done
   const base = q ? (done ? done.results : live?.results ?? []) : genre ? getCatalog() : []
   const results = base.filter((m) => !genre || m.genres?.includes(genre)).slice(0, LIMIT)
+  // How many matches the genre chip is hiding, so the filter is never silent.
+  const hidden = q && genre && !searching ? base.length - base.filter((m) => m.genres?.includes(genre)).length : 0
   const showPanel = open && (q || genre)
 
   function pick(movie) {
@@ -141,10 +147,24 @@ export default function SearchBar({ onOpen }) {
             ))}
           </div>
 
+          {hidden > 0 && (
+            <p className="sbar__filter" role="status">
+              Showing {genre} only · {hidden} more {hidden === 1 ? 'match' : 'matches'} in all genres
+              <button type="button" className="sbar__showall" onClick={() => { setGenre(null); setActive(-1) }}>Show all</button>
+            </p>
+          )}
           <ul className={`sbar__list${searching ? ' is-stale' : ''}`} id={listId} role="listbox" aria-label="Search results">
             {results.length === 0 ? (
               <li className="sbar__empty">
                 {searching ? 'Searching…' : q ? `No ${genre ? `${genre.toLowerCase()} ` : ''}movies match “${q}”.` : `No ${genre.toLowerCase()} movies in the catalog yet.`}
+                {!searching && q && genre && base.length > 0 && (
+                  <>
+                    {' '}
+                    <button type="button" className="sbar__showall" onClick={() => { setGenre(null); setActive(-1) }}>
+                      Show all {base.length} {base.length === 1 ? 'match' : 'matches'}
+                    </button>
+                  </>
+                )}
               </li>
             ) : (
               results.map((movie, i) => (
