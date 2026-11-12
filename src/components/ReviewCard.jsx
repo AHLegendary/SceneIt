@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import Avatar from './Avatar.jsx'
 import Icon from './Icon.jsx'
 import Poster from './Poster.jsx'
 import ReviewEditor from './ReviewEditor.jsx'
@@ -13,6 +14,9 @@ import { moderateText } from '../lib/moderation.js'
 //   movie        the movie object
 //   score        number, or null while scores are locked (nothing is shown then)
 //   review       { id, body, isSpoiler, commentCount } or null
+//   author       { id, username, href } to show who wrote it, top left, linking
+//                to their profile (the Community feed; a profile's own list
+//                leaves it out, since everything on it is theirs)
 //   isOwner      true on your own cards: the review gets a "..." menu
 //   onOpenMovie  called with the movie id when the poster or title is clicked
 //   onSaveReview async (review, { body, isSpoiler }): saves an edit, throws
@@ -22,43 +26,51 @@ import { moderateText } from '../lib/moderation.js'
 //                row at the bottom only shows when this is given: "See 3
 //                comments", or "Comment" when there are none (on your own
 //                cards it's hidden until someone has commented)
-export default function ReviewCard({ movie, score, review, isOwner = false, onOpenMovie, onSaveReview, onDeleteReview, commentsHref }) {
+export default function ReviewCard({ movie, score, review, author, isOwner = false, onOpenMovie, onSaveReview, onDeleteReview, commentsHref }) {
   const genres = movie.genres ?? []
   const count = review?.commentCount ?? 0
   const showComments = Boolean(review && commentsHref && (!isOwner || count > 0))
 
   return (
     <article className="rcard">
-      <button type="button" className="rcard__poster" onClick={() => onOpenMovie?.(movie.id)} aria-label={`Open ${movie.title}`}>
-        <Poster title={movie.title} src={posterUrl(movie, 'w185')} size="md" />
-      </button>
-      <div className="rcard__main">
-        <header className="rcard__head">
-          <button type="button" className="rcard__title" onClick={() => onOpenMovie?.(movie.id)}>
-            {movie.title}
-            {movie.year ? <span className="rcard__year"> ({movie.year})</span> : null}
-          </button>
-          {score != null && (
-            <span className="rcard__score" aria-label={`Score ${score.toFixed(1)}`}>{score.toFixed(1)}</span>
+      {author && (
+        <a className="rcard__author" href={author.href}>
+          <Avatar userId={author.id} username={author.username} size={26} />
+          <span>{author.username}</span>
+        </a>
+      )}
+      <div className="rcard__inner">
+        <button type="button" className="rcard__poster" onClick={() => onOpenMovie?.(movie.id)} aria-label={`Open ${movie.title}`}>
+          <Poster title={movie.title} src={posterUrl(movie, 'w185')} size="md" />
+        </button>
+        <div className="rcard__main">
+          <header className="rcard__head">
+            <button type="button" className="rcard__title" onClick={() => onOpenMovie?.(movie.id)}>
+              {movie.title}
+              {movie.year ? <span className="rcard__year"> ({movie.year})</span> : null}
+            </button>
+            {score != null && (
+              <span className="rcard__score" aria-label={`Score ${score.toFixed(1)}`}>{score.toFixed(1)}</span>
+            )}
+          </header>
+          {genres.length > 0 && <p className="rcard__genres">{genres.join(' · ')}</p>}
+
+          {review && (
+            <ReviewSection
+              key={review.id}
+              review={review}
+              isOwner={isOwner}
+              onSave={onSaveReview}
+              onDelete={onDeleteReview}
+            />
           )}
-        </header>
-        {genres.length > 0 && <p className="rcard__genres">{genres.join(' · ')}</p>}
 
-        {review && (
-          <ReviewSection
-            key={review.id}
-            review={review}
-            isOwner={isOwner}
-            onSave={onSaveReview}
-            onDelete={onDeleteReview}
-          />
-        )}
-
-        {showComments && (
-          <a className="rcard__comments" href={commentsHref}>
-            {count === 0 ? 'Comment' : `See ${count} ${count === 1 ? 'comment' : 'comments'}`}
-          </a>
-        )}
+          {showComments && (
+            <a className="rcard__comments" href={commentsHref}>
+              {count === 0 ? 'Comment' : `See ${count} ${count === 1 ? 'comment' : 'comments'}`}
+            </a>
+          )}
+        </div>
       </div>
     </article>
   )

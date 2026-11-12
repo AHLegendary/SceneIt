@@ -50,24 +50,33 @@ describe('pages in the URL hash', () => {
 })
 
 describe('header', () => {
-  it('has Home and Leaderboard buttons that navigate', async () => {
+  it('has Home and Community buttons that navigate', async () => {
     const { user } = await open({ hash: '#/home' })
     await ready({ loggedIn: true })
 
-    await user.click(nav().getByRole('button', { name: 'Leaderboard' }))
-    expect(window.location.hash).toBe('#/leaderboard')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Leaderboard' })).toBeTruthy()
+    await user.click(nav().getByRole('button', { name: 'Community' }))
+    expect(window.location.hash).toBe('#/community')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Reviews' })).toBeTruthy()
+    expect(nav().queryByRole('button', { name: 'Leaderboard' })).toBeNull()
 
     await user.click(nav().getByRole('button', { name: 'Home' }))
     expect(window.location.hash).toBe('#/home')
   })
 
   it('marks the current page', async () => {
+    await open({ hash: '#/community' })
+    await ready({ loggedIn: true })
+
+    expect(nav().getByRole('button', { name: 'Community' }).getAttribute('aria-current')).toBe('page')
+    expect(nav().getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('marks Community for its Leaderboard tab and for the old #/leaderboard address', async () => {
     await open({ hash: '#/leaderboard' })
     await ready({ loggedIn: true })
 
-    expect(nav().getByRole('button', { name: 'Leaderboard' }).getAttribute('aria-current')).toBe('page')
-    expect(nav().getByRole('button', { name: 'Home' }).getAttribute('aria-current')).toBeNull()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Leaderboard' })).toBeTruthy()
+    expect(nav().getByRole('button', { name: 'Community' }).getAttribute('aria-current')).toBe('page')
   })
 
   it('takes you home from the logo', async () => {

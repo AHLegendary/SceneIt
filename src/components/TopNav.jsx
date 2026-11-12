@@ -11,9 +11,9 @@ import { signOut } from '../lib/supabaseStore.js'
 import { useFriendGroups } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
-const NAV_ICONS = { home: 'home', leaderboard: 'chart', blends: 'people' }
+const NAV_ICONS = { home: 'home', community: 'chart', blends: 'people' }
 
-// Header: Logo | search | Home · Leaderboard · Movie Blend · For You · Profile
+// Header: Logo | search | Home · Community · Movie Blend · For You · Profile
 // (or Log in / Sign up). For You only shows when logged in, since it needs your
 // rankings. Movie Blend always shows, as a teaser for logged-out visitors.
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).

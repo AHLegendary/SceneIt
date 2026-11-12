@@ -39,10 +39,11 @@ const COMMENT_COLUMNS = 'id, review_id, user_id, parent_id, body, created_at, up
 
 // Review row -> { id, userId, movieId, body, isSpoiler, createdAt, updatedAt,
 // commentCount }. movieId is the UI id (catalog slug when there is one, else
-// "tmdb-<id>"). commentCount is 0 unless the row came with the comment count.
+// "tmdb-<id>"). commentCount is 0 unless the row came with the comment count
+// (review_comments(count) from a table query, or comment_count from the feed).
 export function rowToReview(row) {
   return {
-    commentCount: row.review_comments?.[0]?.count ?? 0,
+    commentCount: row.comment_count ?? row.review_comments?.[0]?.count ?? 0,
     id: row.id,
     userId: row.user_id,
     movieId: getMovieByTmdbId(row.movie_id)?.id ?? `tmdb-${row.movie_id}`,
