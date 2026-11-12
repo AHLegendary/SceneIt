@@ -1,9 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Icon from '../../components/Icon.jsx'
 import Poster from '../../components/Poster.jsx'
+import ReviewEditor from '../../components/ReviewEditor.jsx'
 import Sparkles from '../../components/Sparkles.jsx'
 import BlueFire from './BlueFire.jsx'
 import { posterUrl } from '../../lib/localStore.js'
+import { moderateText } from '../../lib/moderation.js'
+import { fetchMyReview, saveReview } from '../../lib/reviews.js'
 import { getMyTiers, placeMovie } from '../../lib/supabaseStore.js'
 import {
   answer,
@@ -43,7 +46,9 @@ function rankOf(tiers, id) {
 // the movies already in that category. A category with nothing in it yet
 // needs no comparisons. The list is only saved once the last comparison is
 // answered, so closing early leaves the ranking untouched. If the save fails,
-// the result screen says so and offers a retry.
+// the result screen says so and offers a retry. Once it has saved, an optional
+// review step comes before the result screen; the ranking is already safe by
+// then, so skipping, failing or closing the review never loses it.
 export default function CompareView({ movie, rerank = false, onClose, onRankAnother, onSeeList }) {
   // Snapshot the list once. When reranking, the movie is compared against
   // everything except itself.
@@ -60,6 +65,8 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
   // 'saving' | 'saved' | 'failed'
   const [saveStatus, setSaveStatus] = useState('saving')
   const [saveError, setSaveError] = useState(null)
+  // True once the review step has been finished or skipped.
+  const [reviewed, setReviewed] = useState(false)
   const titleId = useId()
 
   const state = history[history.length - 1] ?? null
@@ -162,6 +169,10 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
         onPick={pickCategory}
       />
     )
+  } else if (done && !reviewed && saveStatus === 'saving') {
+    body = <SavingStep titleId={titleId} />
+  } else if (done && !reviewed && saveStatus === 'saved') {
+    body = <ReviewStep titleId={titleId} movie={movie} onDone={() => setReviewed(true)} />
   } else if (done) {
     body = (
       <Placed
@@ -228,12 +239,107 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
   return (
     <div className="overlay overlay--solid">
       <div className="compare" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <button type="button" className="dialog__close compare__close" onClick={onClose} aria-label="Close without saving">
+        <button
+          type="button"
+          className="dialog__close compare__close"
+          onClick={onClose}
+          aria-label={done && saveStatus === 'saved' ? 'Close' : 'Close without saving'}
+        >
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
           </svg>
         </button>
         {body}
+      </div>
+    </div>
+  )
+}
+
+// Shown for the moment between the last comparison and the review step, so
+// the result screen doesn't flash up and get replaced. A failed save skips
+// this and goes straight to the result screen, which has the retry button.
+function SavingStep({ titleId }) {
+  return (
+    <div className="reviewstep">
+      <h2 className="compare__title" id={titleId}>Saving your ranking</h2>
+      <p className="placed__save" role="status">Saving…</p>
+    </div>
+  )
+}
+
+// Optional review, right after the ranking is saved. Finish saves the text
+// (if there is any) and moves on; Skip moves on without saving. Text the
+// content check flags, or a failed save, stays on this step with a message so
+// nothing typed is lost. When the movie already has a review (reranking), it's
+// filled in; clearing the box and pressing Finish leaves that review alone
+// (deleting a review is a separate action, on the review itself).
+function ReviewStep({ titleId, movie, onDone }) {
+  const [text, setText] = useState('')
+  const [isSpoiler, setIsSpoiler] = useState(false)
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const touched = useRef(false)
+
+  // Fill in an existing review, unless they've already started typing. If it
+  // can't be loaded the box just starts empty.
+  useEffect(() => {
+    let alive = true
+    fetchMyReview(movie.id)
+      .then((existing) => {
+        if (!alive || !existing || touched.current) return
+        setText(existing.body)
+        setIsSpoiler(existing.isSpoiler)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [movie.id])
+
+  function edit(next) {
+    touched.current = true
+    setError(null)
+    setText(next)
+  }
+
+  async function finish() {
+    if (!text.trim()) return onDone()
+    const verdict = moderateText(text)
+    if (!verdict.ok) {
+      setError(verdict.reason)
+      return undefined
+    }
+    setBusy(true)
+    try {
+      await saveReview(movie.id, { body: text, isSpoiler })
+      onDone()
+    } catch (e) {
+      setError(e.message)
+      setBusy(false)
+    }
+    return undefined
+  }
+
+  return (
+    <div className="reviewstep">
+      <Poster title={movie.title} src={posterUrl(movie, 'w154')} size="md" />
+      <h2 className="compare__title" id={titleId}>Add a review of {movie.title}?</h2>
+      <p className="compare__progress">Optional. Your ranking is already saved.</p>
+      <ReviewEditor
+        label={`Your review of ${movie.title}`}
+        labelHidden
+        placeholder="What did you think?"
+        value={text}
+        onChange={edit}
+        isSpoiler={isSpoiler}
+        onSpoilerChange={setIsSpoiler}
+        error={error}
+        disabled={busy}
+        autoFocus
+      />
+      <div className="reviewstep__actions">
+        <button type="button" className="btn btn--light" onClick={onDone} disabled={busy}>Skip</button>
+        <button type="button" className="btn btn--accent" onClick={finish} disabled={busy}>
+          {busy ? 'Saving…' : 'Finish'}
+        </button>
       </div>
     </div>
   )

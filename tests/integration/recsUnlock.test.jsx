@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, launch, ready, screen, skipReview, waitFor, within } from './helpers/harness.js'
 
 const ids = (n) => MOVIES.slice(0, n).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
@@ -34,6 +34,7 @@ async function rankNotAFan(user, id) {
   await user.type(within(dialog).getByRole('searchbox', { name: 'Search movies' }), title(id))
   await user.click(await within(dialog).findByRole('button', { name: `Rank ${title(id)}` }))
   await user.click(screen.getByRole('button', { name: /^Not a fan/ }))
+  await skipReview(user)
   await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
 }
 

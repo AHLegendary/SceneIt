@@ -83,4 +83,12 @@ export async function useMenu(user, name) {
   await user.click(within(menu).getByRole('menuitem', { name }))
 }
 
+// The review step comes right after a ranking saves, before the result screen
+// ("See my list" / "Done" / "Rank another"). Most tests don't care about it:
+// this waits for it and skips it. Pass the test's `user`, or leave it out.
+export async function skipReview(user = userEvent.setup()) {
+  const step = await screen.findByRole('button', { name: 'Skip' })
+  await user.click(step)
+}
+
 export { FakeBackend }

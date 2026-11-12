@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, launch, ready, screen, skipReview, waitFor, within } from './helpers/harness.js'
 
 const ids = (n) => MOVIES.slice(0, n).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
@@ -43,7 +43,9 @@ async function answer(user, ...picks) {
   const key = { new: '{ArrowLeft}', old: '{ArrowRight}', tie: ' ' }
   for (const pick of picks) await user.keyboard(key[pick])
 }
+// Waits for the save, skips the review step, and waits for the result screen.
 async function waitSaved() {
+  await skipReview()
   await waitFor(() => expect(screen.getByRole('button', { name: /See my list|Done/ }).disabled).toBe(false))
 }
 // The whole flow for one movie.
@@ -277,10 +279,10 @@ describe('ranking your first movie', () => {
     expect(screen.getByText("Then we'll compare it with others you felt the same about.")).toBeTruthy()
     await feeling(user, 'Loved it')
 
+    await waitSaved()
     expect(await screen.findByText('First movie added')).toBeTruthy()
     expect(screen.getByText(`${title(ids(1)[0])} starts your list. Add another and SceneIt will ask you to compare them.`)).toBeTruthy()
     expect(screen.getByRole('heading', { name: /#1\s*of 1/ })).toBeTruthy()
-    await waitSaved()
     expect(backend.listOf(alice)).toEqual([[ids(1)[0]]])
     expect(backend.rankingOf(alice, tmdbId(ids(1)[0])).category).toBe('loved')
   })
@@ -375,9 +377,9 @@ describe('comparing head to head', () => {
     await feeling(user, 'Loved it')
     await user.click(await screen.findByRole('button', { name: /It's a tie/ }))
 
+    await waitSaved()
     await waitFor(() => expect(document.querySelector('.placed__eyebrow').textContent).toBe('Tied'))
     expect(screen.getByText(new RegExp(`${title(B)} shares #1 with ${title(A)}`))).toBeTruthy()
-    await waitSaved()
     expect(backend.listOf(alice)).toHaveLength(1)
     expect(backend.listOf(alice)[0].sort()).toEqual([A, B].sort())
   })
@@ -438,8 +440,8 @@ describe('comparing head to head', () => {
     await feeling(user, 'Not a fan')
 
     // A is "Loved it"; B is the first "Not a fan", so there is nothing to compare.
-    expect(await screen.findByText(`${title(B)} is your first “Not a fan” movie, so there was nothing to compare it with.`)).toBeTruthy()
     await waitSaved()
+    expect(await screen.findByText(`${title(B)} is your first “Not a fan” movie, so there was nothing to compare it with.`)).toBeTruthy()
     expect(backend.listOf(alice)).toEqual([[A], [B]])
     expect(backend.rankingOf(alice, tmdbId(B)).category).toBe('meh')
   })
@@ -548,7 +550,7 @@ describe('after ranking', () => {
     expect(compare()).toBeNull()
   })
 
-  it('keeps the buttons disabled until the ranking is saved', async () => {
+  it('shows no review or result buttons until the ranking is saved', async () => {
     const gate = backend.hold('rpc:save_ranking')
     const { user } = await open()
     await user.click(await screen.findByRole('button', { name: 'Rank a movie' }))
@@ -556,8 +558,9 @@ describe('after ranking', () => {
     await feeling(user, 'Loved it')
 
     expect((await screen.findByRole('status')).textContent).toBe('Saving…')
-    expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: 'Rank another' }).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Skip' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'See my list' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rank another' })).toBeNull()
 
     gate.release()
     await waitSaved()

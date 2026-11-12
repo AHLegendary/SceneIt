@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, screen, useMenu, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, screen, skipReview, useMenu, waitFor, within } from './helpers/harness.js'
 
 const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
 const byId = (id) => MOVIES.find((m) => m.id === id)
@@ -342,6 +342,7 @@ describe('the Rank a movie dialog', () => {
       const dialog = await openDialog(user)
       await user.click(within(dialog).getByRole('button', { name: `Rank ${title(id)}` }))
       await user.click(screen.getByRole('button', { name: new RegExp(`^${feelings[i]}`) }))
+      await skipReview(user)
       await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
       await user.click(screen.getByRole('button', { name: 'See my list' }))
       await goTo('#/home')
