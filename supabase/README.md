@@ -6,6 +6,8 @@
 - `migrations/20261104000000_movie_blends.sql`: Movie Blend tables, invites, the 5-member limit and group recommendations
 - `migrations/20261108000000_movie_ratings.sql`: `movie_ratings`, a cache of OMDb scores (IMDb, Rotten Tomatoes) filled by `/api/movies/ratings?id=`
 - `migrations/20261108000100_omdb_budget.sql`: `omdb_usage` and `claim_omdb_call`, a shared daily budget (900) for OMDb lookups
+- `migrations/20261113000000_reviews_comments_reports.sql`: `reviews`, `review_comments` (one level of replies) and `reports`, with RLS; `remove_ranking` now also deletes the movie's review
+- `migrations/20261113000100_reviews_grants.sql`: table grants for the three tables above (without them the API can't reach them)
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -35,6 +37,9 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `blends` | `owner_id` of a Movie Blend | its members | through the blend functions only |
 | `blend_members` | `(blend_id, user_id, joined_at)`, 5 at most per blend (enforced by a trigger) | the blend's members | through the blend functions only |
 | `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
+| `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters. Only for movies the user has ranked; un-ranking deletes it | same as the author's profile | the author; edits can change only `body` and `is_spoiler` |
+| `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
+| `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
 
@@ -90,4 +95,4 @@ Scores and leaderboards are calculated when you ask for them, not stored. In SQL
 
 ## Not here yet (later migrations)
 
-These are `reviews`, `comments`, `reports` and achievements. Add each one as a new file in `migrations/`, and don't edit this one after it has been applied.
+Achievements. Add each one as a new file in `migrations/`, and don't edit this one after it has been applied.
