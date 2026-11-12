@@ -1,18 +1,21 @@
 // Shown in place of pages that need an account when nobody is logged in.
 // Login and signup happen on LoginPage; App remembers which page the user
-// wanted so they come back to it afterwards.
-export function SignInPrompt({ onLogin, onSignUp }) {
+// wanted so they come back to it afterwards. A page can pass its own title and
+// text to say what it's for (Movie Blend does); the default talks about ranking.
+const DEFAULT_TITLE = 'Log in to start ranking'
+const DEFAULT_TEXT =
+  'Your ranked list, scores and recommendations are saved to your SceneIt account, ' +
+  'so they follow you to any device. The leaderboard is open to everyone.'
+
+export function SignInPrompt({ onLogin, onSignUp, title = DEFAULT_TITLE, text = DEFAULT_TEXT }) {
   return (
     <section className="page">
       <div className="empty">
         <div className="empty__stack" aria-hidden="true">
           <span /><span /><span />
         </div>
-        <h2 className="empty__title">Log in to start ranking</h2>
-        <p className="empty__text">
-          Your ranked list, scores and recommendations are saved to your SceneIt account,
-          so they follow you to any device. The leaderboard is open to everyone.
-        </p>
+        <h2 className="empty__title">{title}</h2>
+        <p className="empty__text">{text}</p>
         <div className="empty__actions">
           <button type="button" className="btn btn--accent" onClick={onLogin}>
             Log in

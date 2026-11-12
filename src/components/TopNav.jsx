@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
 import SearchBar from './SearchBar.jsx'
+import { BLEND_MIN_RANKINGS } from '../features/blends/blends.js'
 import { useBlends } from '../features/blends/useBlends.js'
 import { RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { NAV_PAGES, PROFILE_SHORTCUTS } from '../lib/pages.js'
@@ -12,9 +13,9 @@ import { useMyTiers } from '../lib/useMyList.js'
 
 const NAV_ICONS = { home: 'home', leaderboard: 'chart', blends: 'people' }
 
-// Header: Logo | search | Home · Leaderboard · Movie Blend · Profile (or Log in / Sign up).
-// Header: Logo | search | Home · Leaderboard · For You · Profile (or Log in /
-// Sign up). For You only shows when logged in, since it needs your rankings.
+// Header: Logo | search | Home · Leaderboard · Movie Blend · For You · Profile
+// (or Log in / Sign up). For You only shows when logged in, since it needs your
+// rankings. Movie Blend always shows, as a teaser for logged-out visitors.
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).
 // Nothing account-specific renders until the saved session has been checked,
 // so logged-out visitors never see a flash of private controls.
@@ -23,6 +24,10 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
   const checking = account.status === 'loading' && !account.user
   const requests = useFriendGroups().incoming.length
   const blendInvites = useBlends().invites.length
+  const rankedCount = useMyTiers().reduce((n, tier) => n + tier.length, 0)
+  // Same "6/15" progress as For You. An invite means you can join without
+  // creating, so the unread-invite badge wins over the lock.
+  const blendLocked = signedIn && rankedCount < BLEND_MIN_RANKINGS && blendInvites === 0
 
   return (
     <header className="nav">
@@ -38,9 +43,16 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
               className={`nav__link${current === page.id ? ' is-active' : ''}`}
               aria-current={current === page.id ? 'page' : undefined}
               onClick={() => onNavigate(page.id)}
+              aria-label={page.id === 'blends' && blendLocked ? `${page.label}, ${rankedCount} of ${BLEND_MIN_RANKINGS} movies ranked to create a blend` : undefined}
+              title={page.id === 'blends' && blendLocked ? `Rank ${BLEND_MIN_RANKINGS} movies to create a blend` : undefined}
             >
               <Icon name={NAV_ICONS[page.id]} size={20} />
               <span>{page.label}</span>
+              {page.id === 'blends' && blendLocked && (
+                <span className="badge badge--progress" aria-hidden="true">
+                  {rankedCount}/{BLEND_MIN_RANKINGS}
+                </span>
+              )}
               {page.id === 'blends' && blendInvites > 0 && (
                 <span className="badge" aria-label={`${blendInvites} pending blend ${blendInvites === 1 ? 'invite' : 'invites'}`}>
                   {blendInvites > 9 ? '9+' : blendInvites}

@@ -132,13 +132,16 @@ export default function BlendDetailPage({ blendId, onOpen }) {
         <div className="page__controls">
           {confirmLeave ? (
             <>
+              {isOwner && <span className="frow__meta">You own this blend. Leaving disbands it for everyone.</span>}
               <button type="button" className="btn btn--sm btn--danger" disabled={leaving} onClick={leave}>
-                {leaving ? 'Leaving…' : 'Leave blend'}
+                {leaving ? 'Leaving…' : isOwner ? 'Disband blend' : 'Leave blend'}
               </button>
               <button type="button" className="row__btn" disabled={leaving} onClick={() => setConfirmLeave(false)}>Stay</button>
             </>
           ) : (
-            <button type="button" className="row__btn" onClick={() => setConfirmLeave(true)}>Leave blend</button>
+            <button type="button" className="row__btn" onClick={() => setConfirmLeave(true)}>
+              {isOwner ? 'Disband blend' : 'Leave blend'}
+            </button>
           )}
         </div>
       </header>

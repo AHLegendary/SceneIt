@@ -5,7 +5,7 @@
 // blends and open invites so React can read it synchronously. One blend's
 // members and recommendations are fetched when its page opens.
 //
-// The rules (15 rankings, friends only, 5 members, owner transfer) live in the
+// The rules (15 rankings, friends only, 5 members, the owner leaving disbands it) live in the
 // database, see supabase/migrations/20261104000000_movie_blends.sql. The
 // constants here only decide what the UI offers.
 
@@ -240,7 +240,7 @@ export async function respondToInvite(inviteId, accept) {
   }
 }
 
-// Returns 'left', 'transferred' or 'deleted'.
+// Returns 'left', or 'deleted' when the owner left and the blend was disbanded.
 export async function leaveBlend(blendId) {
   const result = await call('leave_blend', { p_blend_id: blendId }, LEAVE_ERROR)
   await loadBlends()

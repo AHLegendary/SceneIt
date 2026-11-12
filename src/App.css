@@ -1918,3 +1918,14 @@
 }
 .placed__list--scroll { max-height: 300px; overflow-y: auto; scrollbar-width: thin; scroll-behavior: smooth; }
 .placed__scrollhint { font-size: 12px; color: var(--ink-3); margin-top: -4px; }
+
+/* Movie Blend empty state while creating is locked */
+.blend-locked__how {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-2);
+}

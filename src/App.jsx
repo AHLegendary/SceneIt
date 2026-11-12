@@ -5,6 +5,7 @@ import RecsUnlockedDialog from './components/RecsUnlockedDialog.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
 import BlendDetailPage from './features/blends/BlendDetailPage.jsx'
+import { BLEND_MAX_MEMBERS } from './features/blends/blends.js'
 import BlendsPage from './features/blends/BlendsPage.jsx'
 import { justUnlockedRecs } from './features/recommendations/unlockNotice.js'
 import TopNav from './components/TopNav.jsx'
@@ -27,6 +28,15 @@ import UserProfilePage from './pages/UserProfilePage.jsx'
 
 // Pages live in the URL hash (#/my-list, #/u/name) so refresh and
 // back/forward work without a router or any server config on Vercel.
+// Movie Blend stays in the nav when logged out as a teaser, so its sign-in
+// screen says what a blend is instead of the generic ranking copy.
+const BLEND_SIGN_IN = {
+  title: 'Find a movie your whole group will like',
+  text:
+    `Blend your rankings with up to ${BLEND_MAX_MEMBERS - 1} friends and SceneIt picks movies ` +
+    "the group loves that someone hasn't seen yet.",
+}
+
 function navigate(id) {
   window.location.hash = `/${id}`
 }
@@ -139,7 +149,7 @@ function App() {
         {needsAccount && account.status === 'loading' ? (
           <PageStatus>Loading your account…</PageStatus>
         ) : needsAccount && account.status === 'signed-out' ? (
-          <SignInPrompt onLogin={() => { rememberReturn({ page }); navigate('login') }} onSignUp={() => { rememberReturn({ page }); navigate('signup') }} />
+          <SignInPrompt {...(page === 'blends' || page === 'blend' ? BLEND_SIGN_IN : {})} onLogin={() => { rememberReturn({ page }); navigate('login') }} onSignUp={() => { rememberReturn({ page }); navigate('signup') }} />
         ) : needsAccount && account.status === 'error' ? (
           <PageStatus error onRetry={loadMyList}>{account.error}</PageStatus>
         ) : loginPage ? (
@@ -157,7 +167,7 @@ function App() {
         ) : page === 'friends' ? (
           <FriendsPage />
         ) : page === 'blends' ? (
-          <BlendsPage />
+          <BlendsPage onRank={openRankSearch} />
         ) : page === 'blend' ? (
           <BlendDetailPage key={route.blendId} blendId={route.blendId} onOpen={openDetails} />
         ) : page === 'leaderboard' ? (
