@@ -529,15 +529,13 @@ export class FakeBackend {
       .map((p) => ({ id: p.id, username: p.username }))
   }
 
-  // Port of get_leaderboard (latest version, in the ranking_categories migration).
-  getLeaderboard(period = 'weekly', category = 'highest', limit = 10) {
-    const days = { weekly: 7, monthly: 30 }[period]
-    if (!days) return []
-    const cutoff = Date.now() - days * 86400000
-
-    const scored = []
+  // Port of user_movie_scores (20261112000000_blend_revisions.sql): every
+  // ranking's score for its user, unrounded. userIds limits it to some users.
+  userMovieScores(userIds = null) {
+    const out = []
     const byUser = new Map()
     for (const r of this.rankings) {
+      if (userIds && !userIds.includes(r.user_id)) continue
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, [])
       byUser.get(r.user_id).push(r)
     }
@@ -548,9 +546,68 @@ export class FakeBackend {
         const throughTier = rows.filter((x) => x.category === r.category && x.position <= r.position).length
         const fromTop = catTotal - 1 > 0 ? 1 - ((throughTier - tierSize) + (tierSize - 1) / 2) / (catTotal - 1) : 0.5
         const [min, max] = { loved: [6.0, 10.0], okay: [4.0, 5.9], meh: [0.0, 3.9] }[r.category]
-        if (new Date(r.created_at).getTime() >= cutoff) scored.push({ movie_id: r.movie_id, score: min + (max - min) * fromTop })
+        out.push({ user_id: r.user_id, movie_id: r.movie_id, created_at: r.created_at, score: min + (max - min) * fromTop })
       }
     }
+    return out
+  }
+
+  // Port of get_review_feed (20261115000000_review_feed.sql): a page of
+  // reviews you may see, with the author, the movie, the comment count and
+  // the author's score (only once they've ranked 10 movies, SCORE_UNLOCK).
+  getReviewFeed(uid, { scope = 'everyone', sort = 'recent', limit = 20, offset = 0 } = {}) {
+    if (!['everyone', 'friends'].includes(scope)) throw pgError('Scope must be everyone or friends', '22023')
+    if (!['recent', 'discussed'].includes(sort)) throw pgError('Sort must be recent or discussed', '22023')
+    const cap = Math.min(Math.max(limit ?? 20, 1), 200)
+    const skip = Math.max(offset ?? 0, 0)
+    const comments = (reviewId) => this.review_comments.filter((c) => c.review_id === reviewId).length
+
+    const visible = this.reviews.filter(
+      (r) => this.canView(uid, r.user_id) && (scope === 'everyone' || (uid !== null && r.user_id !== uid && this.areFriends(uid, r.user_id))),
+    )
+    visible.sort(
+      (a, b) =>
+        (sort === 'discussed' ? comments(b.id) - comments(a.id) : 0)
+        || (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0)
+        || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+    )
+    const page = visible.slice(skip, skip + cap)
+    const scores = this.userMovieScores([...new Set(page.map((r) => r.user_id))])
+
+    return page.flatMap((r) => {
+      const movie = this.movies.find((m) => m.tmdb_id === r.movie_id)
+      if (!movie) return []
+      const rankedCount = this.rankings.filter((x) => x.user_id === r.user_id).length
+      const own = scores.find((s) => s.user_id === r.user_id && s.movie_id === r.movie_id)
+      return [{
+        id: r.id,
+        user_id: r.user_id,
+        username: this.profiles.find((p) => p.id === r.user_id)?.username ?? null,
+        movie_id: r.movie_id,
+        title: movie.title,
+        year: movie.year,
+        poster_path: movie.poster_path,
+        genres: movie.genres ?? [],
+        overview: movie.overview ?? '',
+        body: r.body,
+        is_spoiler: r.is_spoiler,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        comment_count: comments(r.id),
+        score: rankedCount >= 10 && own ? Math.round(own.score * 10) / 10 : null,
+      }]
+    })
+  }
+
+  // Port of get_leaderboard (latest version, in the ranking_categories migration).
+  getLeaderboard(period = 'weekly', category = 'highest', limit = 10) {
+    const days = { weekly: 7, monthly: 30 }[period]
+    if (!days) return []
+    const cutoff = Date.now() - days * 86400000
+
+    const scored = this.userMovieScores()
+      .filter((s) => new Date(s.created_at).getTime() >= cutoff)
+      .map((s) => ({ movie_id: s.movie_id, score: s.score }))
 
     const byMovie = new Map()
     for (const s of scored) {
@@ -767,6 +824,8 @@ class FakeClient {
         case 'get_my_blends':
         case 'get_my_blend_invites':
           return { data: [], error: null }
+        case 'get_review_feed':
+          return { data: b.getReviewFeed(uid, { scope: args.p_scope, sort: args.p_sort, limit: args.p_limit, offset: args.p_offset }), error: null }
         case 'get_review_comments':
           return { data: b.getReviewComments(uid, args.p_review_id), error: null }
         case 'get_leaderboard':

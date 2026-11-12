@@ -1420,6 +1420,24 @@ a.comment__name:hover { color: var(--accent); }
 .report { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
 .report__thanks { font-size: 13px; color: var(--ink-3); }
 
+/* Community page: the Reviews | Leaderboard tabs above the tab's own page */
+.community__tabs { display: flex; justify-content: center; padding: 22px var(--page-x) 0; }
+.community__tabs + .page { padding-top: 18px; }
+.feed { width: min(760px, 100%); }
+.feed__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.rcard__author {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 64px);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.rcard__author span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rcard__author:hover { color: var(--accent); }
+
 .sr-only {
   position: absolute;
   width: 1px;

@@ -5,7 +5,7 @@
 const DEFAULT_TITLE = 'Log in to start ranking'
 const DEFAULT_TEXT =
   'Your ranked list, scores and recommendations are saved to your SceneIt account, ' +
-  'so they follow you to any device. The leaderboard is open to everyone.'
+  'so they follow you to any device. The community reviews and leaderboard are open to everyone.'
 
 export function SignInPrompt({ onLogin, onSignUp, title = DEFAULT_TITLE, text = DEFAULT_TEXT }) {
   return (

@@ -143,8 +143,12 @@ export function goBack(fallbackHash) {
 
 // ------------------------------------------------------------------ slots
 
-// The key of the history entry we're on now (null before startNavMemory).
+// The key of the history entry we're on now. A page that shows on the very
+// first render (before App has started this module) asks too, so the first
+// entry is tagged on demand rather than answering null, which would make the
+// page forget everything.
 export function currentEntryKey() {
+  if (current.key === null) syncEntry()
   return current.key
 }
 

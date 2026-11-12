@@ -17,10 +17,10 @@ import { rememberReturn, takeReturn } from './lib/returnTo.js'
 import { parseHash } from './lib/route.js'
 import { loadMyList } from './lib/supabaseStore.js'
 import { useAccount } from './lib/useMyList.js'
+import CommunityPage from './pages/CommunityPage.jsx'
 import ForYouPage from './pages/ForYouPage.jsx'
 import FriendsPage from './pages/FriendsPage.jsx'
 import HomePage from './pages/HomePage.jsx'
-import LeaderboardPage from './pages/LeaderboardPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
@@ -178,8 +178,8 @@ function App() {
           <BlendsPage onRank={openRankSearch} />
         ) : page === 'blend' ? (
           <BlendDetailPage key={route.blendId} blendId={route.blendId} onOpen={openDetails} />
-        ) : page === 'leaderboard' ? (
-          <LeaderboardPage onOpen={openDetails} />
+        ) : page === 'community' ? (
+          <CommunityPage tab={route.tab} account={account} onOpen={openDetails} />
         ) : (
           <HomePage account={account} onOpen={openDetails} onRank={openRankSearch} onNavigate={navigate} />
         )}

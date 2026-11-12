@@ -349,12 +349,14 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
 .rcard {
   position: relative;
   display: flex;
-  gap: 14px;
+  flex-direction: column;
+  gap: 10px;
   padding: 14px 16px;
   border-radius: var(--r-md);
   background: var(--surface);
   border: 1px solid var(--line);
 }
+.rcard__inner { display: flex; gap: 14px; min-width: 0; }
 .rcard__poster { flex: none; align-self: flex-start; border-radius: 10px; }
 .rcard .poster--md { width: 84px; height: 126px; border-radius: 10px; }
 .rcard .poster--md.poster--blank { padding: 8px; }
@@ -450,6 +452,7 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   color: #ffb3bb;
 }
 @media (max-width: 520px) {
-  .rcard { padding: 12px; gap: 10px; }
+  .rcard { padding: 12px; }
+  .rcard__inner { gap: 10px; }
   .rcard .poster--md { width: 64px; height: 96px; }
 }

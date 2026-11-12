@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { blendHref, parseHash, reviewHref, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
+import { blendHref, communityHref, parseHash, reviewHref, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
 
 describe('parseHash', () => {
   it('reads a sidebar page', () => {
@@ -80,5 +80,30 @@ describe('review discussion routes', () => {
     const href = reviewHref('a_b c', 'id/with slash')
     expect(href).toBe('#/u/a_b%20c/review/id%2Fwith%20slash')
     expect(parseHash(href)).toEqual({ page: 'review', username: 'a_b c', reviewId: 'id/with slash' })
+  })
+})
+
+describe('Community routes', () => {
+  it('opens on the Reviews tab by default', () => {
+    expect(parseHash('#/community')).toEqual({ page: 'community', username: null, tab: 'reviews' })
+    expect(parseHash('#/community/reviews')).toEqual({ page: 'community', username: null, tab: 'reviews' })
+  })
+  it('reads the Leaderboard tab', () => {
+    expect(parseHash('#/community/leaderboard')).toEqual({ page: 'community', username: null, tab: 'leaderboard' })
+  })
+  it('keeps the old #/leaderboard address working, on the Leaderboard tab', () => {
+    expect(parseHash('#/leaderboard')).toEqual({ page: 'community', username: null, tab: 'leaderboard' })
+  })
+  it('falls back for unknown tabs and extra path parts', () => {
+    expect(parseHash('#/community/nope').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/community/leaderboard/x').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/community/').page).toBe(DEFAULT_PAGE)
+  })
+  it('builds links that parse back', () => {
+    expect(communityHref()).toBe('#/community')
+    expect(communityHref('reviews')).toBe('#/community')
+    expect(communityHref('leaderboard')).toBe('#/community/leaderboard')
+    expect(parseHash(communityHref('leaderboard')).tab).toBe('leaderboard')
+    expect(parseHash(communityHref()).tab).toBe('reviews')
   })
 })

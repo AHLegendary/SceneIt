@@ -16,9 +16,16 @@ function decode(part) {
 //   #/u/reil_99/my-list      -> { page: 'user-list', username: 'reil_99' }
 //   #/u/reil_99/review/<id>  -> { page: 'review', username: 'reil_99', reviewId: '<id>' }
 //   #/blends/abc             -> { page: 'blend', username: null, blendId: 'abc' }
+//   #/community              -> { page: 'community', username: null, tab: 'reviews' }
+//   #/community/leaderboard  -> { page: 'community', username: null, tab: 'leaderboard' }
+//   #/leaderboard            -> same as #/community/leaderboard (the old address still works)
 // Anything unknown falls back to the default page.
 export function parseHash(hash) {
   const raw = (hash ?? '').replace(/^#\/?/, '')
+
+  const communityMatch = raw.match(/^community(?:\/(reviews|leaderboard))?$/)
+  if (communityMatch) return { page: 'community', username: null, tab: communityMatch[1] ?? 'reviews' }
+  if (raw === 'leaderboard') return { page: 'community', username: null, tab: 'leaderboard' }
 
   const blendMatch = raw.match(/^blends\/([^/?#]+)$/)
   if (blendMatch) {
@@ -65,4 +72,9 @@ export function userListHref(username) {
 // Link to the discussion page of a review: the review, then its comments.
 export function reviewHref(username, reviewId) {
   return `#/u/${encodeURIComponent(username)}/review/${encodeURIComponent(reviewId)}`
+}
+
+// Link to the Community page: its Reviews tab (the default) or its Leaderboard tab.
+export function communityHref(tab = 'reviews') {
+  return tab === 'leaderboard' ? '#/community/leaderboard' : '#/community'
 }

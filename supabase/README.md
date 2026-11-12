@@ -9,6 +9,7 @@
 - `migrations/20261113000000_reviews_comments_reports.sql`: `reviews`, `review_comments` (one level of replies) and `reports`, with RLS; `remove_ranking` now also deletes the movie's review
 - `migrations/20261113000100_reviews_grants.sql`: table grants for the three tables above (without them the API can't reach them)
 - `migrations/20261114000000_review_discussion.sql`: signed-out visitors can read public reviews and comments, and `get_review_comments` (a review's comments with commenters' usernames)
+- `migrations/20261115000000_review_feed.sql`: `get_review_feed`, a page of reviews for the Community page (everyone or friends, newest or most discussed)
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -83,6 +84,14 @@ await supabase.from('friendships').update({ status: 'accepted' })
 //   [{ id, review_id, user_id, parent_id, body, created_at, updated_at, username }]
 await supabase.rpc('get_review_comments', { p_review_id: reviewId })
 
+// Community reviews feed: a page of reviews you may see, with the author's
+// username, the movie, the comment count, and the author's score for the movie
+// (null until they've ranked 10 movies). scope: 'everyone' | 'friends' (accepted
+// friends, not you); sort: 'recent' | 'discussed' (most comments first).
+// limit is capped at 200. Open to signed-out visitors (public profiles only).
+// Use src/lib/reviewFeed.js from the UI.
+await supabase.rpc('get_review_feed', { p_scope: 'everyone', p_sort: 'recent', p_limit: 20, p_offset: 0 })
+
 // Movie Blend. Use src/features/blends/blends.js from the UI instead of calling these.
 // Failures raise short messages like 'blend_full' or 'invite_expired'.
 const { data: blendId } = await supabase.rpc('create_blend', { p_friend_ids: [friendId] })  // 15+ rankings, 1 to 4 friends
@@ -98,7 +107,7 @@ await supabase.rpc('get_blend_recommendations', { p_blend_id: blendId })  // gro
 
 Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.
 
-Scores and leaderboards are calculated when you ask for them, not stored. In SQL the formula lives in one place, `user_movie_scores()`, which `get_leaderboard` and `get_blend_recommendations` both read. `src/features/ranking/scores.js` is the only other copy (the browser scores a list it already has), so change the two together.
+Scores and leaderboards are calculated when you ask for them, not stored. In SQL the formula lives in one place, `user_movie_scores()`, which `get_leaderboard`, `get_blend_recommendations` and `get_review_feed` all read. The "scores unlock at 10 ranked movies" line (`SCORE_UNLOCK`) is repeated in `get_review_feed`, so change that together with `scores.js` too. `src/features/ranking/scores.js` is the only other copy (the browser scores a list it already has), so change the two together.
 
 ## Not here yet (later migrations)
 

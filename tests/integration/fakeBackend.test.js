@@ -2,6 +2,7 @@
 // these pin it to what the migrations in supabase/migrations say. If you change
 // a SQL function or policy, change the fake and these tests with it.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import MOVIES from '../../src/data/movies.json'
 import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
 
 let b
@@ -556,6 +557,113 @@ describe('table privileges on the review tables', () => {
     expect((await anon.from('reports').insert({ reporter_id: bob.id, target_type: 'review', target_id: review.id, reason: 'x' })).error.code).toBe('42501')
     expect((await anon.from('reviews').delete().eq('id', review.id)).error.code).toBe('42501')
     expect(b.reviews).toHaveLength(1)
+  })
+})
+
+describe('get_review_feed', () => {
+  const firstMovies = (n) => MOVIES.slice(0, n).map((m) => m.id)
+  const DUNE = 'dune-part-two-2024'
+  const INCEPTION = 'inception-2010'
+  const feed = async (user, args = {}) => {
+    const client = user ? await clientFor(user) : b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+    return client.rpc('get_review_feed', { p_scope: 'everyone', p_sort: 'recent', p_limit: 20, p_offset: 0, ...args })
+  }
+  const bodies = (result) => result.data.map((row) => row.body)
+
+  it('returns what a review card needs: author, movie, counts and dates', async () => {
+    b.seedList(bob, [DUNE])
+    const review = b.addReview(bob, DUNE, { body: 'Great', isSpoiler: true })
+    b.addComment(cara, review)
+    b.addComment(alice, review)
+
+    const { data, error } = await feed(alice)
+
+    expect(error).toBeNull()
+    expect(data).toEqual([expect.objectContaining({
+      id: review.id, user_id: bob.id, username: 'bob', movie_id: tmdb(DUNE), title: 'Dune: Part Two',
+      body: 'Great', is_spoiler: true, comment_count: 2, score: null,
+    })])
+    expect(data[0].genres.length).toBeGreaterThan(0)
+  })
+
+  it('shows reviews from public profiles, yours, and friends\' private ones, but not strangers\' private ones', async () => {
+    b.seedList(alice, [DUNE])
+    b.seedList(bob, [DUNE])
+    b.seedList(cara, [DUNE])
+    b.addReview(alice, DUNE, { body: 'mine' })
+    b.addReview(bob, DUNE, { body: 'public' })
+    b.addReview(cara, DUNE, { body: 'private stranger' }) // cara is private in this file's setup
+    expect(bodies(await feed(alice)).sort()).toEqual(['mine', 'public'])
+
+    b.addFriendship(alice, cara, 'accepted')
+    expect(bodies(await feed(alice)).sort()).toEqual(['mine', 'private stranger', 'public'])
+  })
+
+  it('shows a signed-out visitor only public profiles\' reviews', async () => {
+    b.seedList(bob, [DUNE])
+    b.seedList(cara, [DUNE])
+    b.addReview(bob, DUNE, { body: 'public' })
+    b.addReview(cara, DUNE, { body: 'private' })
+    expect(bodies(await feed(null))).toEqual(['public'])
+  })
+
+  it('"friends" is accepted friends only, never yourself', async () => {
+    b.seedList(alice, [DUNE])
+    b.seedList(bob, [DUNE])
+    b.seedList(cara, [DUNE])
+    b.addReview(alice, DUNE, { body: 'mine' })
+    b.addReview(bob, DUNE, { body: 'friend' })
+    b.addReview(cara, DUNE, { body: 'pending' })
+    b.addFriendship(alice, bob, 'accepted')
+    b.addFriendship(alice, cara, 'pending')
+
+    expect(bodies(await feed(alice, { p_scope: 'friends' }))).toEqual(['friend'])
+    expect(bodies(await feed(null, { p_scope: 'friends' }))).toEqual([]) // logged out has no friends
+  })
+
+  it('sorts by newest first, or by most comments with the newest breaking ties', async () => {
+    b.seedList(bob, [DUNE, INCEPTION, 'interstellar-2014'])
+    const old = b.addReview(bob, DUNE, { body: 'old, busy', createdAt: '2026-01-01T00:00:00.000Z' })
+    b.addReview(bob, INCEPTION, { body: 'middle, quiet', createdAt: '2026-02-01T00:00:00.000Z' })
+    b.addReview(bob, 'interstellar-2014', { body: 'new, quiet', createdAt: '2026-03-01T00:00:00.000Z' })
+    b.addComment(cara, old)
+    b.addComment(alice, old)
+
+    expect(bodies(await feed(alice))).toEqual(['new, quiet', 'middle, quiet', 'old, busy'])
+    expect(bodies(await feed(alice, { p_sort: 'discussed' }))).toEqual(['old, busy', 'new, quiet', 'middle, quiet'])
+  })
+
+  it('pages with limit and offset, and caps the limit at 200', async () => {
+    b.seedList(bob, firstMovies(5))
+    firstMovies(5).forEach((id, i) => b.addReview(bob, id, { body: `r${i}`, createdAt: `2026-01-0${i + 1}T00:00:00.000Z` }))
+    expect(bodies(await feed(alice, { p_limit: 2 }))).toEqual(['r4', 'r3'])
+    expect(bodies(await feed(alice, { p_limit: 2, p_offset: 2 }))).toEqual(['r2', 'r1'])
+    expect(bodies(await feed(alice, { p_limit: 2, p_offset: 4 }))).toEqual(['r0'])
+    expect(bodies(await feed(alice, { p_limit: 5000 }))).toHaveLength(5)
+    expect(bodies(await feed(alice, { p_limit: 0 }))).toHaveLength(1) // at least one
+  })
+
+  it('has a score only once the author has ranked 10 movies', async () => {
+    b.seedList(bob, firstMovies(9))
+    b.addReview(bob, firstMovies(9)[0], { body: 'nine ranked' })
+    expect((await feed(alice)).data[0].score).toBeNull()
+
+    b.seedList(bob, [firstMovies(10)[9]])
+    const top = (await feed(alice)).data[0]
+    expect(top.score).toBe(10) // their #1
+  })
+
+  it('refuses a scope or sort it does not know', async () => {
+    expect((await feed(alice, { p_scope: 'nobody' })).error.code).toBe('22023')
+    expect((await feed(alice, { p_sort: 'random' })).error.code).toBe('22023')
+  })
+
+  it('does not include a review once its movie is un-ranked', async () => {
+    b.seedList(bob, [DUNE])
+    b.addReview(bob, DUNE)
+    const asBob = await clientFor(bob)
+    await asBob.rpc('remove_ranking', { p_movie_id: tmdb(DUNE) })
+    expect((await feed(alice)).data).toEqual([])
   })
 })
 
