@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import ArrowScroller from '../components/ArrowScroller.jsx'
 import Icon from '../components/Icon.jsx'
-import Poster from '../components/Poster.jsx'
-import { scoreTiers } from '../features/ranking/scores.js'
-import { imageUrl, posterUrl } from '../lib/localStore.js'
+import ProfileHighlights from '../components/ProfileHighlights.jsx'
+import RecentlyRanked from '../components/RecentlyRanked.jsx'
+import { imageUrl } from '../lib/localStore.js'
 import { profileImageUrl, removeProfileImage, uploadProfileImage } from '../lib/profileMedia.js'
 import { fetchProfile, saveProfile } from '../lib/profileQueries.js'
 import { useFriendGroups } from '../lib/useFriends.js'
@@ -149,7 +148,6 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
 
   const ranked = tiers.flat()
   const count = ranked.length
-  const scores = scoreTiers(tiers)
   const top = ranked.slice(0, 10)
   const banner = images.banner || imageUrl(top[0]?.backdrop_path, 'w1280')
   const initial = (username ?? 'U').charAt(0).toUpperCase()
@@ -241,33 +239,6 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
     </section>
   )
 
-  const favorites = (
-    <section className="profile-favs" aria-label="Your top movies">
-      <h2 className="recs__title"><Icon name="star" size={20} /> Top of your list</h2>
-      {top.length === 0 ? (
-        <div className="row-empty row-unlock">
-          <div>
-            <strong>Nothing ranked yet</strong>
-            <span>Your ten highest-ranked movies show up here.</span>
-          </div>
-          <button type="button" className="btn btn--accent btn--sm" onClick={() => onNavigate?.('my-list')}>Start ranking</button>
-        </div>
-      ) : (
-        <ArrowScroller label="your top movies" className="profile-favs__list">
-          {top.map((movie, i) => (
-            <div key={movie.id} className="profile-favs__item">
-              <button type="button" className="rec" onClick={() => onOpen?.(movie.id)}>
-                <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="md" />
-                <span className="rec__title">#{i + 1} {movie.title}</span>
-                <span className="rec__meta">{scores ? `${scores.get(movie.id).toFixed(1)} score` : movie.year}</span>
-              </button>
-            </div>
-          ))}
-        </ArrowScroller>
-      )}
-    </section>
-  )
-
   if (status === 'loading') {
     return (
       <section className="page">
@@ -309,7 +280,12 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
         </div>
       )}
       {stats}
-      {!editing && favorites}
+      {!editing && (
+        <>
+          <ProfileHighlights tiers={tiers} onOpen={onOpen} onStartRanking={() => onNavigate?.('my-list')} />
+          <RecentlyRanked key={userId} userId={userId} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
+        </>
+      )}
 
       {editing && (
       <form className="profile__form" onSubmit={handleSubmit} noValidate>

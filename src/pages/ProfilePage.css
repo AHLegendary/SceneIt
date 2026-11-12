@@ -266,23 +266,190 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   font-size: 26px;
   font-weight: 900;
 
-/* ---------------------------------------------------------- top movies */
-.topmovies {
+/* ---------------------------------------------------------- highlights: Top Movie + Top Genre */
+.highlights {
   display: grid;
-  gap: 14px;
-  max-width: 36rem;
-  margin-top: 28px;
-}
-
-.topmovies__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  max-width: 560px;
 }
-
-.topmovies__title {
+.hcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.hcard__label {
   margin: 0;
-  font-size: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hcard__row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hcard__poster { flex: none; border-radius: 10px; }
+.hcard .poster--md { width: 72px; height: 108px; border-radius: 10px; }
+.hcard .poster--md.poster--blank { padding: 6px; }
+.hcard .poster--md.poster--blank span { font-size: 11px; }
+.hcard__poster:hover .poster { box-shadow: var(--glow), var(--shadow-md); }
+.hcard__info { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.hcard__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.hcard__meta { margin: 0; font-size: 13px; color: var(--ink-3); }
+.hcard__empty { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.hcard__empty strong { color: var(--ink); font-size: 14px; }
+@media (max-width: 520px) {
+  .highlights { grid-template-columns: 1fr; }
+}
+.topten { width: min(920px, 100%); }
+
+/* ---------------------------------------------------------- recently ranked */
+.recent { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+.recent__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.recent__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.recent__search:focus-within { border-color: var(--accent); box-shadow: var(--glow); }
+.recent__search input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+}
+.recent__search input:focus-visible { outline: none; box-shadow: none; }
+.recent__more { height: 1px; }
+.rlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+
+/* One ranked movie: poster, title, genres, score, and the review (components/ReviewCard.jsx) */
+.rcard {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.rcard__poster { flex: none; align-self: flex-start; border-radius: 10px; }
+.rcard .poster--md { width: 84px; height: 126px; border-radius: 10px; }
+.rcard .poster--md.poster--blank { padding: 8px; }
+.rcard .poster--md.poster--blank span { font-size: 12px; }
+.rcard__poster:hover .poster { box-shadow: var(--glow), var(--shadow-md); }
+.rcard__main { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.rcard__head { padding-right: 52px; }
+.rcard__title { text-align: left; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); overflow-wrap: anywhere; }
+.rcard__title:hover { color: var(--accent); }
+.rcard__year { font-weight: 500; color: var(--ink-3); }
+.rcard__score {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  min-width: 42px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 16px;
   font-weight: 800;
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.12);
+  border: 1px solid rgb(var(--accent-rgb) / 0.35);
+}
+.rcard__genres { margin: 0; font-size: 13px; color: var(--ink-3); }
+.rcard__review {
+  position: relative;
+  margin-top: 4px;
+  padding: 10px 40px 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rcard__body { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.rcard__text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rcard__text.is-clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.rcard__text.is-blurred { filter: blur(7px); user-select: none; }
+.rcard__toggle, .rcard__comments { font-size: 13px; font-weight: 700; color: var(--accent); }
+.rcard__toggle:hover, .rcard__comments:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rcard__comments { align-self: flex-start; }
+.rcard__reveal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  border-radius: 8px;
+}
+.rcard__reveal:hover { background: rgb(255 255 255 / 0.05); }
+.rcard__tag {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+}
+.rcard__menu { position: absolute; top: 6px; right: 6px; }
+.rcard__more { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-2); }
+.rcard__more:hover, .rcard__more[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.rcard__menulist {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+}
+.rcard__menulist button { padding: 8px 10px; border-radius: 8px; text-align: left; font-size: 14px; color: var(--ink); }
+.rcard__menulist button:hover { background: var(--hover); }
+.rcard__actions { display: flex; gap: 8px; justify-content: flex-end; }
+.rcard__confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: #ffb3bb;
+}
+@media (max-width: 520px) {
+  .rcard { padding: 12px; gap: 10px; }
+  .rcard .poster--md { width: 64px; height: 96px; }
 }

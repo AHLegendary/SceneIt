@@ -29,8 +29,10 @@ async function startEditing(user) {
   await user.click(await screen.findByRole('button', { name: 'Edit profile' }))
   return screen.getByLabelText('Bio')
 }
-// The movie cards in "Top of your list" (the region also has scroll arrow buttons).
-const favCards = () => [...document.querySelectorAll('.profile-favs .rec')]
+// The movie cards in the "View Top 10" dialog (it also has scroll arrow buttons).
+const favCards = () => [...document.querySelectorAll('.profile-favs__list .rec')]
+// The cards in "Recently ranked", newest first.
+const cardTitles = () => [...document.querySelectorAll('.rcard__title')].map((n) => n.firstChild.textContent)
 const rowCount = () => document.querySelectorAll('.row .row__title').length
 const hero = () => document.querySelector('.profile-hero')
 const save = () => screen.getByRole('button', { name: /^(Save changes|Saving…)$/ })
@@ -137,40 +139,83 @@ describe('stats and top movies', () => {
     expect(window.location.hash).toBe('#/my-list')
   })
 
-  it('shows your ten highest-ranked movies in order, with years below ten ranked', async () => {
+  it('shows your Top Movie and Top Genre', async () => {
+    backend.seedList(alice, ids(4))
+    await open()
+
+    const highlights = within(await screen.findByRole('region', { name: 'Highlights' }))
+    expect(await highlights.findByText(title(ids(1)[0]))).toBeTruthy()
+    expect(highlights.getByText('Top Movie')).toBeTruthy()
+    expect(highlights.getByText('Top Genre')).toBeTruthy()
+    expect(highlights.getByRole('button', { name: 'View Top 10' })).toBeTruthy()
+    expect(highlights.getByText(/^\d+ movies?$/)).toBeTruthy()
+  })
+
+  it('shows your top 10 in order from View Top 10, with years below ten ranked', async () => {
     backend.seedList(alice, ids(9))
-    await open()
+    const { user } = await open()
 
-    const favs = within(screen.getByRole('region', { name: 'Your top movies' }))
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Top movies' }))
     await waitFor(() => expect(favCards()).toHaveLength(9))
-    expect(favs.getByText(`#1 ${title(ids(1)[0])}`)).toBeTruthy()
-    expect(favs.queryByText(/score/)).toBeNull()
+    expect(dialog.getByText(`#1 ${title(ids(1)[0])}`)).toBeTruthy()
+    expect(dialog.queryByText(/score/)).toBeNull()
   })
 
-  it('shows only ten of a longer list, with scores once you\'ve ranked ten', async () => {
+  it('shows only ten of a longer list in the dialog, with scores once you\'ve ranked ten', async () => {
     backend.seedList(alice, ids(12))
-    await open()
+    const { user } = await open()
 
-    const favs = within(screen.getByRole('region', { name: 'Your top movies' }))
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Top 10' }))
     await waitFor(() => expect(favCards()).toHaveLength(10))
-    expect(favs.getByText('10.0 score')).toBeTruthy()
-    expect(favs.queryByText(`#11 ${title(ids(11)[10])}`)).toBeNull()
+    expect(dialog.getByText('10.0 score')).toBeTruthy()
+    expect(dialog.queryByText(`#11 ${title(ids(11)[10])}`)).toBeNull()
   })
 
-  it('opens a movie\'s details when you click it', async () => {
+  it('closes the top 10 with Escape', async () => {
     backend.seedList(alice, ids(2))
     const { user } = await open()
-    const favs = within(screen.getByRole('region', { name: 'Your top movies' }))
-    await user.click(await favs.findByText(`#1 ${title(ids(1)[0])}`))
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+    await screen.findByRole('dialog', { name: 'Top movies' })
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Top movies' })).toBeNull()
+  })
+
+  it('opens a movie\'s details when you click your Top Movie', async () => {
+    backend.seedList(alice, ids(2))
+    const { user } = await open()
+    const highlights = within(await screen.findByRole('region', { name: 'Highlights' }))
+    const [topMovie] = await highlights.findAllByRole('button', { name: `Open ${title(ids(1)[0])}` })
+    await user.click(topMovie)
     expect(await screen.findByRole('dialog')).toBeTruthy()
   })
 
-  it('hides the top movies while you are editing', async () => {
+  it('lists what you ranked, most recently ranked first', async () => {
+    backend.seedList(alice, ids(3))
+    const tmdb = (id) => MOVIES.find((m) => m.id === id).tmdb_id
+    const stamp = (id, iso) => { backend.rankings.find((r) => r.user_id === alice.id && r.movie_id === tmdb(id)).updated_at = iso }
+    stamp(ids(3)[0], '2026-11-01T00:00:00Z')
+    stamp(ids(3)[1], '2026-11-03T00:00:00Z')
+    stamp(ids(3)[2], '2026-11-02T00:00:00Z')
+    await open()
+
+    await waitFor(() => expect(cardTitles()).toEqual([ids(3)[1], ids(3)[2], ids(3)[0]].map(title)))
+    expect(screen.getByRole('link', { name: 'View full list' }).getAttribute('href')).toBe('#/my-list')
+  })
+
+  it('hides the highlights and recently ranked while you are editing', async () => {
     backend.seedList(alice, ids(2))
     const { user } = await open()
-    await screen.findByRole('region', { name: 'Your top movies' })
+    await screen.findByRole('region', { name: 'Highlights' })
+    await screen.findByRole('region', { name: 'Recently ranked' })
     await startEditing(user)
-    expect(screen.queryByRole('region', { name: 'Your top movies' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Highlights' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Recently ranked' })).toBeNull()
   })
 })
 

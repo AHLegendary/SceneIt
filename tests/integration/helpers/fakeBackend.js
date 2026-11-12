@@ -90,6 +90,7 @@ export class FakeBackend {
     this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
     this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
+    this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at } (read-only so far)
     this.buckets = new Map()
     this.files = new Map()
     this.validTokens = new Set()
@@ -443,6 +444,15 @@ export class FakeBackend {
       for (const r of this.rankings) if (r.user_id === uid && r.position > old.position) r.position -= 1
     }
     this.reviews = this.reviews.filter((r) => !(r.user_id === uid && r.movie_id === movieId))
+  }
+
+  // Test helper: a comment as if the user had written it. Comments can't be
+  // posted through the fake client yet, only counted and read.
+  addComment(user, review, { body = 'A comment.', parentId = null } = {}) {
+    const stamp = this.now()
+    const comment = { id: this.id(), review_id: review.id, user_id: user.id, parent_id: parentId, body, created_at: stamp, updated_at: stamp }
+    this.review_comments.push(comment)
+    return comment
   }
 
   // Test helper: a review as if the user had written it (the movie must be
@@ -903,7 +913,11 @@ class FakeClient {
 const UPSERT_KEYS = { movies: 'tmdb_id', movie_ratings: 'tmdb_id' }
 
 // Which table an embedded select (movies(...)) points at, per table.
-const EMBEDS = { rankings: { movies: { local: 'movie_id', foreign: 'tmdb_id', table: 'movies' } } }
+// `count: true` is PostgREST's `table(count)`: [{ count: n }] of the rows pointing back at this one.
+const EMBEDS = {
+  rankings: { movies: { local: 'movie_id', foreign: 'tmdb_id', table: 'movies' } },
+  reviews: { review_comments: { local: 'id', foreign: 'review_id', table: 'review_comments', count: true } },
+}
 
 // A query builder like supabase-js's: chain filters, then await it.
 class Query {
@@ -979,6 +993,10 @@ class Query {
       case 'rankings': return b.canView(ctx.uid, row.user_id)
       case 'friendships': return ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid)
       case 'reviews': return b.canView(ctx.uid, row.user_id)
+      case 'review_comments': {
+        const review = b.reviews.find((r) => r.id === row.review_id)
+        return review ? b.canView(ctx.uid, review.user_id) : false
+      }
       case 'movies': return true
       case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)
@@ -993,6 +1011,10 @@ class Query {
       if (embed) {
         const spec = EMBEDS[this.table]?.[embed[1]]
         if (!spec) throw new Error(`fake: unknown embed ${embed[1]} on ${this.table}`)
+        if (spec.count) {
+          out[embed[1]] = [{ count: this.backend[spec.table].filter((r) => r[spec.foreign] === row[spec.local]).length }]
+          continue
+        }
         const target = this.backend[spec.table].find((r) => r[spec.foreign] === row[spec.local])
         out[embed[1]] = target ? this.project.call({ backend: this.backend, table: spec.table }, target, embed[2]) : null
       } else out[token] = row[token]

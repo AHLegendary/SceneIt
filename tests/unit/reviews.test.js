@@ -18,7 +18,7 @@ vi.mock('../../src/lib/supabase.js', () => {
     const call = { table, ops: [] }
     db.calls.push(call)
     const chain = {}
-    for (const op of ['select', 'insert', 'update', 'delete', 'eq', 'order', 'single', 'maybeSingle']) {
+    for (const op of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'order', 'single', 'maybeSingle']) {
       chain[op] = (...args) => {
         call.ops.push([op, ...args])
         return chain
@@ -210,6 +210,48 @@ describe('updateReview / deleteReview / fetchReview', () => {
     expect(review.body).toBe('Loved it')
     expect(db.calls[0].ops).toContainEqual(['eq', 'user_id', ME])
     expect(db.calls[0].ops).toContainEqual(['eq', 'movie_id', 693134])
+  })
+})
+
+describe('commentCount', () => {
+  it('is 0 unless the row came with the comment count', () => {
+    expect(reviews.rowToReview(REVIEW_ROW).commentCount).toBe(0)
+  })
+
+  it('reads PostgREST\'s review_comments(count) shape', () => {
+    expect(reviews.rowToReview({ ...REVIEW_ROW, review_comments: [{ count: 3 }] }).commentCount).toBe(3)
+    expect(reviews.rowToReview({ ...REVIEW_ROW, review_comments: [] }).commentCount).toBe(0)
+  })
+})
+
+describe('fetchReviewsForMovies', () => {
+  it('returns a Map of UI movie id -> review, with comment counts', async () => {
+    db.results = [ok([{ ...REVIEW_ROW, review_comments: [{ count: 2 }] }])]
+    const found = await reviews.fetchReviewsForMovies(ME, ['dune-part-two-2024', 'inception-2010'])
+    expect([...found.keys()]).toEqual(['dune-part-two-2024'])
+    expect(found.get('dune-part-two-2024')).toMatchObject({ id: REVIEW_ID, body: 'Loved it', commentCount: 2 })
+    expect(db.calls[0].table).toBe('reviews')
+    expect(db.calls[0].ops).toContainEqual(['eq', 'user_id', ME])
+    const [, column, tmdbIds] = db.calls[0].ops.find(([op]) => op === 'in')
+    expect(column).toBe('movie_id')
+    expect(tmdbIds).toContain(693134)
+  })
+
+  it('does not ask the database when there is nothing to look up', async () => {
+    expect((await reviews.fetchReviewsForMovies(ME, [])).size).toBe(0)
+    expect((await reviews.fetchReviewsForMovies(ME, ['not-a-movie'])).size).toBe(0)
+    expect(db.calls).toHaveLength(0)
+  })
+
+  it('works signed out, and surfaces failures', async () => {
+    db.account = { user: null }
+    db.results = [ok([]), fail()]
+    expect((await reviews.fetchReviewsForMovies(ME, ['dune-part-two-2024'])).size).toBe(0)
+    await expect(reviews.fetchReviewsForMovies(ME, ['dune-part-two-2024'])).rejects.toThrow(reviews.REVIEW_LOAD_ERROR)
+  })
+
+  it('rejects a user id that is not a UUID', async () => {
+    await expect(reviews.fetchReviewsForMovies('nope', ['dune-part-two-2024'])).rejects.toThrow('Unknown user')
   })
 })
 

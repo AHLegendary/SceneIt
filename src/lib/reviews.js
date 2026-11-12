@@ -31,14 +31,18 @@ export const ALREADY_REPORTED = "You've already reported that."
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const REVIEW_COLUMNS = 'id, user_id, movie_id, body, is_spoiler, created_at, updated_at'
+// Same, plus how many comments each review has (PostgREST counts the rows).
+const REVIEW_WITH_COUNT = `${REVIEW_COLUMNS}, review_comments(count)`
 const COMMENT_COLUMNS = 'id, review_id, user_id, parent_id, body, created_at, updated_at'
 
 // ------------------------------------------------------------------ shapes
 
-// Review row -> { id, userId, movieId, body, isSpoiler, createdAt, updatedAt }.
-// movieId is the UI id (catalog slug when there is one, else "tmdb-<id>").
+// Review row -> { id, userId, movieId, body, isSpoiler, createdAt, updatedAt,
+// commentCount }. movieId is the UI id (catalog slug when there is one, else
+// "tmdb-<id>"). commentCount is 0 unless the row came with the comment count.
 export function rowToReview(row) {
   return {
+    commentCount: row.review_comments?.[0]?.count ?? 0,
     id: row.id,
     userId: row.user_id,
     movieId: getMovieByTmdbId(row.movie_id)?.id ?? `tmdb-${row.movie_id}`,
@@ -203,6 +207,28 @@ export async function fetchMyReview(movieId) {
     throw new Error(REVIEW_LOAD_ERROR)
   }
   return data ? rowToReview(data) : null
+}
+
+// A user's reviews of some of their movies, as a Map of UI movie id -> review
+// (with commentCount). Movies without a review are simply absent. Only reviews
+// you're allowed to see come back (RLS), so for a hidden profile the Map is
+// empty rather than an error. Used by the profile's "Recently ranked" list,
+// a page of movies at a time.
+export async function fetchReviewsForMovies(userId, movieIds) {
+  requireId(userId, 'user')
+  const tmdbIds = movieIds.map((id) => getMovie(id)?.tmdb_id).filter(Boolean)
+  if (!tmdbIds.length) return new Map()
+  const { data, error } = await supabase
+    .from('reviews')
+    .select(REVIEW_WITH_COUNT)
+    .eq('user_id', userId)
+    .in('movie_id', tmdbIds)
+  if (error) {
+    console.error('fetchReviewsForMovies failed', error)
+    throw new Error(REVIEW_LOAD_ERROR)
+  }
+  const reviews = (data ?? []).map(rowToReview)
+  return new Map(reviews.map((review) => [review.movieId, review]))
 }
 
 // ------------------------------------------------------------------ comments

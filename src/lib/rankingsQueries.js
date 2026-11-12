@@ -15,6 +15,20 @@ export async function fetchUserTiers(userId) {
   return rowsToTiers(data)
 }
 
+// When each of a user's movies was last ranked, newest first, as TMDb ids.
+// "Recently ranked" lists use this order: the tiers say how good a movie is,
+// this says how recently it was placed (reranking counts as ranking again).
+// Same visibility rules as fetchUserTiers.
+export async function fetchRankingOrder(userId) {
+  const { data, error } = await supabase
+    .from('rankings')
+    .select('movie_id, updated_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((row) => row.movie_id)
+}
+
 // Several users' ranked lists in one request, as a Map of user id -> tiers.
 // Meant for friends: RLS lets you read a friend's rankings even when their
 // profile is private. Users with nothing ranked (or hidden) are left out.

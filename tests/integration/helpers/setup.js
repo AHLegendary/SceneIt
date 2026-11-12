@@ -69,6 +69,32 @@ function polyfill() {
     unobserve() {}
     disconnect() {}
   }
+  // Nothing scrolls in jsdom, so infinite lists never see their last element
+  // come into view on their own. This records the observers; a test calls
+  // scrollToEnd() (harness.js) to say "the user scrolled to the bottom".
+  const observers = new Set()
+  globalThis.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback
+      this.targets = new Set()
+      observers.add(this)
+    }
+    observe(target) { this.targets.add(target) }
+    unobserve(target) { this.targets.delete(target) }
+    disconnect() {
+      this.targets.clear()
+      observers.delete(this)
+    }
+  }
+  globalThis.__intersection = {
+    // Tells every observer that its elements are on screen.
+    fire() {
+      for (const observer of [...observers]) {
+        const entries = [...observer.targets].map((target) => ({ target, isIntersecting: true }))
+        if (entries.length) observer.callback(entries, observer)
+      }
+    },
+  }
 }
 
 beforeEach(() => {

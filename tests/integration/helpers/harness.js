@@ -91,4 +91,28 @@ export async function skipReview(user = userEvent.setup()) {
   await user.click(step)
 }
 
+// Renders one component on its own (no app around it), with the same fake
+// backend wiring as launch(). Pass a loader so the import path is relative to
+// your test file: mount(() => import('../../src/components/ReviewCard.jsx'), props)
+export async function mount(load, props = {}, { backend = new FakeBackend() } = {}) {
+  globalThis.__sceneit = { backend }
+  vi.resetModules()
+  vi.stubEnv('VITE_SUPABASE_URL', SUPABASE_URL)
+  vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', PUBLISHABLE_KEY)
+  vi.stubGlobal('fetch', backend.fetch)
+  const { default: Component } = await load()
+  const user = userEvent.setup()
+  const view = render(createElement(Component, props))
+  return { backend, user, view }
+}
+
+// Pretends the user scrolled to the bottom of an infinite list: every element
+// being watched for "near the viewport" reports that it is.
+export async function scrollToEnd() {
+  await act(async () => {
+    globalThis.__intersection.fire()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+}
+
 export { FakeBackend }

@@ -27,6 +27,12 @@ async function open(hash, { as = alice } = {}) {
 // The status next to the profile card ('Friends', 'Requested'); the hidden Profile menu also says "Friends".
 const actionTag = () => document.querySelector('.uprofile__action .friends__tag')?.textContent
 const rowTitles = () => [...document.querySelectorAll('.row .row__title')].map((n) => n.textContent)
+// The cards in "Recently ranked", newest first (the title text without the year).
+const cardTitles = () => [...document.querySelectorAll('.rcard__title')].map((n) => n.firstChild.textContent)
+// Sets when a user last ranked a movie, so "recently ranked" order is explicit.
+function rankedAt(user, id, iso) {
+  backend.rankings.find((r) => r.user_id === user.id && r.movie_id === MOVIES.find((m) => m.id === id).tmdb_id).updated_at = iso
+}
 const ranks = () => [...document.querySelectorAll('.row .row__rank')].map((n) => n.textContent)
 
 describe("someone else's public profile", () => {
@@ -88,65 +94,103 @@ describe("someone else's public profile", () => {
   })
 })
 
-describe('their top movies', () => {
-  it('shows the top 5 of a longer list, in order, with a link to all of it', async () => {
-    backend.seedList(bob, ids(8))
-    await open('#/u/bob')
-
-    expect(await screen.findByRole('heading', { level: 2, name: 'Top 5' })).toBeTruthy()
-    await waitFor(() => expect(rowTitles()).toEqual(ids(5).map(title)))
-    expect(ranks()).toEqual(['1', '2', '3', '4', '5'])
-    expect(screen.getByRole('link', { name: 'View all 8 movies' }).getAttribute('href')).toBe('#/u/bob/my-list')
-  })
-
-  it('says "Top movies" and "View full list" when they have five or fewer', async () => {
+describe('their ranked movies', () => {
+  it('shows their Top Movie, Top Genre and a recently ranked list, newest first', async () => {
     backend.seedList(bob, ids(3))
+    rankedAt(bob, ids(3)[1], '2026-11-03T00:00:00Z')
+    rankedAt(bob, ids(3)[0], '2026-11-02T00:00:00Z')
+    rankedAt(bob, ids(3)[2], '2026-11-01T00:00:00Z')
     await open('#/u/bob')
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Top movies' })).toBeTruthy()
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
-    expect(screen.getByRole('link', { name: 'View full list' })).toBeTruthy()
+    const highlights = within(await screen.findByRole('region', { name: 'Highlights' }))
+    expect(highlights.getByText('Top Movie')).toBeTruthy()
+    expect(highlights.getByText(title(ids(1)[0]))).toBeTruthy() // their #1
+    expect(highlights.getByText('Top Genre')).toBeTruthy()
+    await waitFor(() => expect(cardTitles()).toEqual([ids(3)[1], ids(3)[0], ids(3)[2]].map(title)))
+    expect(screen.getByRole('link', { name: 'View full list' }).getAttribute('href')).toBe('#/u/bob/my-list')
   })
 
-  it('says so when they haven\'t ranked anything, with no link', async () => {
+  it('lets you open their top 10 from View Top 10', async () => {
+    backend.seedList(bob, ids(12))
+    const { user } = await open('#/u/bob')
+
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Top 10' }))
+    const cards = [...document.querySelectorAll('.profile-favs__list .rec .rec__title')].map((n) => n.textContent)
+    expect(cards).toEqual(ids(10).map((id, i) => `#${i + 1} ${title(id)}`))
+    expect(dialog.getByText('10.0 score')).toBeTruthy()
+
+    await user.click(dialog.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('calls the dialog "Top movies" when they have fewer than ten, with years instead of scores', async () => {
+    backend.seedList(bob, ids(3))
+    const { user } = await open('#/u/bob')
+
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+
+    const dialog = within(await screen.findByRole('dialog', { name: 'Top movies' }))
+    expect(dialog.queryByText(/score/)).toBeNull()
+    expect(dialog.getByText(`#1 ${title(ids(1)[0])}`)).toBeTruthy()
+  })
+
+  it('opens a movie from the top 10 dialog', async () => {
+    backend.seedList(bob, ids(3))
+    const { user } = await open('#/u/bob')
+    await user.click(await screen.findByRole('button', { name: 'View Top 10' }))
+    await user.click(await screen.findByText(`#2 ${title(ids(2)[1])}`))
+
+    expect(await screen.findByRole('dialog', { name: new RegExp(title(ids(2)[1])) })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Top movies' })).toBeNull()
+  })
+
+  it('says so when they haven\'t ranked anything', async () => {
     await open('#/u/bob')
 
-    expect(await screen.findByText('No ranked movies yet.')).toBeTruthy()
-    expect(screen.queryByRole('link', { name: /View/ })).toBeNull()
+    expect(await screen.findByText('Nothing ranked yet')).toBeTruthy()
+    expect(screen.getByText('Their number one movie shows up here.')).toBeTruthy()
+    expect(screen.getByText('No favorite genre yet')).toBeTruthy()
+    expect(screen.getByText(/Movies show up here as they're ranked/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Start ranking' })).toBeNull() // that's for your own profile
+    expect(screen.queryByRole('button', { name: 'View Top 10' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'View full list' })).toBeNull()
+    expect(screen.queryByRole('searchbox', { name: 'Search ranked movies' })).toBeNull()
   })
 
-  it('shows tied movies with a shared rank', async () => {
+  it('lists tied movies', async () => {
     backend.seedList(bob, [ids(1)[0], { movie: ids(2)[1], tied: true }, ids(3)[2]])
     await open('#/u/bob')
 
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
-    expect(ranks()).toEqual(['1', '1', '3'])
-    expect(screen.getAllByText('Tied')).toHaveLength(2)
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
+    expect(cardTitles().sort()).toEqual(ids(3).map(title).sort())
   })
 
-  it('shows scores once they have ranked ten, worked out from their whole list', async () => {
+  it('shows each movie\'s score once they have ranked ten, worked out from their whole list', async () => {
     backend.seedList(bob, ids(12))
     await open('#/u/bob')
 
-    await waitFor(() => expect(rowTitles()).toHaveLength(5))
-    expect(screen.getAllByText('score')).toHaveLength(5)
-    expect(document.querySelector('.row .row__value').textContent).toBe('10.0')
+    await waitFor(() => expect(cardTitles()).toHaveLength(12))
+    const scores = [...document.querySelectorAll('.rcard__score')].map((n) => n.textContent)
+    expect(scores).toHaveLength(12)
+    expect(scores).toContain('10.0') // their #1
   })
 
   it('shows no scores below ten movies', async () => {
     backend.seedList(bob, ids(9))
     await open('#/u/bob')
 
-    await waitFor(() => expect(rowTitles()).toHaveLength(5))
-    expect(screen.queryByText('score')).toBeNull()
+    await waitFor(() => expect(cardTitles()).toHaveLength(9))
+    expect(document.querySelector('.rcard__score')).toBeNull()
   })
 
   it('opens a movie\'s details when you click it', async () => {
     backend.seedList(bob, ids(3))
     const { user } = await open('#/u/bob')
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
 
-    await user.click(screen.getByRole('button', { name: title(ids(1)[0]) }))
+    await user.click(screen.getAllByRole('button', { name: new RegExp(`^${title(ids(1)[0])}`) })[0])
 
     expect(await screen.findByRole('dialog')).toBeTruthy()
   })
@@ -156,7 +200,8 @@ describe('their top movies', () => {
     const { user } = await launch({ backend, as: alice, hash: '#/u/bob' })
     await ready({ loggedIn: true })
     await screen.findByText(/Horror fan/)
-    // The first rankings read is your own list at login; fail the one for bob's.
+    // Let the first load finish, so the failure below can only hit the next one.
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
     backend.failQuery('rankings', 'select', 'boom', { times: 1 })
     await goTo('#/leaderboard')
     await goTo('#/u/bob')
@@ -166,7 +211,7 @@ describe('their top movies', () => {
     expect(screen.getByText(/Horror fan/)).toBeTruthy()
     await user.click(within(alert.closest('[role="alert"]')).getByRole('button', { name: 'Try again' }))
 
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
   })
 })
 
@@ -218,7 +263,7 @@ describe('friend status on their profile', () => {
     backend.addFriendship(alice, bob, 'accepted')
     backend.seedList(bob, ids(6))
     await open('#/u/bob')
-    await waitFor(() => expect(rowTitles()).toHaveLength(5))
+    await waitFor(() => expect(cardTitles()).toHaveLength(6))
 
     // A reload loop keeps asking forever, so the number of reads must stop growing.
     const reads = () => backend.calls.filter((c) => c.key === 'from:profiles:select').length
@@ -228,7 +273,7 @@ describe('friend status on their profile', () => {
 
     expect(reads()).toBe(before)
     expect(before).toBeLessThan(8)
-    expect(rowTitles()).toHaveLength(5)
+    expect(cardTitles()).toHaveLength(6)
     expect(screen.queryByText('Loading profile…')).toBeNull()
   })
 })
@@ -244,7 +289,7 @@ describe('a private profile', () => {
     expect(screen.queryByText('Secret bio')).toBeNull()
     expect(screen.queryByText('they/them')).toBeNull()
     expect(screen.queryByRole('heading', { name: /Top/ })).toBeNull()
-    expect(rowTitles()).toEqual([])
+    expect(cardTitles()).toEqual([])
     expect(screen.getByRole('heading', { level: 1, name: 'dave' })).toBeTruthy()
   })
 
@@ -267,7 +312,7 @@ describe('a private profile', () => {
     expect(await screen.findByText('Secret bio')).toBeTruthy()
     expect(screen.getByText('they/them')).toBeTruthy()
     expect(screen.getByText('Private profile, shared with friends')).toBeTruthy()
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
   })
 
   it('is fully visible to a friend', async () => {
@@ -277,8 +322,8 @@ describe('a private profile', () => {
 
     expect(await screen.findByText('Secret bio')).toBeTruthy()
     expect(screen.getByText('Private profile, shared with friends')).toBeTruthy()
-    await waitFor(() => expect(rowTitles()).toHaveLength(5))
-    expect(screen.getByRole('link', { name: 'View all 7 movies' })).toBeTruthy()
+    await waitFor(() => expect(cardTitles()).toHaveLength(7))
+    expect(screen.getByRole('link', { name: 'View full list' })).toBeTruthy()
   })
 
   it('hides again if the friendship is removed', async () => {
@@ -301,7 +346,7 @@ describe('when you are not logged in', () => {
 
     expect(await screen.findByText(/Horror fan/)).toBeTruthy()
     expect(screen.queryByRole('link', { name: /Back to Friends/ })).toBeNull()
-    await waitFor(() => expect(rowTitles()).toHaveLength(3))
+    await waitFor(() => expect(cardTitles()).toHaveLength(3))
 
     await user.click(screen.getByRole('button', { name: 'Log in to add friends' }))
     expect(window.location.hash).toBe('#/login')
@@ -484,7 +529,7 @@ describe("someone else's full list", () => {
   it('is reached from "View all" on their profile', async () => {
     backend.seedList(bob, ids(8))
     const { user } = await open('#/u/bob')
-    await user.click(await screen.findByRole('link', { name: 'View all 8 movies' }))
+    await user.click(await screen.findByRole('link', { name: 'View full list' }))
 
     expect(window.location.hash).toBe('#/u/bob/my-list')
     expect(await screen.findByText('8 ranked movies')).toBeTruthy()
