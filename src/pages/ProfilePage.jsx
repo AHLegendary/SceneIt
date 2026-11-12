@@ -219,7 +219,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
           )}
         </div>
         {status === 'ready' && (
-          <button type="button" className={`btn btn--sm ${editing ? 'btn--ghost' : 'btn--light'}`} onClick={() => setEditing((v) => !v)}>
+          <button type="button" className={`btn btn--sm ${editing ? 'btn--ghost' : 'btn--light'}`} onClick={() => { setNotice(''); setEditing((v) => !v) }}>
             <Icon name={editing ? 'close' : 'card'} size={16} />
             {editing ? 'Close' : 'Edit profile'}
           </button>
@@ -301,6 +301,11 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
         <div className="notice notice--error" role="alert">
           <span>{media.message}</span>
           <button type="button" className="row__btn" onClick={() => setMedia(null)}>Dismiss</button>
+        </div>
+      )}
+      {notice && (
+        <div className="notice" role="status">
+          <span>{notice}</span>
         </div>
       )}
       {stats}
@@ -390,11 +395,6 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
             <button type="button" className="profile__link" onClick={discard}>
               Discard changes
             </button>
-          )}
-          {notice && (
-            <span className="profile__notice" role="status">
-              {notice}
-            </span>
           )}
         </div>
       </form>

@@ -123,12 +123,13 @@ function App() {
     if (!signedIn || (page !== 'login' && page !== 'signup')) return
     const intent = takeReturn() ?? {}
     navigate(intent.page ?? 'home')
-    // Open the remembered dialog once the new page is showing.
-    const timer = setTimeout(() => {
+    // Reopen the remembered dialog once the new page is showing. Don't clear
+    // this timer in a cleanup: the navigate() above changes `page`, which
+    // re-runs this effect and would cancel the timer before it fires.
+    setTimeout(() => {
       if (intent.action === 'rank') setSearch({ mode: 'rank', query: '' })
       else if (intent.action === 'details' && intent.movieId && getMovie(intent.movieId)) setDetailsId(intent.movieId)
     }, 0)
-    return () => clearTimeout(timer)
   }, [signedIn, page])
 
   const needsAccount = !PUBLIC_PAGES.has(page)

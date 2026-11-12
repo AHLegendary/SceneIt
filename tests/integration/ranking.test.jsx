@@ -597,9 +597,20 @@ describe('when saving fails', () => {
     expect(backend.listOf(alice)).toEqual([])
   })
 
-  // Known gap: here the app only reports the expiry. It doesn't log you out (the "new movie" path
-  // does), so you still count as logged in and the Log in button bounces you straight back to #/home.
-  it.todo('takes you to the login page from "Log in" after the server rejects your session while saving')
+  it('takes you to the login page from "Log in" after the server rejects your session while saving', async () => {
+    const { user } = await open()
+    await user.click(await screen.findByRole('button', { name: 'Rank a movie' }))
+    await startRanking(user, ids(1)[0])
+    backend.invalidateTokens(alice)
+    await feeling(user, 'Loved it')
+
+    const alert = await screen.findByRole('alert')
+    expect(backend.browser.session).toBeNull()
+    await user.click(within(alert).getByRole('button', { name: 'Log in' }))
+
+    expect(await screen.findByLabelText('Email or username')).toBeTruthy()
+    expect(window.location.hash).toBe('#/login')
+  })
 
   it('logs you out and asks you to log in when your session can\'t be refreshed', async () => {
     const { user } = await open()
