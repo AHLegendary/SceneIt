@@ -27,8 +27,13 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
-`send_friend_request`, `search_users`, `get_leaderboard`) and the `reviews` table's
-policies (`review_comments` and `reports` are added with the features that use them).
+`send_friend_request`, `search_users`, `get_leaderboard`, `get_review_comments`) and
+the policies, constraints and cascades of `reviews`, `review_comments` and `reports`.
+For those tables it also enforces table privileges per role (the `GRANTS` map in
+`fakeBackend.js`), because a missing grant makes the API refuse the request before
+RLS is looked at. Real jsdom has no layout, so `setup.js` stubs `IntersectionObserver`
+(fire it with `scrollToEnd()`), and tests that need scrolling fake `window.scrollY`
+(see `scrollRestore.test.jsx`).
 
 **What this cannot catch:** mistakes in the real SQL or policies. The fake is a
 port of them, pinned by `fakeBackend.test.js`. If you change a migration, change

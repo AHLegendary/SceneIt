@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { blendHref, parseHash, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
+import { blendHref, parseHash, reviewHref, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
 
 describe('parseHash', () => {
   it('reads a sidebar page', () => {
@@ -58,5 +58,27 @@ describe('userHref and userListHref', () => {
   })
   it('puts the username before /my-list', () => {
     expect(userListHref('reil_99')).toBe('#/u/reil_99/my-list')
+  })
+})
+
+describe('review discussion routes', () => {
+  it('reads a review page', () => {
+    expect(parseHash('#/u/reil_99/review/abc-123')).toEqual({ page: 'review', username: 'reil_99', reviewId: 'abc-123' })
+  })
+  it('decodes both parts', () => {
+    expect(parseHash('#/u/a%5Fb/review/x%2Fy')).toEqual({ page: 'review', username: 'a_b', reviewId: 'x/y' })
+  })
+  it('falls back for malformed review paths', () => {
+    expect(parseHash('#/u/reil_99/review').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u//review/abc').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/a/b').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/%E0%A4%A/review/abc').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/%E0%A4%A').page).toBe(DEFAULT_PAGE)
+  })
+  it('builds links that parse back', () => {
+    const href = reviewHref('a_b c', 'id/with slash')
+    expect(href).toBe('#/u/a_b%20c/review/id%2Fwith%20slash')
+    expect(parseHash(href)).toEqual({ page: 'review', username: 'a_b c', reviewId: 'id/with slash' })
   })
 })

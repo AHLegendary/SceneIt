@@ -12,6 +12,7 @@ import TopNav from './components/TopNav.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
 import { getMovie } from './lib/localStore.js'
 import { PUBLIC_PAGES } from './lib/pages.js'
+import { onNavigate, startNavMemory } from './lib/navMemory.js'
 import { rememberReturn, takeReturn } from './lib/returnTo.js'
 import { parseHash } from './lib/route.js'
 import { loadMyList } from './lib/supabaseStore.js'
@@ -23,6 +24,7 @@ import LeaderboardPage from './pages/LeaderboardPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
+import ReviewPage from './pages/ReviewPage.jsx'
 import UserListPage from './pages/UserListPage.jsx'
 import UserProfilePage from './pages/UserProfilePage.jsx'
 
@@ -108,10 +110,13 @@ function App() {
     else navigate('my-list')
   }
 
+  // Back and forward restore the page as it was (scroll position, loaded
+  // lists); a link click opens the new page at the top. See lib/navMemory.js.
+  useEffect(() => startNavMemory(), [])
   useEffect(() => {
     const onHash = () => {
+      onNavigate()
       setRoute(parseHash(window.location.hash))
-      window.scrollTo({ top: 0 })
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
@@ -159,6 +164,8 @@ function App() {
           <ProfilePage account={account} onOpen={openDetails} onNavigate={navigate} />
         ) : page === 'user' ? (
           <UserProfilePage username={route.username} account={account} onOpen={openDetails} />
+        ) : page === 'review' ? (
+          <ReviewPage key={route.reviewId} reviewId={route.reviewId} account={account} onOpen={openDetails} />
         ) : page === 'user-list' ? (
           <UserListPage username={route.username} account={account} onOpen={openDetails} />
         ) : page === 'my-list' ? (

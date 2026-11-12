@@ -283,7 +283,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
       {!editing && (
         <>
           <ProfileHighlights tiers={tiers} onOpen={onOpen} onStartRanking={() => onNavigate?.('my-list')} />
-          <RecentlyRanked key={userId} userId={userId} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
+          <RecentlyRanked key={userId} userId={userId} username={username} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
         </>
       )}
 

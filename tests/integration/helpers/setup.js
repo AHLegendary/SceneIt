@@ -105,6 +105,9 @@ beforeEach(() => {
   })
   polyfill()
   window.location.hash = ''
+  // History entries are tagged for back-button restoration (lib/navMemory.js);
+  // the jsdom window lives for the whole file, so start each test untagged.
+  window.history.replaceState(null, '')
   sessionStorage.clear()
   localStorage.clear()
 })

@@ -27,7 +27,12 @@ vi.mock('../../src/lib/supabase.js', () => {
     chain.then = (resolve, reject) => Promise.resolve(db.results.shift() ?? { data: null, error: null }).then(resolve, reject)
     return chain
   }
-  return { supabase: { from } }
+  // supabase.rpc(name, args): recorded like a table call, so tests read both the same way.
+  function rpc(name, args) {
+    db.calls.push({ table: `rpc:${name}`, args, ops: [] })
+    return Promise.resolve(db.results.shift() ?? { data: null, error: null })
+  }
+  return { supabase: { from, rpc } }
 })
 
 const ME = '00000000-0000-0000-0000-00000000000a'
@@ -109,9 +114,10 @@ describe('rowToReview / rowToComment', () => {
 
   it('converts a comment row', () => {
     expect(reviews.rowToComment(COMMENT_ROW)).toEqual({
-      id: COMMENT_ID, reviewId: REVIEW_ID, userId: ME, parentId: null, body: 'Agreed',
+      id: COMMENT_ID, reviewId: REVIEW_ID, userId: ME, parentId: null, body: 'Agreed', username: null,
       createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z',
     })
+    expect(reviews.rowToComment({ ...COMMENT_ROW, username: 'bob' }).username).toBe('bob')
   })
 })
 
@@ -213,6 +219,44 @@ describe('updateReview / deleteReview / fetchReview', () => {
   })
 })
 
+describe('fetchReviewPage', () => {
+  const PROFILE = { id: ME, username: 'alice' }
+
+  it('returns the review, its author and a catalog movie without asking for the movie', async () => {
+    db.results = [ok(REVIEW_ROW), ok(PROFILE)]
+    const page = await reviews.fetchReviewPage(REVIEW_ID)
+    expect(page.review).toMatchObject({ id: REVIEW_ID, body: 'Loved it' })
+    expect(page.author).toEqual({ id: ME, username: 'alice' })
+    expect(page.movie.id).toBe('dune-part-two-2024')
+    expect(db.calls.map((c) => c.table)).toEqual(['reviews', 'profiles'])
+  })
+
+  it('loads a movie outside the catalog from the movies table', async () => {
+    db.results = [ok({ ...REVIEW_ROW, movie_id: 424242 }), ok({ tmdb_id: 424242, title: 'Obscure', year: 2001, poster_path: null, genres: ['Drama'], overview: '' }), ok(PROFILE)]
+    const page = await reviews.fetchReviewPage(REVIEW_ID)
+    expect(page.movie).toMatchObject({ id: 'tmdb-424242', title: 'Obscure' })
+    expect(db.calls.map((c) => c.table)).toEqual(['reviews', 'movies', 'profiles'])
+  })
+
+  it('returns null for a review that is missing or hidden', async () => {
+    db.results = [ok(null)]
+    expect(await reviews.fetchReviewPage(REVIEW_ID)).toBeNull()
+  })
+
+  it('keeps going without a username when the author profile cannot be read', async () => {
+    db.results = [ok(REVIEW_ROW), ok(null)]
+    expect((await reviews.fetchReviewPage(REVIEW_ID)).author).toEqual({ id: ME, username: null })
+  })
+
+  it('surfaces failures and bad ids', async () => {
+    db.results = [fail()]
+    await expect(reviews.fetchReviewPage(REVIEW_ID)).rejects.toThrow(reviews.REVIEW_LOAD_ERROR)
+    db.results = [ok(REVIEW_ROW), fail()]
+    await expect(reviews.fetchReviewPage(REVIEW_ID)).rejects.toThrow(reviews.REVIEW_LOAD_ERROR)
+    await expect(reviews.fetchReviewPage('nope')).rejects.toThrow('Unknown review')
+  })
+})
+
 describe('commentCount', () => {
   it('is 0 unless the row came with the comment count', () => {
     expect(reviews.rowToReview(REVIEW_ROW).commentCount).toBe(0)
@@ -256,11 +300,18 @@ describe('fetchReviewsForMovies', () => {
 })
 
 describe('comments', () => {
-  it('fetchComments returns a flat list oldest first', async () => {
-    db.results = [ok([COMMENT_ROW])]
+  it('fetchComments asks get_review_comments and returns a flat list with usernames', async () => {
+    db.results = [ok([{ ...COMMENT_ROW, username: 'bob' }])]
     const list = await reviews.fetchComments(REVIEW_ID)
     expect(list).toHaveLength(1)
-    expect(db.calls[0].ops).toContainEqual(['order', 'created_at', { ascending: true }])
+    expect(list[0].username).toBe('bob')
+    expect(db.calls[0]).toMatchObject({ table: 'rpc:get_review_comments', args: { p_review_id: REVIEW_ID } })
+  })
+
+  it('fetchComments works signed out', async () => {
+    db.account = { user: null }
+    db.results = [ok([])]
+    expect(await reviews.fetchComments(REVIEW_ID)).toEqual([])
   })
 
   it('fetchComments surfaces failures', async () => {

@@ -140,6 +140,7 @@ export default function UserProfilePage({ username, account, onOpen }) {
           <RecentlyRanked
             key={profile.id}
             userId={profile.id}
+            username={profile.username}
             tiers={list.tiers}
             fullListHref={userListHref(profile.username)}
             onOpen={onOpen}
