@@ -85,23 +85,31 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
 
-  async function load() {
-    setStatus('loading')
-    try {
-      const profile = await fetchProfile(userId)
-      setUsername(profile.username)
-      setSaved(toForm(profile))
-      setForm(toForm(profile))
-      setStatus('ready')
-    } catch {
-      setStatus('error')
-    }
-  }
+  const [attempt, setAttempt] = useState(0)
 
+  // Loads when the page opens, for a different user, or on Try again. The state is
+  // only set once the request has answered (the page starts out in 'loading').
   useEffect(() => {
-    load()
-    // Reload only when a different user is logged in.
-  }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+    let current = true
+    fetchProfile(userId).then(
+      (profile) => {
+        if (!current) return
+        setUsername(profile.username)
+        setSaved(toForm(profile))
+        setForm(toForm(profile))
+        setStatus('ready')
+      },
+      () => current && setStatus('error'),
+    )
+    return () => {
+      current = false
+    }
+  }, [userId, attempt])
+
+  function retry() {
+    setStatus('loading')
+    setAttempt((n) => n + 1)
+  }
 
   function change(patch) {
     setForm((current) => ({ ...current, ...patch }))
@@ -275,7 +283,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
         {header}
         <div className="profile__alert" role="alert">
           {LOAD_ERROR}{' '}
-          <button type="button" className="profile__link" onClick={load}>
+          <button type="button" className="profile__link" onClick={retry}>
             Try again
           </button>
         </div>

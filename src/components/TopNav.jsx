@@ -132,9 +132,12 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
   const close = useCallback(() => setOpen(false), [])
 
   // Moving to another page closes it (e.g. a shortcut or the back button).
-  useEffect(() => {
+  // Done while rendering, the way React recommends for state that follows a prop.
+  const [seenPage, setSeenPage] = useState(current)
+  if (seenPage !== current) {
+    setSeenPage(current)
     setOpen(false)
-  }, [current])
+  }
 
   useEffect(() => {
     if (!open) return undefined

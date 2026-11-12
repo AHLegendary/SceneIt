@@ -4,6 +4,8 @@
 - `migrations/20261102000000_friend_requests.sql`: `get_friendships` and `send_friend_request`
 - `migrations/20261103000000_ranking_categories.sql`: `rankings.category` (loved / okay / meh), category-aware `save_ranking` and leaderboard scores
 - `migrations/20261104000000_movie_blends.sql`: Movie Blend tables, invites, the 5-member limit and group recommendations
+- `migrations/20261108000000_movie_ratings.sql`: `movie_ratings`, a cache of OMDb scores (IMDb, Rotten Tomatoes) filled by `/api/movies/ratings?id=`
+- `migrations/20261108000100_omdb_budget.sql`: `omdb_usage` and `claim_omdb_call`, a shared daily budget (900) for OMDb lookups
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)

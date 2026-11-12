@@ -27,6 +27,21 @@ export async function getMovie(tmdbId) {
   return movie;
 }
 
+// IMDb and Rotten Tomatoes scores for a movie outside the built-in catalog (the
+// catalog has them baked in). The server looks them up on OMDb and caches them.
+// Returns { ratings: { imdb, imdb_votes, rt, checked } | null, imdb_id }. A movie
+// with no scores gives ratings: null, and that answer is remembered for the session;
+// a failed request throws and isn't, so the next try asks again.
+const ratingsCache = new Map();
+
+export async function getRatings(tmdbId) {
+  if (ratingsCache.has(tmdbId)) return ratingsCache.get(tmdbId);
+  const body = await getJson(`/api/movies/ratings?id=${encodeURIComponent(tmdbId)}`);
+  const result = { ratings: body.ratings ?? null, imdb_id: body.imdb_id ?? null };
+  ratingsCache.set(tmdbId, result);
+  return result;
+}
+
 export class UnauthorizedError extends Error {}
 
 // TMDb's recommendations for each seed movie (TMDb ids). Ids are sorted so

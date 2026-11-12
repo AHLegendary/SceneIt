@@ -4,7 +4,7 @@
 // browser never sends: no token, bad input, wrong methods, and failures.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
+import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
 
 let backend
 let alice
@@ -24,6 +24,7 @@ beforeEach(() => {
   vi.stubEnv('SUPABASE_URL', SUPABASE_URL)
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_KEY)
   vi.stubEnv('TMDB_READ_TOKEN', TMDB_TOKEN)
+  vi.stubEnv('OMDB_API_KEY', OMDB_KEY)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
@@ -460,6 +461,331 @@ describe('/api/profile/media', () => {
 
     backend.fail('storage:remove', 'nope', { times: 1 })
     expect((await del(tokenFor(alice), 'avatar')).status).toBe(502)
+  })
+})
+
+describe('GET /api/movies/ratings?id=', () => {
+  const FRESH = () => backend.daysAgo(3)
+  beforeEach(() => {
+    backend.addTmdbMovie({ id: 984001, title: 'Scored Film', year: 2022, imdb_id: 'tt9840010' })
+    backend.addOmdbScores('tt9840010', { imdb: 8.1, votes: 1234567, rt: 91 })
+  })
+  // Raw response, so headers can be read.
+  const get = (id = 984001) => backend.fetch(`/api/movies/ratings?id=${id}`)
+  const cached = (id = 984001) => backend.movie_ratings.find((r) => r.tmdb_id === id)
+  const omdbCalls = () => backend.calls.filter((c) => c.key.startsWith('omdb:'))
+  const tmdbCalls = () => backend.calls.filter((c) => c.key.startsWith('tmdb:'))
+  const answer = async (res) => ({ status: res.status, body: await res.json() })
+
+  describe('looking a movie up', () => {
+    it('returns the IMDb and Rotten Tomatoes scores, in the shape the catalog uses', async () => {
+      const res = await answer(await get())
+
+      expect(res.status).toBe(200)
+      expect(res.body.imdb_id).toBe('tt9840010')
+      expect(res.body.ratings).toEqual({ imdb: 8.1, imdb_votes: 1234567, rt: 91, checked: new Date().toISOString().slice(0, 10) })
+    })
+
+    it('finds the IMDb id on TMDb, then asks OMDb with it', async () => {
+      await get()
+
+      expect(tmdbCalls().map((c) => new URL(c.args.url).pathname)).toEqual(['/3/movie/984001/external_ids'])
+      const url = new URL(omdbCalls()[0].args.url)
+      expect(url.searchParams.get('i')).toBe('tt9840010')
+      expect(url.searchParams.get('apikey')).toBe(OMDB_KEY)
+    })
+
+    it('saves the answer in the cache table', async () => {
+      await get()
+      expect(cached()).toMatchObject({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 8.1, imdb_votes: 1234567, rt: 91 })
+    })
+
+    it('lets the CDN keep a found answer for a day', async () => {
+      expect((await get()).headers.get('cache-control')).toBe('public, s-maxage=86400, stale-while-revalidate=604800')
+    })
+
+    it('works for a movie that was never saved to the movies table', async () => {
+      expect(backend.movies.some((m) => m.tmdb_id === 984001)).toBe(false)
+      expect((await get()).status).toBe(200)
+    })
+
+    it('reports an IMDb score even when Rotten Tomatoes has none', async () => {
+      backend.addOmdbScores('tt9840010', { imdb: 6.4, votes: 900, rt: null })
+      const { body } = await answer(await get())
+      expect(body.ratings).toMatchObject({ imdb: 6.4, imdb_votes: 900, rt: null })
+    })
+
+    it('reports a Rotten Tomatoes score even when IMDb has none', async () => {
+      backend.addOmdbScores('tt9840010', { imdb: null, votes: null, rt: 55 })
+      const { body } = await answer(await get())
+      expect(body.ratings).toMatchObject({ imdb: null, imdb_votes: null, rt: 55 })
+    })
+  })
+
+  describe('when there are no scores', () => {
+    it('returns ratings: null, and the IMDb id, when OMDb has nothing for the id', async () => {
+      backend.omdb.ratings.clear()
+      expect(await answer(await get())).toEqual({ status: 200, body: { imdb_id: 'tt9840010', ratings: null } })
+    })
+
+    it('returns ratings: null when every score is "N/A"', async () => {
+      backend.addOmdbScores('tt9840010', { imdb: null, votes: null, rt: null })
+      expect((await answer(await get())).body.ratings).toBeNull()
+    })
+
+    it('skips OMDb altogether when TMDb has no IMDb id', async () => {
+      backend.addTmdbMovie({ id: 984002, title: 'No Id Film' })
+      expect(await answer(await get(984002))).toEqual({ status: 200, body: { imdb_id: null, ratings: null } })
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('ignores an IMDb id that isn\'t shaped like one', async () => {
+      backend.addTmdbMovie({ id: 984003, title: 'Odd Id', imdb_id: 'not-an-id' })
+      expect((await answer(await get(984003))).body.imdb_id).toBeNull()
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('caches "nothing found" too, for a shorter time at the CDN', async () => {
+      backend.omdb.ratings.clear()
+      const res = await get()
+      expect(cached()).toMatchObject({ imdb: null, imdb_votes: null, rt: null })
+      expect(res.headers.get('cache-control')).toBe('public, s-maxage=3600')
+    })
+  })
+
+  describe('the cache', () => {
+    const seed = (fields = {}) =>
+      backend.movie_ratings.push({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 7.0, imdb_votes: 500, rt: 70, checked_at: FRESH(), ...fields })
+
+    it('answers from the cache without asking TMDb or OMDb', async () => {
+      seed()
+      const { body } = await answer(await get())
+
+      expect(body.ratings).toMatchObject({ imdb: 7, imdb_votes: 500, rt: 70 })
+      expect(tmdbCalls()).toHaveLength(0)
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('asks OMDb only once for repeated requests', async () => {
+      await get()
+      await get()
+      await get()
+      expect(omdbCalls()).toHaveLength(1)
+      expect(tmdbCalls()).toHaveLength(1)
+    })
+
+    it('shows the day the scores were checked', async () => {
+      const when = backend.daysAgo(5)
+      seed({ checked_at: when })
+      expect((await answer(await get())).body.ratings.checked).toBe(when.slice(0, 10))
+    })
+
+    it('looks again once found scores are two weeks old, and updates the row', async () => {
+      seed({ checked_at: backend.daysAgo(15) })
+      const { body } = await answer(await get())
+
+      expect(body.ratings).toMatchObject({ imdb: 8.1, rt: 91 })
+      expect(omdbCalls()).toHaveLength(1)
+      expect(backend.movie_ratings).toHaveLength(1)
+      expect(cached().imdb).toBe(8.1)
+    })
+
+    it('keeps found scores for up to two weeks', async () => {
+      seed({ checked_at: backend.daysAgo(13) })
+      await get()
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('looks again sooner (after two days) when nothing was found last time', async () => {
+      seed({ imdb: null, imdb_votes: null, rt: null, checked_at: backend.daysAgo(1) })
+      expect((await answer(await get())).body.ratings).toBeNull()
+      expect(omdbCalls()).toHaveLength(0)
+
+      backend.movie_ratings[0].checked_at = backend.daysAgo(3)
+      expect((await answer(await get())).body.ratings).toMatchObject({ imdb: 8.1 })
+      expect(omdbCalls()).toHaveLength(1)
+    })
+
+    it('still answers when the cache can\'t be read, going to OMDb each time', async () => {
+      backend.failQuery('movie_ratings', 'select', 'table missing')
+      expect((await answer(await get())).status).toBe(200)
+    })
+
+    it('still answers when the cache can\'t be written', async () => {
+      backend.failQuery('movie_ratings', 'upsert', 'db down')
+      const res = await answer(await get())
+      expect(res.status).toBe(200)
+      expect(res.body.ratings).toMatchObject({ imdb: 8.1 })
+      expect(backend.movie_ratings).toHaveLength(0)
+    })
+
+    it('keeps separate rows for separate movies', async () => {
+      backend.addTmdbMovie({ id: 984004, title: 'Other Film', imdb_id: 'tt9840040' })
+      backend.addOmdbScores('tt9840040', { imdb: 5.5, votes: 200, rt: 40 })
+      await get(984001)
+      await get(984004)
+      expect(backend.movie_ratings.map((r) => r.tmdb_id).sort()).toEqual([984001, 984004])
+    })
+  })
+
+  describe('when something goes wrong', () => {
+    it.each([
+      ['OMDb is down', () => { backend.omdb.down = true }],
+      ['the daily OMDb limit is used up', () => { backend.omdb.limitReached = true }],
+      ['the OMDb key is wrong', () => vi.stubEnv('OMDB_API_KEY', 'wrong-key')],
+      ['there is no OMDb key', () => vi.stubEnv('OMDB_API_KEY', '')],
+    ])('answers 502, and caches nothing, when %s', async (_label, breakIt) => {
+      breakIt()
+      expect(await answer(await get())).toEqual({ status: 502, body: { error: "Couldn't load scores, try again later." } })
+      expect(backend.movie_ratings).toHaveLength(0)
+    })
+
+    it('answers 502 when TMDb is down or fails for the movie', async () => {
+      backend.tmdbDown()
+      expect((await get()).status).toBe(502)
+      backend.tmdb.down = false
+      backend.tmdb.failing.add(984001)
+      expect((await get()).status).toBe(502)
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('answers 404, and caches nothing, for a movie TMDb doesn\'t have', async () => {
+      expect(await answer(await get(1))).toEqual({ status: 404, body: { error: 'Movie not found' } })
+      expect(backend.movie_ratings).toHaveLength(0)
+    })
+
+    it('serves out-of-date scores when it can\'t refresh them', async () => {
+      backend.movie_ratings.push({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 7.2, imdb_votes: 800, rt: 66, checked_at: backend.daysAgo(30) })
+      backend.omdb.down = true
+
+      const { status, body } = await answer(await get())
+
+      expect(status).toBe(200)
+      expect(body.ratings).toMatchObject({ imdb: 7.2, rt: 66 })
+    })
+
+    it('serves out-of-date scores when the daily limit is used up', async () => {
+      backend.movie_ratings.push({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 7.2, imdb_votes: 800, rt: 66, checked_at: backend.daysAgo(30) })
+      backend.omdb.limitReached = true
+      expect((await answer(await get())).body.ratings).toMatchObject({ imdb: 7.2 })
+    })
+
+    it('never puts the OMDb key in a response', async () => {
+      const ok = JSON.stringify(await (await get()).json())
+      vi.stubEnv('OMDB_API_KEY', 'wrong-key')
+      backend.movie_ratings.length = 0
+      const failed = JSON.stringify(await (await get()).json())
+      expect(ok).not.toContain(OMDB_KEY)
+      expect(failed).not.toContain('wrong-key')
+      expect(failed).not.toContain(OMDB_KEY)
+    })
+  })
+
+  describe('the daily OMDb budget', () => {
+    const budgetCalls = () => backend.callsTo('rpc:claim_omdb_call')
+    const staleRow = () =>
+      backend.movie_ratings.push({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 7.2, imdb_votes: 800, rt: 66, checked_at: backend.daysAgo(30) })
+
+    it('takes one lookup from the budget for each OMDb request, asking for a limit of 900', async () => {
+      await get()
+      expect(budgetCalls()).toHaveLength(1)
+      expect(budgetCalls()[0].args).toEqual({ p_limit: 900 })
+      expect(backend.omdbUsageToday()).toBe(1)
+    })
+
+    it('takes nothing for an answer from the cache', async () => {
+      await get()
+      await get()
+      expect(backend.omdbUsageToday()).toBe(1)
+    })
+
+    it('takes nothing when TMDb has no IMDb id, since OMDb isn\'t asked', async () => {
+      backend.addTmdbMovie({ id: 984002, title: 'No Id Film' })
+      await get(984002)
+      expect(budgetCalls()).toHaveLength(0)
+    })
+
+    it('counts an OMDb request that fails, because OMDb counts it too', async () => {
+      backend.omdb.down = true
+      await get()
+      expect(backend.omdbUsageToday()).toBe(1)
+    })
+
+    it('allows the last lookup of the day, then stops asking OMDb', async () => {
+      backend.addTmdbMovie({ id: 984005, title: 'Late Film', imdb_id: 'tt9840050' })
+      backend.addOmdbScores('tt9840050')
+      backend.setOmdbUsage(899)
+
+      expect((await get(984001)).status).toBe(200) // the 900th
+      const refused = await answer(await get(984005))
+
+      expect(refused).toEqual({ status: 503, body: { error: 'Scores are temporarily unavailable.' } })
+      expect(omdbCalls()).toHaveLength(1)
+      expect(backend.movie_ratings.some((r) => r.tmdb_id === 984005)).toBe(false)
+    })
+
+    it('doesn\'t cache the refusal, so the movie is looked up as soon as there is budget again', async () => {
+      backend.setOmdbUsage(900)
+      expect((await get()).status).toBe(503)
+
+      backend.setOmdbUsage(0) // a new day
+      const { status, body } = await answer(await get())
+
+      expect(status).toBe(200)
+      expect(body.ratings).toMatchObject({ imdb: 8.1 })
+    })
+
+    it('serves out-of-date scores once the budget is used up', async () => {
+      staleRow()
+      backend.setOmdbUsage(900)
+
+      const { status, body } = await answer(await get())
+
+      expect(status).toBe(200)
+      expect(body.ratings).toMatchObject({ imdb: 7.2, rt: 66 })
+      expect(omdbCalls()).toHaveLength(0)
+    })
+
+    it('still serves fresh cached scores once the budget is used up', async () => {
+      backend.movie_ratings.push({ tmdb_id: 984001, imdb_id: 'tt9840010', imdb: 7.2, imdb_votes: 800, rt: 66, checked_at: FRESH() })
+      backend.setOmdbUsage(900)
+      expect((await get()).status).toBe(200)
+      expect(budgetCalls()).toHaveLength(0)
+    })
+
+    it('tells the CDN not to keep a refusal', async () => {
+      backend.setOmdbUsage(900)
+      expect((await get()).headers.get('cache-control')).toBe('no-store')
+    })
+
+    it('carries on, and still answers, if the budget can\'t be checked', async () => {
+      backend.failRpc('claim_omdb_call', 'budget table missing')
+      const { status, body } = await answer(await get())
+
+      expect(status).toBe(200)
+      expect(body.ratings).toMatchObject({ imdb: 8.1 })
+      expect(omdbCalls()).toHaveLength(1)
+    })
+  })
+
+  describe('bad requests', () => {
+    it.each([['abc'], ['12.5'], ['-1'], ['12345678901']])('rejects the invalid id %s without asking anyone', async (id) => {
+      expect((await get(id)).status).toBe(400)
+      expect(backend.calls.filter((c) => /^(tmdb|omdb):/.test(c.key))).toHaveLength(0)
+    })
+
+    it.each([['POST'], ['PUT'], ['DELETE']])('refuses %s', async (method) => {
+      expect((await call(method, '/api/movies/ratings?id=984001')).status).toBe(405)
+    })
+
+    it('asks for an id when there is none, rather than treating "ratings" as a movie', async () => {
+      expect((await call('GET', '/api/movies/ratings')).status).toBe(400)
+      expect(backend.calls.filter((c) => /^(tmdb|omdb):/.test(c.key))).toHaveLength(0)
+    })
+
+    it('doesn\'t take over the movie details route', async () => {
+      expect((await call('GET', '/api/movies/984001')).status).toBe(200)
+    })
   })
 })
 
