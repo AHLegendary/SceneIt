@@ -8,19 +8,17 @@ export default function Sparkles({ count = 22, seed = 1 }) {
   const stars = useMemo(() => {
     // deterministic positions so re-renders don't reshuffle the sky
     let h = seed * 2654435761
-    const next = () => {
-      h = (h * 1664525 + 1013904223) >>> 0
-      return h / 4294967296
+    const made = []
+    for (let i = 0; i < count; i++) {
+      // six values per star, in this order: x, y, size, delay, period, tint
+      const v = []
+      for (let k = 0; k < 6; k++) {
+        h = (h * 1664525 + 1013904223) >>> 0
+        v.push(h / 4294967296)
+      }
+      made.push({ i, x: 4 + v[0] * 92, y: 2 + v[1] * 96, size: 6 + v[2] * 10, delay: v[3] * 2.4, period: 1.6 + v[4] * 1.8, blue: v[5] > 0.55 })
     }
-    return Array.from({ length: count }, (_, i) => ({
-      i,
-      x: 4 + next() * 92,
-      y: 2 + next() * 96,
-      size: 6 + next() * 10,
-      delay: next() * 2.4,
-      period: 1.6 + next() * 1.8,
-      blue: next() > 0.55,
-    }))
+    return made
   }, [count, seed])
 
   return (

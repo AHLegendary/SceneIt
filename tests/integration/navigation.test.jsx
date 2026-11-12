@@ -175,6 +175,18 @@ describe('Profile menu', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^profile/i }).getAttribute('aria-expanded')).toBe('false'))
   })
 
+  it('stays closed when you come back to the page it was opened on', async () => {
+    const { user } = await open({ hash: '#/home' })
+    await ready({ loggedIn: true })
+    await user.click(screen.getByRole('button', { name: /^profile/i }))
+    await goTo('#/leaderboard')
+    await waitFor(() => expect(screen.getByRole('button', { name: /^profile/i }).getAttribute('aria-expanded')).toBe('false'))
+
+    await goTo('#/home')
+
+    expect(screen.getByRole('button', { name: /^profile/i }).getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('shows "Logging out…" while logging out', async () => {
     const gate = backend.hold('auth:signOut')
     const { user } = await open({ hash: '#/home' })

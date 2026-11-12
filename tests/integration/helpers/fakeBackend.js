@@ -23,6 +23,7 @@ export const SUPABASE_URL = 'https://fake-project.supabase.co'
 export const PUBLISHABLE_KEY = 'sb_publishable_fake'
 export const SERVICE_KEY = 'sb_secret_fake'
 export const TMDB_TOKEN = 'tmdb-test-token'
+export const OMDB_KEY = 'omdb-test-key'
 
 const CATEGORY_ORDER = { loved: 0, okay: 1, meh: 2 }
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
@@ -65,11 +66,11 @@ function likeToRegExp(pattern) {
   return new RegExp(`^${source}$`, 'is')
 }
 
-function jsonResponse(status, body) {
+function jsonResponse(status, body, headers = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: new Map(),
+    headers: new Map(Object.entries(headers)),
     json: async () => clone(body),
     text: async () => JSON.stringify(body),
   }
@@ -85,6 +86,8 @@ export class FakeBackend {
     this.profiles = [] // { id, username, bio, pronouns, is_public, created_at }
     this.movies = [] // the `movies` table
     this.rankings = [] // { user_id, movie_id, position, category, created_at, updated_at }
+    this.movie_ratings = [] // cache of OMDb scores: { tmdb_id, imdb_id, imdb, imdb_votes, rt, checked_at }
+    this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
     this.buckets = new Map()
     this.files = new Map()
@@ -105,6 +108,8 @@ export class FakeBackend {
     this.closed = false // set after a test ends: late requests never answer
 
     this.tmdb = { movies: [], trending: [], recommendations: new Map(), down: false, failing: new Set() }
+    // OMDb: payloads by IMDb id, plus switches for a dead service and a used-up daily limit.
+    this.omdb = { ratings: new Map(), down: false, limitReached: false }
     this.seedCatalogMovies()
 
     this.fetch = this.fetch.bind(this)
@@ -152,7 +157,7 @@ export class FakeBackend {
 
   // A movie that isn't in the catalog (what live search finds). Adds it to the
   // fake TMDb (search, details) and, with { saved: true }, to the movies table.
-  addTmdbMovie({ id, title, year = 2020, genres = ['Drama'], overview = `${title} overview.`, runtime = 100, director = 'Jane Director', cast = ['Actor One', 'Actor Two'], saved = false, trending = false, poster_path = `/p${id}.jpg`, vote_average = 7.5, vote_count = 5000 } = {}) {
+  addTmdbMovie({ id, title, year = 2020, genres = ['Drama'], overview = `${title} overview.`, runtime = 100, director = 'Jane Director', cast = ['Actor One', 'Actor Two'], saved = false, trending = false, poster_path = `/p${id}.jpg`, vote_average = 7.5, vote_count = 5000, imdb_id = null } = {}) {
     const raw = {
       id,
       title,
@@ -163,6 +168,7 @@ export class FakeBackend {
       genres: genres.map((name, i) => ({ id: i + 1, name })),
       overview,
       runtime,
+      imdb_id,
       tagline: `The tagline of ${title}`,
       vote_average,
       vote_count,
@@ -176,6 +182,19 @@ export class FakeBackend {
     if (trending) this.tmdb.trending.push(raw)
     if (saved) this.movies.push({ tmdb_id: id, title, year, poster_path, genres, overview })
     return raw
+  }
+
+  // What OMDb knows about an IMDb id. Pass null for a score OMDb doesn't have: it says "N/A".
+  addOmdbScores(imdbId, { imdb = 7.8, votes = 123456, rt = 88 } = {}) {
+    const ratings = [{ Source: 'Internet Movie Database', Value: `${imdb ?? 0}/10` }]
+    if (rt !== null) ratings.push({ Source: 'Rotten Tomatoes', Value: `${rt}%` })
+    this.omdb.ratings.set(imdbId, {
+      Response: 'True',
+      imdbID: imdbId,
+      imdbRating: imdb === null ? 'N/A' : Number(imdb).toFixed(1),
+      imdbVotes: votes === null ? 'N/A' : votes.toLocaleString('en-US'),
+      Ratings: ratings,
+    })
   }
 
   // Makes catalog movies show up in live search (the fake TMDb only knows what it's told about).
@@ -357,6 +376,28 @@ export class FakeBackend {
 
   // ---------------------------------------------------------------- SQL functions
 
+  today() {
+    return new Date().toISOString().slice(0, 10)
+  }
+
+  omdbUsageToday() {
+    return this.omdbUsage.get(this.today()) ?? 0
+  }
+
+  // Pretend `calls` lookups have already been taken today.
+  setOmdbUsage(calls) {
+    this.omdbUsage.set(this.today(), calls)
+  }
+
+  // Port of claim_omdb_call in 20261108000100_omdb_budget.sql: one atomic step.
+  claimOmdbCall(limit) {
+    if (limit < 1) return false
+    const used = this.omdbUsageToday()
+    if (used >= limit) return false
+    this.setOmdbUsage(used + 1)
+    return true
+  }
+
   // Port of save_ranking in 20261103000000_ranking_categories.sql.
   saveRanking(uid, movieId, category, position, tied = false) {
     if (!uid) throw pgError('Not signed in', '28000')
@@ -519,6 +560,7 @@ export class FakeBackend {
     await this.gate(key)
 
     if (url.hostname === 'api.themoviedb.org') return this.tmdbRequest(url, init)
+    if (url.hostname === 'www.omdbapi.com') return this.omdbRequest(url)
     if (url.pathname.startsWith('/api/')) return this.callHandler(url, method, init)
     return jsonResponse(404, { error: 'Not found' })
   }
@@ -537,9 +579,10 @@ export class FakeBackend {
     const req = { method, query: { ...Object.fromEntries(url.searchParams), ...route.params }, body, headers }
     const res = {
       statusCode: 200,
+      headers: {},
       status(code) { this.statusCode = code; return this },
       json(payload) { this.payload = payload; return this },
-      setHeader() {},
+      setHeader(name, value) { this.headers[String(name).toLowerCase()] = value },
     }
     try {
       const { default: handler } = await import(/* @vite-ignore */ route.file)
@@ -547,7 +590,20 @@ export class FakeBackend {
     } catch (error) {
       return jsonResponse(500, { error: `Internal error: ${error.message}` })
     }
-    return jsonResponse(res.statusCode, res.payload ?? {})
+    return jsonResponse(res.statusCode, res.payload ?? {}, res.headers)
+  }
+
+  // OMDb: https://www.omdbapi.com/?i=tt1234567&apikey=KEY
+  omdbRequest(url) {
+    const o = this.omdb
+    const imdbId = url.searchParams.get('i')
+    this.log(`omdb:${imdbId}`, { url: url.href })
+    if (o.down) return jsonResponse(503, {})
+    if (url.searchParams.get('apikey') !== OMDB_KEY) return jsonResponse(401, { Response: 'False', Error: 'Invalid API key!' })
+    // Like the real service, a used-up daily limit is an HTTP 401.
+    if (o.limitReached) return jsonResponse(401, { Response: 'False', Error: 'Request limit reached!' })
+    const entry = o.ratings.get(imdbId)
+    return entry ? jsonResponse(200, entry) : jsonResponse(200, { Response: 'False', Error: 'Incorrect IMDb ID.' })
   }
 
   // The parts of TMDb the app uses (api/_lib/tmdb.js talks to https://api.themoviedb.org/3).
@@ -570,6 +626,17 @@ export class FakeBackend {
       const id = Number(recs[1])
       if (t.failing.has(id)) return jsonResponse(500, { status_message: 'Boom' })
       return jsonResponse(200, { results: t.recommendations.get(id) ?? [] })
+    }
+
+    const external = /^\/movie\/(\d+)\/external_ids$/.exec(path)
+    if (external) {
+      const id = Number(external[1])
+      if (t.failing.has(id)) return jsonResponse(500, { status_message: 'Boom' })
+      const known = t.movies.find((m) => m.id === id)
+      const catalog = MOVIES.find((m) => m.tmdb_id === id)
+      if (known) return jsonResponse(200, { id, imdb_id: known.imdb_id ?? catalog?.imdb_id ?? null })
+      if (catalog) return jsonResponse(200, { id, imdb_id: catalog.imdb_id ?? null })
+      return jsonResponse(404, { status_message: 'The resource you requested could not be found.' })
     }
 
     const details = /^\/movie\/(\d+)$/.exec(path)
@@ -660,6 +727,10 @@ class FakeClient {
           return { data: [], error: null }
         case 'get_leaderboard':
           return { data: b.getLeaderboard(args.p_period, args.p_category, args.p_limit), error: null }
+        case 'claim_omdb_call':
+          // Revoked from the browser's roles; only the service role may call it.
+          if (!ctx.service) return { data: null, error: pgError('permission denied for function claim_omdb_call', '42501') }
+          return { data: b.claimOmdbCall(args.p_limit), error: null }
         default:
           return { data: null, error: pgError(`Could not find the function public.${name}`, 'PGRST202') }
       }
@@ -815,6 +886,9 @@ class FakeClient {
 
 // ------------------------------------------------------------------ queries
 
+// The column an upsert conflicts on, per table.
+const UPSERT_KEYS = { movies: 'tmdb_id', movie_ratings: 'tmdb_id' }
+
 // Which table an embedded select (movies(...)) points at, per table.
 const EMBEDS = { rankings: { movies: { local: 'movie_id', foreign: 'tmdb_id', table: 'movies' } } }
 
@@ -892,6 +966,7 @@ class Query {
       case 'rankings': return b.canView(ctx.uid, row.user_id)
       case 'friendships': return ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid)
       case 'movies': return true
+      case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)
     }
   }
@@ -984,13 +1059,14 @@ class Query {
 
     if (this.op === 'insert' || this.op === 'upsert') {
       if (!ctx.service) throw pgError(`new row violates row-level security policy for table "${this.table}"`, '42501')
-      if (this.table !== 'movies') throw new Error(`fake: insert into ${this.table} isn't supported`)
+      const key = UPSERT_KEYS[this.table]
+      if (!key) throw new Error(`fake: insert into ${this.table} isn't supported`)
       const row = clone(this.row)
-      const at = this.rowsOfTable.findIndex((r) => r.tmdb_id === row.tmdb_id)
+      const at = this.rowsOfTable.findIndex((r) => r[key] === row[key])
       if (at !== -1 && this.op === 'insert') throw pgError('duplicate key value violates unique constraint', '23505')
       if (at !== -1) Object.assign(this.rowsOfTable[at], row)
       else this.rowsOfTable.push(row)
-      return out([this.rowsOfTable.find((r) => r.tmdb_id === row.tmdb_id)])
+      return out([this.rowsOfTable.find((r) => r[key] === row[key])])
     }
     throw new Error(`fake: unsupported operation ${this.op}`)
   }

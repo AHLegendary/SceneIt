@@ -5,8 +5,8 @@ import { tierRanks } from '../features/ranking/binaryInsertion.js'
 import { scoreTiers } from '../features/ranking/scores.js'
 import { fetchCommunityStats } from '../lib/leaderboard.js'
 import { isCatalogMovie, posterUrl } from '../lib/localStore.js'
-import { formatRuntime, formatVotes, hasRatings } from '../lib/movieDetails.js'
-import { getMovie as fetchMovie } from '../lib/movies.js'
+import { formatRuntime, formatVotes } from '../lib/movieDetails.js'
+import { getMovie as fetchMovie, getRatings } from '../lib/movies.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
 // Details panel for one movie, as a glass card over its blurred backdrop:
@@ -35,10 +35,18 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
   const [communityFor, setCommunityFor] = useState(null)
   const community = communityFor?.id === movie.id ? communityFor : { weekly: null, monthly: null }
   const runtime = formatRuntime(movie.runtime)
-  const outside = hasRatings(movie) ? movie.ratings : null
+  // Outside scores always come from the live lookup (/api/movies/ratings), for catalog
+  // movies too, and are kept in live_ratings. (The catalog's own `ratings` are only used
+  // to sort by popularity, never shown.) Once the server answers, even with "none", each
+  // score shows its value or "Not available"; before that, or if it failed, nothing shows.
+  const scoresKnown = 'live_ratings' in movie
+  const live = movie.live_ratings ?? null
+  const imdb = live?.imdb ?? null
+  const rt = live?.rt ?? null
   const facts = [movie.year, runtime, movie.genres?.slice(0, 3).join(', ')].filter(Boolean)
   const needsDetails = !isCatalogMovie(movie) && !('runtime' in movie) && movie.tmdb_id
   const loadingDetails = needsDetails && !detailsFailed
+  const needsRatings = !scoresKnown && movie.tmdb_id
 
   useEffect(() => {
     if (!needsDetails) return undefined
@@ -61,6 +69,25 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
       current = false
     }
   }, [movie, needsDetails])
+
+  // Quiet on failure: the scores just stay hidden, and the panel works without them.
+  useEffect(() => {
+    if (!needsRatings) return undefined
+    let current = true
+    getRatings(movie.tmdb_id).then(
+      ({ ratings, imdb_id: imdbId }) => {
+        if (!current) return
+        // Fill the shared movie object, like the details above, so other cards benefit.
+        movie.live_ratings = ratings
+        if (imdbId && !movie.imdb_id) movie.imdb_id = imdbId
+        setFilled((n) => n + 1)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [movie, needsRatings])
 
   useEffect(() => {
     let current = true
@@ -142,19 +169,27 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
                 </span>
               </div>
             )}
-            {outside?.imdb !== null && outside?.imdb !== undefined && (
+            {scoresKnown && (
               <div className="gstat gstat--outside">
                 <span className="gstat__label">IMDb</span>
-                <span className="gstat__value">
-                  {outside.imdb.toFixed(1)}
-                  <small>/10{outside.imdb_votes ? ` · ${formatVotes(outside.imdb_votes)}` : ''}</small>
-                </span>
+                {imdb !== null ? (
+                  <span className="gstat__value">
+                    {imdb.toFixed(1)}
+                    <small>/10{live.imdb_votes ? ` · ${formatVotes(live.imdb_votes)}` : ''}</small>
+                  </span>
+                ) : (
+                  <span className="gstat__value gstat__value--muted">Not available</span>
+                )}
               </div>
             )}
-            {outside?.rt !== null && outside?.rt !== undefined && (
+            {scoresKnown && (
               <div className="gstat gstat--outside">
                 <span className="gstat__label">Rotten Tomatoes</span>
-                <span className="gstat__value">{outside.rt}%<small> critics</small></span>
+                {rt !== null ? (
+                  <span className="gstat__value">{rt}%<small> critics</small></span>
+                ) : (
+                  <span className="gstat__value gstat__value--muted">Not available</span>
+                )}
               </div>
             )}
           </div>

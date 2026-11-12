@@ -2,7 +2,7 @@
 // these pin it to what the migrations in supabase/migrations say. If you change
 // a SQL function or policy, change the fake and these tests with it.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { FakeBackend, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
+import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
 
 let b
 let alice
@@ -424,5 +424,101 @@ describe('network', () => {
     expect((await b.fetch('/api/health')).status).toBe(503)
     b.failApi('GET /api/health', { network: true }, { times: 1 })
     await expect(b.fetch('/api/health')).rejects.toThrow('Failed to fetch')
+  })
+})
+
+describe('OMDb, external ids and the ratings cache', () => {
+  const omdb = async (imdbId, key = OMDB_KEY) => {
+    const res = await b.fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${key}`)
+    return { status: res.status, body: await res.json() }
+  }
+  const tmdbGet = async (path) => {
+    const res = await b.fetch(`https://api.themoviedb.org/3${path}`, { headers: { Authorization: `Bearer ${TMDB_TOKEN}` } })
+    return { status: res.status, body: await res.json() }
+  }
+
+  it('answers with the scores it was given, written the way OMDb writes them', async () => {
+    b.addOmdbScores('tt0000001', { imdb: 8.1, votes: 1234567, rt: 91 })
+    const { status, body } = await omdb('tt0000001')
+
+    expect(status).toBe(200)
+    expect(body).toMatchObject({ Response: 'True', imdbRating: '8.1', imdbVotes: '1,234,567' })
+    expect(body.Ratings).toContainEqual({ Source: 'Rotten Tomatoes', Value: '91%' })
+  })
+
+  it('writes "N/A" and leaves out Rotten Tomatoes for scores it doesn\'t have', async () => {
+    b.addOmdbScores('tt0000002', { imdb: null, votes: null, rt: null })
+    const { body } = await omdb('tt0000002')
+
+    expect(body).toMatchObject({ imdbRating: 'N/A', imdbVotes: 'N/A' })
+    expect(body.Ratings.some((r) => r.Source === 'Rotten Tomatoes')).toBe(false)
+  })
+
+  it('says "Incorrect IMDb ID." for an id it doesn\'t know', async () => {
+    expect((await omdb('tt9999999')).body).toEqual({ Response: 'False', Error: 'Incorrect IMDb ID.' })
+  })
+
+  it('refuses a wrong key and a used-up daily limit with HTTP 401, and can be down', async () => {
+    b.addOmdbScores('tt0000001')
+    expect(await omdb('tt0000001', 'wrong')).toEqual({ status: 401, body: { Response: 'False', Error: 'Invalid API key!' } })
+
+    b.omdb.limitReached = true
+    expect(await omdb('tt0000001')).toEqual({ status: 401, body: { Response: 'False', Error: 'Request limit reached!' } })
+
+    b.omdb.limitReached = false
+    b.omdb.down = true
+    expect((await omdb('tt0000001')).status).toBe(503)
+  })
+
+  it('gives TMDb\'s IMDb id for a TMDb-only movie, a catalog movie, and 404 for neither', async () => {
+    b.addTmdbMovie({ id: 777001, title: 'Has Id', imdb_id: 'tt7770001' })
+    b.addTmdbMovie({ id: 777002, title: 'No Id' })
+    const dune = b.catalog('dune-part-two-2024')
+
+    expect((await tmdbGet('/movie/777001/external_ids')).body).toEqual({ id: 777001, imdb_id: 'tt7770001' })
+    expect((await tmdbGet('/movie/777002/external_ids')).body).toEqual({ id: 777002, imdb_id: null })
+    expect((await tmdbGet(`/movie/${dune.tmdb_id}/external_ids`)).body.imdb_id).toBe(dune.imdb_id)
+    expect((await tmdbGet('/movie/1/external_ids')).status).toBe(404)
+  })
+
+  it('keeps movie_ratings from the browser, but lets the service role read and upsert it', async () => {
+    const row = { tmdb_id: 777001, imdb_id: 'tt7770001', imdb: 7.5, imdb_votes: 1000, rt: 80, checked_at: new Date().toISOString() }
+    const admin = b.createClient(SUPABASE_URL, SERVICE_KEY)
+    expect((await admin.from('movie_ratings').upsert(row, { onConflict: 'tmdb_id' }).select().single()).data).toMatchObject({ imdb: 7.5 })
+    await admin.from('movie_ratings').upsert({ ...row, imdb: 8.0 }, { onConflict: 'tmdb_id' })
+    expect(b.movie_ratings).toHaveLength(1)
+    expect(b.movie_ratings[0].imdb).toBe(8)
+
+    const browser = await clientFor(alice)
+    expect((await browser.from('movie_ratings').select('*')).data).toEqual([])
+    expect((await browser.from('movie_ratings').upsert(row, { onConflict: 'tmdb_id' })).error.code).toBe('42501')
+  })
+
+  it('keeps the daily OMDb budget from the browser, and counts lookups for the service role', async () => {
+    const browser = await clientFor(alice)
+    expect((await browser.rpc('claim_omdb_call', { p_limit: 900 })).error.code).toBe('42501')
+
+    const admin = b.createClient(SUPABASE_URL, SERVICE_KEY)
+    expect((await admin.rpc('claim_omdb_call', { p_limit: 2 })).data).toBe(true)
+    expect((await admin.rpc('claim_omdb_call', { p_limit: 2 })).data).toBe(true)
+    expect((await admin.rpc('claim_omdb_call', { p_limit: 2 })).data).toBe(false)
+    expect(b.omdbUsageToday()).toBe(2)
+    expect((await admin.rpc('claim_omdb_call', { p_limit: 0 })).data).toBe(false)
+  })
+
+  it('passes the headers a handler sets back with the response', async () => {
+    vi.stubEnv('TMDB_READ_TOKEN', TMDB_TOKEN)
+    vi.stubEnv('SUPABASE_URL', SUPABASE_URL)
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_KEY)
+    vi.stubEnv('OMDB_API_KEY', OMDB_KEY)
+    globalThis.__sceneit = { backend: b }
+    vi.stubGlobal('fetch', b.fetch)
+    b.addTmdbMovie({ id: 777003, title: 'Cacheable', imdb_id: 'tt7770003' })
+    b.addOmdbScores('tt7770003')
+
+    const res = await b.fetch('/api/movies/ratings?id=777003')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toMatch(/s-maxage=86400/)
   })
 })

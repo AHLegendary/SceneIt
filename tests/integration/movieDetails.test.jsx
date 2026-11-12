@@ -16,6 +16,8 @@ beforeEach(() => {
   alice = backend.addUser({ username: 'Alice_99' })
   bob = backend.addUser({ username: 'bob' })
   backend.tmdbKnows(DUNE.id)
+  // Scores always come from the live lookup, for catalog movies too.
+  backend.addOmdbScores(DUNE.imdb_id, { imdb: 8.4, votes: DUNE.ratings.imdb_votes, rt: 92 })
   backend.addTmdbMovie({ id: 940001, title: 'Quokka Road', year: 2022, genres: ['Adventure', 'Comedy'], runtime: 100, director: 'Ana Auteur', cast: ['Cast One', 'Cast Two', 'Cast Three'], overview: 'A quokka drives across Australia.' })
 })
 
@@ -53,6 +55,7 @@ describe('a catalog movie', () => {
     const { user } = await open()
     const dialog = await dune(user)
 
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
     expect(stat(dialog, 'IMDb').textContent).toContain('8.4')
     expect(stat(dialog, 'IMDb').textContent).toContain(formatVotes(DUNE.ratings.imdb_votes))
     expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('92%')
@@ -206,6 +209,7 @@ describe('when you are logged out', () => {
     const { user } = await open({ as: null })
     const dialog = await dune(user)
 
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
     expect(stat(dialog, 'IMDb').textContent).toContain('8.4')
     expect(stat(dialog, 'Your rank')).toBeNull()
     expect(stat(dialog, 'Community')).toBeNull()
@@ -246,7 +250,9 @@ describe('a movie from live search', () => {
 
     expect(within(dialog).getByRole('link', { name: 'TMDB' }).getAttribute('href')).toBe('https://www.themoviedb.org/movie/940001')
     expect(within(dialog).queryByRole('link', { name: 'IMDb' })).toBeNull()
-    expect(within(dialog).queryByText('IMDb')).toBeNull()
+    // With no IMDb id there are no scores to find, and the panel says so once it knows.
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
+    expect(stat(dialog, 'IMDb').textContent).toBe('IMDbNot available')
   })
 
   it('stops loading and leaves the credits out if the details can\'t be fetched', async () => {
@@ -283,6 +289,182 @@ describe('a movie from live search', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Quokka Road' })).toBeTruthy()
     expect(backend.callsTo('fetch:GET /api/movies/940001')).toHaveLength(1)
+  })
+})
+
+describe('outside scores for a movie from live search', () => {
+  beforeEach(() => {
+    backend.addTmdbMovie({ id: 990001, title: 'Scored Film', year: 2022, imdb_id: 'tt9900010' })
+    backend.addOmdbScores('tt9900010', { imdb: 8.1, votes: 1234567, rt: 91 })
+  })
+  const ratingsCalls = () => backend.callsTo('fetch:GET /api/movies/ratings')
+  const waitForScores = (dialog) => waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
+
+  it('shows IMDb and Rotten Tomatoes scores once they arrive', async () => {
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitForScores(dialog)
+    expect(stat(dialog, 'IMDb').textContent).toContain('8.1')
+    expect(stat(dialog, 'IMDb').textContent).toContain(formatVotes(1234567))
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('91%')
+  })
+
+  it('adds an IMDb link, since the server found the IMDb id', async () => {
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitForScores(dialog)
+    expect(within(dialog).getByRole('link', { name: 'IMDb' }).getAttribute('href')).toBe('https://www.imdb.com/title/tt9900010/')
+  })
+
+  it('works for logged-out visitors too', async () => {
+    const { user } = await open({ as: null })
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitForScores(dialog)
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('91%')
+  })
+
+  it('keeps the panel usable while the scores load, and fills them in afterwards', async () => {
+    const gate = backend.hold('GET /api/movies/ratings')
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    expect(within(dialog).getByRole('button', { name: 'Rank it' })).toBeTruthy()
+    expect(stat(dialog, 'IMDb')).toBeNull()
+    gate.release()
+
+    await waitForScores(dialog)
+  })
+
+  it('says "Not available" for Rotten Tomatoes when it has no score', async () => {
+    backend.addOmdbScores('tt9900010', { imdb: 6.4, votes: 900, rt: null })
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitForScores(dialog)
+    expect(stat(dialog, 'IMDb').textContent).toContain('6.4')
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toBe('Rotten TomatoesNot available')
+  })
+
+  it('says "Not available" for IMDb when it has no score', async () => {
+    backend.addOmdbScores('tt9900010', { imdb: null, votes: null, rt: 55 })
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitFor(() => expect(stat(dialog, 'Rotten Tomatoes')).not.toBeNull())
+    expect(stat(dialog, 'IMDb').textContent).toBe('IMDbNot available')
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('55%')
+  })
+
+  it('says "Not available" for both, with no error, when no scores exist', async () => {
+    backend.omdb.ratings.clear()
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
+    expect(stat(dialog, 'IMDb').textContent).toBe('IMDbNot available')
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toBe('Rotten TomatoesNot available')
+    expect(within(dialog).queryByRole('alert')).toBeNull()
+  })
+
+  it('says "Not available" to logged-out visitors too', async () => {
+    backend.addOmdbScores('tt9900010', { imdb: 7.0, votes: 500, rt: null })
+    const { user } = await open({ as: null })
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitFor(() => expect(stat(dialog, 'Rotten Tomatoes')).not.toBeNull())
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('Not available')
+  })
+
+  it('says nothing about the scores until it knows: not while loading', async () => {
+    const gate = backend.hold('GET /api/movies/ratings')
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    expect(stat(dialog, 'IMDb')).toBeNull()
+    expect(stat(dialog, 'Rotten Tomatoes')).toBeNull()
+    expect(within(dialog).queryByText('Not available')).toBeNull()
+    gate.release()
+    await waitForScores(dialog)
+  })
+
+  it('says nothing, rather than "Not available", when the daily OMDb budget is used up', async () => {
+    backend.setOmdbUsage(900)
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitFor(() => expect(ratingsCalls()).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 150))
+    expect(stat(dialog, 'IMDb')).toBeNull()
+    expect(stat(dialog, 'Rotten Tomatoes')).toBeNull()
+    expect(within(dialog).queryByRole('alert')).toBeNull()
+  })
+
+  it('leaves the scores out, quietly, when they can\'t be loaded, and tries again next time', async () => {
+    backend.failApi('GET /api/movies/ratings', { status: 502, body: { error: 'down' } }, { times: 1 })
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitFor(() => expect(ratingsCalls()).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 150))
+    expect(stat(dialog, 'IMDb')).toBeNull()
+    expect(stat(dialog, 'Rotten Tomatoes')).toBeNull()
+    expect(within(dialog).queryByRole('alert')).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'Rank it' })).toBeTruthy()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    const again = await showDetails(user, 'Scored Film')
+    await waitForScores(again)
+    expect(ratingsCalls()).toHaveLength(2)
+  })
+
+  it('asks the server once, however often you open the movie', async () => {
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+    await waitForScores(dialog)
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    const box = within(screen.getByRole('search')).getByRole('searchbox', { name: 'Search movies' })
+    await user.clear(box)
+    await user.type(box, 'Scored Film')
+    await user.click(await screen.findByRole('option', { name: /Scored Film/ }))
+    const reopened = await screen.findByRole('dialog', { name: 'Scored Film' })
+
+    await waitForScores(reopened)
+    expect(ratingsCalls()).toHaveLength(1)
+  })
+
+  it('doesn\'t depend on the other details loading', async () => {
+    backend.failApi('GET /api/movies/990001', { status: 502, body: { error: 'down' } })
+    const { user } = await open()
+    const dialog = await showDetails(user, 'Scored Film')
+
+    await waitForScores(dialog)
+    expect(stat(dialog, 'IMDb').textContent).toContain('8.1')
+  })
+
+  it('asks for catalog movies too, and shows the live scores rather than the built-in ones', async () => {
+    backend.addOmdbScores(DUNE.imdb_id, { imdb: 7.2, votes: 4321, rt: 64 })
+    const { user } = await open()
+    const dialog = await dune(user)
+
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
+    expect(stat(dialog, 'IMDb').textContent).toContain('7.2')
+    expect(stat(dialog, 'IMDb').textContent).not.toContain(String(DUNE.ratings.imdb))
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toContain('64%')
+    expect(ratingsCalls()).toHaveLength(1)
+  })
+
+  it('says "Not available" for a catalog movie OMDb has no scores for, ignoring the built-in ones', async () => {
+    backend.omdb.ratings.clear()
+    const { user } = await open()
+    const dialog = await dune(user)
+
+    await waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
+    expect(stat(dialog, 'IMDb').textContent).toBe('IMDbNot available')
+    expect(stat(dialog, 'Rotten Tomatoes').textContent).toBe('Rotten TomatoesNot available')
   })
 })
 

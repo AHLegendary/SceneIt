@@ -11,7 +11,7 @@ import { createElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
-import { FakeBackend, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './fakeBackend.js'
+import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './fakeBackend.js'
 
 export { act, screen, waitFor, within }
 
@@ -29,6 +29,7 @@ export async function launch({ hash = '', as = null, backend = new FakeBackend()
   vi.stubEnv('SUPABASE_URL', SUPABASE_URL)
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', SERVICE_KEY)
   vi.stubEnv('TMDB_READ_TOKEN', TMDB_TOKEN)
+  vi.stubEnv('OMDB_API_KEY', OMDB_KEY)
   vi.stubGlobal('fetch', backend.fetch)
 
   window.location.hash = hash
