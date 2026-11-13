@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Fake Supabase client and account store. Tests set `db.*`, then log in or
 // out through `setAccount`.
@@ -7,6 +7,7 @@ const db = vi.hoisted(() => ({
   accountListeners: new Set(),
   responses: {}, // rpc name -> { data, error }
   rpcCalls: [],
+  token: 'token-1',
 }))
 
 vi.mock('../../src/lib/supabaseStore.js', () => ({
@@ -19,6 +20,7 @@ vi.mock('../../src/lib/supabaseStore.js', () => ({
 
 vi.mock('../../src/lib/supabase.js', () => ({
   supabase: {
+    auth: { getSession: async () => ({ data: { session: db.token ? { access_token: db.token } : null } }) },
     rpc: async (name, args) => {
       db.rpcCalls.push({ name, args })
       return db.responses[name] ?? { data: null, error: null }
@@ -54,6 +56,8 @@ async function setAccount(user) {
   db.accountListeners.forEach((fn) => fn())
   await settle()
 }
+
+const apiResponse = (status, body) => ({ ok: status < 400, status, json: async () => body })
 
 const callsTo = (name) => db.rpcCalls.filter((call) => call.name === name)
 
@@ -94,13 +98,13 @@ describe('row mapping', () => {
   it('makes recommendations for movies outside the catalog openable by id', async () => {
     const { getMovie } = await import('../../src/lib/localStore.js')
     const [rec] = blends.rowsToRecommendations([
-      { movie_id: 987654321, title: 'Not In Catalog', year: 2020, liked_count: '2', member_count: '3', avg_score: '7.5' },
+      { movie: { tmdb_id: 987654321, title: 'Not In Catalog', year: 2020 }, lovedCount: 2, memberCount: 3, because: null },
     ])
-    expect(rec).toMatchObject({ likedCount: 2, memberCount: 3, avgScore: 7.5 })
+    expect(rec).toMatchObject({ lovedCount: 2, memberCount: 3, because: null })
     expect(getMovie(rec.movie.id)).toBe(rec.movie)
   })
   it('skips recommendation rows it cannot build a movie for', () => {
-    expect(blends.rowsToRecommendations([{ movie_id: 987654322 }])).toEqual([])
+    expect(blends.rowsToRecommendations([{ movie: { tmdb_id: 987654322 } }, {}])).toEqual([])
   })
 })
 
@@ -156,6 +160,7 @@ describe('store', () => {
 
 describe('fetchBlendDetail', () => {
   beforeEach(() => setAccount({ id: ME }))
+  afterEach(() => vi.unstubAllGlobals())
 
   it('returns members, sent invites and recommendations', async () => {
     db.responses.get_blend_members = {
@@ -166,11 +171,20 @@ describe('fetchBlendDetail', () => {
       data: [{ invite_id: INVITE, invitee_id: BOB, invitee_username: 'bob', status: 'declined' }],
       error: null,
     }
-    db.responses.get_blend_recommendations = { data: [], error: null }
+    const fetchMock = vi.fn(async () => apiResponse(200, { results: [] }))
+    vi.stubGlobal('fetch', fetchMock)
     const detail = await blends.fetchBlendDetail(BLEND)
     expect(detail.members[0]).toMatchObject({ id: ME, isOwner: true })
     expect(detail.sentInvites[0]).toMatchObject({ inviteeId: BOB, status: 'declined' })
     expect(detail.recommendations).toEqual([])
+    expect(fetchMock).toHaveBeenCalledWith(`/api/blends/recommendations?id=${BLEND}`, {
+      headers: { Authorization: 'Bearer token-1' },
+    })
+  })
+  it('reports a blend the server says is gone as blend_not_found', async () => {
+    db.responses.get_blend_members = { data: [{ user_id: ME, username: 'me', is_owner: true }], error: null }
+    vi.stubGlobal('fetch', vi.fn(async () => apiResponse(404, { error: 'blend_not_found' })))
+    await expect(blends.fetchBlendDetail(BLEND)).rejects.toMatchObject({ code: 'blend_not_found' })
   })
   it('returns null when the blend is gone or the user is not in it', async () => {
     db.responses.get_blend_members = { data: [], error: null }
@@ -182,8 +196,10 @@ describe('fetchBlendDetail', () => {
     expect(db.rpcCalls).toEqual([])
   })
   it('throws the load message when a request fails', async () => {
-    db.responses.get_blend_recommendations = { data: null, error: { message: 'boom' } }
-    db.responses.get_blend_members = { data: [], error: null }
+    db.responses.get_blend_members = { data: [{ user_id: ME, username: 'me', is_owner: true }], error: null }
+    vi.stubGlobal('fetch', vi.fn(async () => apiResponse(500, { error: 'boom' })))
+    await expect(blends.fetchBlendDetail(BLEND)).rejects.toThrow(blends.DETAIL_ERROR)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
     await expect(blends.fetchBlendDetail(BLEND)).rejects.toThrow(blends.DETAIL_ERROR)
   })
 })

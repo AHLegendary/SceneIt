@@ -53,3 +53,12 @@ export function toMovie(raw) {
     overview: raw.overview || '',
   };
 }
+
+// TMDb's recommendations for one movie, in TMDb's order, in our movie shape
+// plus tmdb_rating and tmdb_votes. Adult titles are dropped.
+export async function fetchTmdbRecommendations(tmdbId) {
+  const data = await tmdbFetch(`/movie/${tmdbId}/recommendations`, { page: '1' });
+  return (data.results ?? [])
+    .filter((m) => m && m.id && m.title && !m.adult)
+    .map((m) => ({ ...toMovie(m), tmdb_rating: m.vote_average ?? null, tmdb_votes: m.vote_count ?? null }));
+}

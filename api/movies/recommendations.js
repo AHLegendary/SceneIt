@@ -1,4 +1,4 @@
-import { tmdbFetch, toMovie } from '../_lib/tmdb.js';
+import { fetchTmdbRecommendations } from '../_lib/tmdb.js';
 
 export const MAX_SEEDS = 12;
 
@@ -26,16 +26,10 @@ export default async function handler(req, res) {
   }
   const seeds = [...new Set(parts.map(Number))];
 
-  const settled = await Promise.allSettled(
-    seeds.map((id) => tmdbFetch(`/movie/${id}/recommendations`, { page: '1' })),
-  );
+  const settled = await Promise.allSettled(seeds.map(fetchTmdbRecommendations));
   const results = [];
   settled.forEach((outcome, i) => {
-    if (outcome.status !== 'fulfilled') return;
-    const movies = (outcome.value.results ?? [])
-      .filter((m) => m && m.id && m.title && !m.adult)
-      .map((m) => ({ ...toMovie(m), tmdb_rating: m.vote_average ?? null, tmdb_votes: m.vote_count ?? null }));
-    results.push({ seed: seeds[i], movies });
+    if (outcome.status === 'fulfilled') results.push({ seed: seeds[i], movies: outcome.value });
   });
 
   if (!results.length) {

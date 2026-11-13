@@ -14,6 +14,7 @@ import {
   loadBlends,
   setBlendNotice,
 } from './blends.js'
+import { blendRecLabel } from './blendRecs.js'
 import CreateBlendForm from './CreateBlendForm.jsx'
 
 const INVITE_LABELS = { pending: 'Invited', declined: 'Declined', expired: 'Expired' }
@@ -161,12 +162,12 @@ export default function BlendDetailPage({ blendId, onOpen }) {
         <h2 className="recs__title">Recommended for your group</h2>
         {recommendations.length > 0 ? (
           <ul className="recs__grid">
-            {recommendations.map(({ movie, likedCount, memberCount, avgScore }) => (
-              <li key={movie.id}>
-                <button type="button" className="rec" onClick={() => onOpen(movie.id)}>
-                  <Poster title={movie.title} src={posterUrl(movie)} size="md" />
-                  <span className="rec__title">{movie.title}</span>
-                  <span className="rec__meta">Liked by {likedCount} of {memberCount} · {avgScore.toFixed(1)}</span>
+            {recommendations.map((rec) => (
+              <li key={rec.movie.id}>
+                <button type="button" className="rec" onClick={() => onOpen(rec.movie.id)}>
+                  <Poster title={rec.movie.title} src={posterUrl(rec.movie)} size="md" />
+                  <span className="rec__title">{rec.movie.title}</span>
+                  <span className="rec__meta">{blendRecLabel(rec)}</span>
                 </button>
               </li>
             ))}
