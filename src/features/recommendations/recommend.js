@@ -85,9 +85,9 @@ export function rankWeights(tiers) {
 }
 
 // Movies at or above this weight count as favorites: "Loved it" ones.
-const FAVORITE_WEIGHT = CATEGORY_WEIGHTS.loved[0]
+export const FAVORITE_WEIGHT = CATEGORY_WEIGHTS.loved[0]
 // Movies at or below this weight are real dislikes: "Not a fan" ones.
-const DISLIKE_WEIGHT = CATEGORY_WEIGHTS.meh[1]
+export const DISLIKE_WEIGHT = CATEGORY_WEIGHTS.meh[1]
 
 // Which ranked movies to ask TMDb about: the top `top` movies with a positive
 // weight (loved first) and the bottom `bottom` real dislikes ("Not a fan"). Only movies with a

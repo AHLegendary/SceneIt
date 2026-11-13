@@ -131,16 +131,17 @@ export function rowsToSentInvites(rows) {
 
 // movieFromDb remembers movies outside the catalog, so the existing details
 // view can open them by id. Rows we can't build a movie for are skipped.
+// Rows come from /api/blends/recommendations.
 export function rowsToRecommendations(rows) {
   const out = []
   for (const row of rows ?? []) {
-    const movie = movieFromDb({ ...row, tmdb_id: row.movie_id })
+    const movie = movieFromDb(row.movie ?? {})
     if (!movie) continue
     out.push({
       movie,
-      likedCount: Number(row.liked_count),
-      memberCount: Number(row.member_count),
-      avgScore: Number(row.avg_score),
+      lovedCount: Number(row.lovedCount),
+      memberCount: Number(row.memberCount),
+      because: row.because ?? null,
     })
   }
   return out
@@ -190,6 +191,25 @@ export function startBlends() {
   onAccountChange()
 }
 
+// Recommendations are worked out by the server, which can read every member's
+// rankings (see api/blends/recommendations.js). Returns { data, error } like
+// the RPCs, with error.message 'blend_not_found' when the blend is gone.
+async function fetchRecommendations(blendId) {
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = data?.session?.access_token
+    if (!token) return { data: null, error: { message: 'no session' } }
+    const response = await fetch(`/api/blends/recommendations?id=${encodeURIComponent(blendId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = await response.json().catch(() => ({}))
+    if (!response.ok) return { data: null, error: { message: json.error ?? `HTTP ${response.status}` } }
+    return { data: json.results, error: null }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
 // One blend's page: { members, sentInvites, recommendations }, or null when the
 // blend doesn't exist or the user isn't in it. Throws a BlendError on failure.
 export async function fetchBlendDetail(blendId) {
@@ -198,11 +218,12 @@ export async function fetchBlendDetail(blendId) {
   const [members, sentInvites, recommendations] = await Promise.all([
     supabase.rpc('get_blend_members', args),
     supabase.rpc('get_blend_sent_invites', args),
-    supabase.rpc('get_blend_recommendations', args),
+    fetchRecommendations(blendId),
   ])
-  const failed = members.error || sentInvites.error || recommendations.error
+  const failed = members.error || sentInvites.error
   if (failed) throw toBlendError(failed, DETAIL_ERROR)
   if (!members.data?.length) return null
+  if (recommendations.error) throw toBlendError(recommendations.error, DETAIL_ERROR)
   return {
     members: rowsToMembers(members.data),
     sentInvites: rowsToSentInvites(sentInvites.data),

@@ -102,12 +102,12 @@ await supabase.rpc('get_my_blends')
 await supabase.rpc('get_my_blend_invites')
 await supabase.rpc('get_blend_members', { p_blend_id: blendId })
 await supabase.rpc('get_blend_sent_invites', { p_blend_id: blendId })
-await supabase.rpc('get_blend_recommendations', { p_blend_id: blendId })  // group totals only
+// Blend recommendations come from GET /api/blends/recommendations?id=<blendId> (server-side, group-level facts only)
 ```
 
 Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.
 
-Scores and leaderboards are calculated when you ask for them, not stored. In SQL the formula lives in one place, `user_movie_scores()`, which `get_leaderboard`, `get_blend_recommendations` and `get_review_feed` all read. The "scores unlock at 10 ranked movies" line (`SCORE_UNLOCK`) is repeated in `get_review_feed`, so change that together with `scores.js` too. `src/features/ranking/scores.js` is the only other copy (the browser scores a list it already has), so change the two together.
+Scores and leaderboards are calculated when you ask for them, not stored. In SQL the formula lives in one place, `user_movie_scores()`, which `get_leaderboard` and `get_review_feed` read. The "scores unlock at 10 ranked movies" line (`SCORE_UNLOCK`) is repeated in `get_review_feed`, so change that together with `scores.js` too. `src/features/ranking/scores.js` is the only other copy (the browser scores a list it already has), so change the two together.
 
 ## Not here yet (later migrations)
 
