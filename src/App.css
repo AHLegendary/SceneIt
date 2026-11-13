@@ -154,6 +154,67 @@
   padding: 0;
 }
 
+/* ------------------------------------------------------------------ notification bell */
+.notif { position: relative; }
+.nav__link--bell { padding: 0 12px; }
+.nav__link--bell[aria-expanded="true"] { border-color: rgb(var(--accent-rgb) / 0.7); box-shadow: var(--glow); }
+.nav__link--bell .badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+.notif__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  width: 380px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid rgb(var(--accent-rgb) / 0.3);
+  box-shadow: var(--shadow-md), 0 0 40px rgb(var(--accent-rgb) / 0.12);
+}
+.notif__panel[hidden] { display: none; }
+.notif__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
+.notif__title { font-size: 17px; font-weight: 800; }
+.notif__markall { font-size: 13px; font-weight: 700; color: var(--accent); }
+.notif__markall:hover { text-decoration: underline; }
+.notif__empty { padding: 18px 4px; color: var(--ink-3); font-size: 14px; text-align: center; }
+.notif__list { display: flex; flex-direction: column; gap: 4px; }
+.notif__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.notif__row:hover:not(:disabled) { background: var(--hover); }
+.notif__row:disabled { opacity: 0.6; }
+.notif__row.is-unread { background: rgb(var(--accent-rgb) / 0.1); color: var(--ink); }
+.notif__dot { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: transparent; }
+.notif__row.is-unread .notif__dot { background: var(--accent); box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.7); }
+.notif__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif__row strong { color: var(--ink); font-weight: 700; }
+.notif__time { color: var(--ink-3); white-space: nowrap; }
+.notif__preview { color: var(--ink-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif__gone { width: min(380px, 100%); text-align: center; }
+.notif__gonetext { font-size: 17px; font-weight: 700; }
+
 /* ------------------------------------------------------------------ profile wheel */
 .pmenu { position: relative; }
 /* dims and blurs the page while the menu is open; the nav stays sharp above it */
@@ -1622,6 +1683,17 @@ a.comment__name:hover { color: var(--accent); }
   .nav__search-input { height: 40px; font-size: 14px; }
   .nav__signup { display: none; }
 
+  /* a full-width sheet under the nav */
+  .notif { position: static; }
+  .notif__panel {
+    position: fixed;
+    top: var(--nav-h);
+    left: 0;
+    right: 0;
+    width: auto;
+    max-height: calc(100vh - var(--nav-h) - 12px);
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+  }
   .wheel {
     --w: 300px;
     position: fixed;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon.jsx'
 import Logo from './Logo.jsx'
+import NotificationBell from './NotificationBell.jsx'
 import SearchBar from './SearchBar.jsx'
 import { BLEND_MIN_RANKINGS } from '../features/blends/blends.js'
 import { useBlends } from '../features/blends/useBlends.js'
@@ -13,9 +14,9 @@ import { useMyTiers } from '../lib/useMyList.js'
 
 const NAV_ICONS = { home: 'home', community: 'chart', blends: 'people' }
 
-// Header: Logo | search | Home · Community · Movie Blend · For You · Profile
-// (or Log in / Sign up). For You only shows when logged in, since it needs your
-// rankings. Movie Blend always shows, as a teaser for logged-out visitors.
+// Header: Logo | search | Home · Community · Movie Blend · For You · bell · Profile
+// (or Log in / Sign up). For You and the notification bell only show when logged
+// in (For You needs your rankings). Movie Blend always shows, as a teaser for logged-out visitors.
 // The Profile button opens a semicircular menu of shortcuts (ProfileMenu).
 // Nothing account-specific renders until the saved session has been checked,
 // so logged-out visitors never see a flash of private controls.
@@ -62,6 +63,8 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
           ))}
 
           {signedIn && <ForYouLink active={current === 'for-you'} onNavigate={onNavigate} />}
+
+          {signedIn && <NotificationBell current={current} />}
 
           {checking ? (
             <span className="nav__placeholder" aria-hidden="true" />

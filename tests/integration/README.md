@@ -85,6 +85,7 @@ await user.click(await screen.findByRole('button', { name: /^Rerank / }))
 | `leaderboard.test.jsx` | Periods, sorting, podium |
 | `home.test.jsx` | Hero, trending, community, picks, friends |
 | `forYou.test.jsx` | Unlock, picks, TMDb and friends' signals |
+| `notifications.test.jsx` | The bell: badge, panel, seen vs read, opening each kind, "no longer available" popups |
 | `blendRecs.test.jsx` | Blend recommendations: group picks, vetoes, TMDb discoveries, privacy, failures |
 
 ## Known gaps
