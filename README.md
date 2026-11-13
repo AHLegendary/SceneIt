@@ -34,7 +34,7 @@ These use cases work end to end on the live site and on a local setup with all e
 5. **Get recommendations** on the For You page, based on your rankings and your friends' rankings.
 6. **Add friends:** search by username, send a request, accept incoming requests.
 7. **Edit your profile** (bio, pronouns, public/private) and **view other users' profiles and lists**.
-8. **Browse the Home page:** Trending Now, Top Ranked, Most Watched, and (when logged in) Because You Ranked… and Friends Are Watching.
+8. **Browse the Home page:** Trending Now, Top Ranked, Most Watched, and (when logged in) Because You Loved…, More <genre> for You and Recently Ranked by Friends.
 
 ## Tech Stack
 
@@ -238,7 +238,7 @@ Open the URL printed in the terminal, usually `http://localhost:5173`. The dev s
 
 ## Homepage Data
 
-The homepage's **Trending Now** row comes from `GET /api/movies/trending` (TMDb's weekly trending list, needs `TMDB_READ_TOKEN`). Without the API it falls back to the most-rated movies in the built-in catalog and is labelled "Popular on SceneIt". **Top Ranked** and **Most Watched** come from the public leaderboard; **Because You Ranked…** and **Friends Are Watching** only appear for logged-in users and only from their own list and friends.
+The homepage's **Trending Now** row comes from `GET /api/movies/trending` (TMDb's weekly trending list, needs `TMDB_READ_TOKEN`). Without the API it falls back to the most-rated movies in the built-in catalog and is labelled "Popular on SceneIt". **Top Ranked** and **Most Watched** come from the public leaderboard; **Because You Loved…** and **More <genre> for You** (TMDb's picks for your top five "Loved it" movies, through `GET /api/movies/recommendations`) and **Recently Ranked by Friends** only appear for logged-in users and only from their own list and friends.
 
 ## Profile Pictures and Banners
 
