@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
+import { topGenre } from '../../src/features/profile/topGenre.js'
 import { FakeBackend, goTo, launch, ready, screen, waitFor, within } from './helpers/harness.js'
 
 const ids = (n) => MOVIES.slice(0, n).map((m) => m.id)
 const title = (id) => MOVIES.find((m) => m.id === id).title
+const tmdbId = (id) => MOVIES.find((m) => m.id === id).tmdb_id
 const LEADERBOARD_ERROR = "Couldn't load the leaderboard. Check your connection and try again."
 
 let backend
@@ -228,40 +230,86 @@ describe('Picked for You', () => {
     expect(await row('Picked for You').findByText('Rank 1 more movie to unlock recommendations')).toBeTruthy()
   })
 
-  it('shows picks instead once you have ranked fifteen', async () => {
+  it('shows "Because You Loved X" for one of your top five favorites once you have ranked fifteen', async () => {
     backend.seedList(alice, ids(15))
-    await open()
+    const pick = backend.addTmdbMovie({ id: 960001, title: 'Gnu Gone Wild', year: 2023 })
+    // Every top-five favorite gets the same picks: one new, one already ranked.
+    for (const id of ids(5)) backend.setTmdbRecommendations(tmdbId(id), [pick, backend.rawFromCatalog(ids(15)[9])])
+    const { user } = await open()
 
-    await waitFor(() => expect(rowEl('Top Picks for You')).not.toBeNull())
+    await waitFor(() => expect(rowNames().some((n) => n.startsWith('Because You Loved '))).toBe(true))
+    const name = rowNames().find((n) => n.startsWith('Because You Loved '))
+    expect(ids(5).map((id) => `Because You Loved ${title(id)}`)).toContain(name)
     expect(rowEl('Picked for You')).toBeNull()
-    const ranked = new Set(ids(15).map(title))
-    for (const name of cardTitles('Top Picks for You')) expect(ranked.has(name)).toBe(false)
+    await waitFor(() => expect(cardTitles(name)).toEqual(['Gnu Gone Wild']))
+
+    await user.click(row(name).getByRole('button', { name: /See all recommendations/ }))
+    expect(window.location.hash).toBe('#/for-you')
   })
 
-  it('adds a "Because You Ranked … Highly" row for a favorite', async () => {
+  it('adds a "More <genre> for You" row for the genre your favorites share most', async () => {
     backend.seedList(alice, ids(15))
+    const genre = topGenre(ids(5).map((id) => [MOVIES.find((m) => m.id === id)])).genre
+    const other = genre === 'Documentary' ? 'Western' : 'Documentary'
+    const common = backend.addTmdbMovie({ id: 960100, title: 'Off Genre', genres: [other] })
+    ids(5).forEach((id, i) => {
+      const pick = backend.addTmdbMovie({ id: 960200 + i, title: `Genre Pick ${i}`, genres: [genre] })
+      backend.setTmdbRecommendations(tmdbId(id), [common, pick])
+    })
     await open()
 
-    await waitFor(() => expect(rowNames().some((n) => n.startsWith('Because You Ranked '))).toBe(true))
-    const name = rowNames().find((n) => n.startsWith('Because You Ranked '))
-    expect(name.endsWith(' Highly')).toBe(true)
-    expect(cardTitles(name).length).toBeGreaterThanOrEqual(4)
+    const genreRow = `More ${genre} for You`
+    await waitFor(() => expect(rowEl(genreRow)).not.toBeNull())
+    const because = rowNames().find((n) => n.startsWith('Because You Loved '))
+    expect(rowNames().indexOf(genreRow)).toBe(rowNames().indexOf(because) + 1)
+    // The favorite's own genre pick is in its row, the other four in the genre row.
+    expect(cardTitles(because)).toHaveLength(2)
+    expect(cardTitles(genreRow)).toHaveLength(4)
+    for (const name of cardTitles(genreRow)) {
+      expect(name).toMatch(/^Genre Pick /)
+      expect(cardTitles(because)).not.toContain(name)
+    }
+  })
+
+  it('offers a retry when the picks fail to load', async () => {
+    backend.seedList(alice, ids(15))
+    const pick = backend.addTmdbMovie({ id: 960001, title: 'Gnu Gone Wild', year: 2023 })
+    for (const id of ids(5)) backend.setTmdbRecommendations(tmdbId(id), [pick])
+    backend.failApi('GET /api/movies/recommendations', { status: 502, body: { error: 'down' } }, { times: 1 })
+    const { user } = await open()
+
+    const name = await waitFor(() => {
+      const found = rowNames().find((n) => n.startsWith('Because You Loved '))
+      expect(found).toBeTruthy()
+      return found
+    })
+    expect(await row(name).findByText("Couldn't load your picks. Check your connection and try again.")).toBeTruthy()
+    await user.click(row(name).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(cardTitles(name)).toEqual(['Gnu Gone Wild']))
+  })
+
+  it('leaves the row out when TMDb has nothing new for your favorite', async () => {
+    backend.seedList(alice, ids(15))
+    await open()
+    await waitFor(() => expect(cardTitles('Trending Now')).toHaveLength(2))
+    await waitFor(() => expect(rowNames().some((n) => n.startsWith('Because You Loved '))).toBe(false))
+    expect(rowEl('Picked for You')).toBeNull()
   })
 })
 
-describe('Friends Are Watching', () => {
+describe('Recently Ranked by Friends', () => {
   it('invites you to add friends when you have none', async () => {
     const { user } = await open()
 
-    expect(await row('Friends Are Watching').findByText("Add friends to see what they're watching")).toBeTruthy()
-    await user.click(row('Friends Are Watching').getByRole('button', { name: 'Find friends' }))
+    expect(await row('Recently Ranked by Friends').findByText("Add friends to see what they're ranking")).toBeTruthy()
+    await user.click(row('Recently Ranked by Friends').getByRole('button', { name: 'Find friends' }))
     expect(window.location.hash).toBe('#/friends')
   })
 
   it('says so when your friends haven\'t ranked anything', async () => {
     backend.addFriendship(alice, bob, 'accepted')
     await open()
-    expect(await row('Friends Are Watching').findByText("Your friends haven't ranked anything yet.")).toBeTruthy()
+    expect(await row('Recently Ranked by Friends').findByText("Your friends haven't ranked anything yet.")).toBeTruthy()
   })
 
   it('shows what friends ranked most recently, once per movie, who ranked it', async () => {
@@ -271,10 +319,10 @@ describe('Friends Are Watching', () => {
     backend.seedList(cara, [ids(3)[2], MOVIES[10].id]) // cara ranks one movie bob ranked, and one more, later
     await open()
 
-    await waitFor(() => expect(cardTitles('Friends Are Watching').length).toBe(4))
+    await waitFor(() => expect(cardTitles('Recently Ranked by Friends').length).toBe(4))
     // newest first: cara's latest, then the movie bob and cara both ranked (cara was last), then bob's others
-    expect(cardTitles('Friends Are Watching')).toEqual([title(MOVIES[10].id), title(ids(3)[2]), title(ids(3)[1]), title(ids(3)[0])])
-    expect(captions('Friends Are Watching')).toEqual(['cara ranked it', 'cara ranked it', 'bob ranked it', 'bob ranked it'])
+    expect(cardTitles('Recently Ranked by Friends')).toEqual([title(MOVIES[10].id), title(ids(3)[2]), title(ids(3)[1]), title(ids(3)[0])])
+    expect(captions('Recently Ranked by Friends')).toEqual(['cara ranked it', 'cara ranked it', 'bob ranked it', 'bob ranked it'])
   })
 
   it('names who is ranking, with their initials', async () => {
@@ -285,19 +333,19 @@ describe('Friends Are Watching', () => {
     await open()
 
     const note = await waitFor(() => {
-      const el = rowEl('Friends Are Watching').querySelector('.row-note')
+      const el = rowEl('Recently Ranked by Friends').querySelector('.row-note')
       expect(el).not.toBeNull()
       return el
     })
     expect(note.textContent).toBe('cara, bob are ranking')
-    expect([...rowEl('Friends Are Watching').querySelectorAll('.row-avatar')].map((n) => n.textContent)).toEqual(['C', 'B'])
+    expect([...rowEl('Recently Ranked by Friends').querySelectorAll('.row-avatar')].map((n) => n.textContent)).toEqual(['C', 'B'])
   })
 
   it('says "is ranking" for one friend', async () => {
     backend.addFriendship(alice, bob, 'accepted')
     backend.seedList(bob, ids(1))
     await open()
-    await waitFor(() => expect(rowEl('Friends Are Watching').querySelector('.row-note')?.textContent).toBe('bob is ranking'))
+    await waitFor(() => expect(rowEl('Recently Ranked by Friends').querySelector('.row-note')?.textContent).toBe('bob is ranking'))
   })
 
   it('summarises more than three friends', async () => {
@@ -307,15 +355,15 @@ describe('Friends Are Watching', () => {
       backend.seedList(friend, [MOVIES[20 + i].id])
     }
     await open()
-    await waitFor(() => expect(rowEl('Friends Are Watching').querySelector('.row-note')?.textContent).toBe('and 2 others are ranking'))
-    expect(rowEl('Friends Are Watching').querySelectorAll('.row-avatar')).toHaveLength(3)
+    await waitFor(() => expect(rowEl('Recently Ranked by Friends').querySelector('.row-note')?.textContent).toBe('and 2 others are ranking'))
+    expect(rowEl('Recently Ranked by Friends').querySelectorAll('.row-avatar')).toHaveLength(3)
   })
 
   it('ignores people who are not your friends yet', async () => {
     backend.addFriendship(alice, bob, 'pending')
     backend.seedList(bob, ids(2))
     await open()
-    expect(await row('Friends Are Watching').findByText("Add friends to see what they're watching")).toBeTruthy()
+    expect(await row('Recently Ranked by Friends').findByText("Add friends to see what they're ranking")).toBeTruthy()
   })
 
   it('marks movies you have ranked too', async () => {
@@ -324,8 +372,8 @@ describe('Friends Are Watching', () => {
     backend.seedList(alice, [ids(2)[0]])
     await open()
 
-    await waitFor(() => expect(cardTitles('Friends Are Watching')).toHaveLength(2))
-    const mine = within(rowEl('Friends Are Watching')).getByRole('button', { name: new RegExp(title(ids(2)[0])) })
+    await waitFor(() => expect(cardTitles('Recently Ranked by Friends')).toHaveLength(2))
+    const mine = within(rowEl('Recently Ranked by Friends')).getByRole('button', { name: new RegExp(title(ids(2)[0])) })
     await waitFor(() => expect(mine.querySelector('.card__ranked')).not.toBeNull())
   })
 
@@ -333,9 +381,9 @@ describe('Friends Are Watching', () => {
     backend.addFriendship(alice, bob, 'accepted')
     backend.seedList(bob, ids(1))
     const { user } = await open()
-    await waitFor(() => expect(cardTitles('Friends Are Watching')).toHaveLength(1))
+    await waitFor(() => expect(cardTitles('Recently Ranked by Friends')).toHaveLength(1))
 
-    await user.click(within(rowEl('Friends Are Watching')).getByRole('button', { name: new RegExp(title(ids(1)[0])) }))
+    await user.click(within(rowEl('Recently Ranked by Friends')).getByRole('button', { name: new RegExp(title(ids(1)[0])) }))
 
     expect(await screen.findByRole('dialog', { name: title(ids(1)[0]) })).toBeTruthy()
   })
@@ -348,20 +396,20 @@ describe('Friends Are Watching', () => {
     await waitFor(() => expect(backend.callsTo('rpc:get_friendships').length).toBeGreaterThan(0))
     backend.failQuery('rankings', 'select', 'boom', { times: 1 })
     await goTo('#/home')
-    await waitFor(() => expect(rowEl('Friends Are Watching')).not.toBeNull())
+    await waitFor(() => expect(rowEl('Recently Ranked by Friends')).not.toBeNull())
 
-    const alert = await row('Friends Are Watching').findByRole('alert')
+    const alert = await row('Recently Ranked by Friends').findByRole('alert')
     expect(alert.textContent).toContain("Couldn't load what your friends are watching.")
     await user.click(within(alert).getByRole('button', { name: 'Try again' }))
 
-    await waitFor(() => expect(cardTitles('Friends Are Watching')).toHaveLength(2))
+    await waitFor(() => expect(cardTitles('Recently Ranked by Friends')).toHaveLength(2))
   })
 
   it('is left out altogether if your friends can\'t be loaded', async () => {
     backend.failRpc('get_friendships', 'boom')
     await open()
     await waitFor(() => expect(cardTitles('Trending Now')).toHaveLength(2))
-    expect(rowEl('Friends Are Watching')).toBeNull()
+    expect(rowEl('Recently Ranked by Friends')).toBeNull()
   })
 
   it('keeps the order of the rows: picks, trending, top ranked, friends, most watched', async () => {
@@ -369,6 +417,6 @@ describe('Friends Are Watching', () => {
     backend.addFriendship(alice, bob, 'accepted')
     await open()
     await waitFor(() => expect(cardTitles('Most Watched This Month').length).toBeGreaterThan(0))
-    expect(rowNames()).toEqual(['Picked for You', 'Trending Now', 'Top Ranked by the Community', 'Friends Are Watching', 'Most Watched This Month'])
+    expect(rowNames()).toEqual(['Picked for You', 'Trending Now', 'Top Ranked by the Community', 'Recently Ranked by Friends', 'Most Watched This Month'])
   })
 })

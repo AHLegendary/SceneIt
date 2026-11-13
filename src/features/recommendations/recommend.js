@@ -89,6 +89,13 @@ export const FAVORITE_WEIGHT = CATEGORY_WEIGHTS.loved[0]
 // Movies at or below this weight are real dislikes: "Not a fan" ones.
 export const DISLIKE_WEIGHT = CATEGORY_WEIGHTS.meh[1]
 
+// The user's "Loved it" movies (or top movies, for lists without
+// categories), best first.
+export function favoritesOf(tiers) {
+  const weights = rankWeights(tiers)
+  return tiers.flat().filter((m) => weights.get(m.id) >= FAVORITE_WEIGHT)
+}
+
 // Which ranked movies to ask TMDb about: the top `top` movies with a positive
 // weight (loved first) and the bottom `bottom` real dislikes ("Not a fan"). Only movies with a
 // TMDb id count. Returns { likes, dislikes }, each a list of movies.
@@ -378,11 +385,7 @@ export function buildRecommendations(
   if (top.length) rows.push({ id: 'top', title: 'Top picks for you', items: top })
   if (fromFriends.length) rows.push({ id: 'friends', title: 'Your friends loved these', items: fromFriends })
 
-  // Favorites = the user's best "Loved it" movies (or top movies, for lists
-  // without categories), best first.
-  const myWeights = rankWeights(tiers)
-  const favorites = tiers.flat().filter((m) => myWeights.get(m.id) >= FAVORITE_WEIGHT)
-  for (const fav of favorites.slice(0, becauseRows)) {
+  for (const fav of favoritesOf(tiers).slice(0, becauseRows)) {
     // Movies TMDb links to this favorite first, then genre relatives.
     const linked = scored.filter((s) => linkStrength(fav, s.movie, links) > 0)
     const genreOnly = scored.filter((s) => !linkStrength(fav, s.movie, links) && relatedness(fav, s.movie, links) > 0)

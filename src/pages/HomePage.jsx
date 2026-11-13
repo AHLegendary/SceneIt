@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import MovieCard from '../components/MovieCard.jsx'
 import MovieRow from '../components/MovieRow.jsx'
-import { buildRecommendations, RECS_UNLOCK } from '../features/recommendations/recommend.js'
+import { topGenre } from '../features/profile/topGenre.js'
+import { favoritesOf, mergeTmdbRecs, RECS_UNLOCK } from '../features/recommendations/recommend.js'
 import { loadFriendsActivity, loadTrending } from '../lib/homeData.js'
 import { fetchLeaderboard } from '../lib/leaderboard.js'
-import { getCatalog, getMovie, imageUrl } from '../lib/localStore.js'
+import { getMovie, imageUrl, movieFromDb } from '../lib/localStore.js'
+import { getRecommendations } from '../lib/movies.js'
 import { useFriendGroups, useFriends } from '../lib/useFriends.js'
 import { useMyTiers } from '../lib/useMyList.js'
 
@@ -16,7 +18,7 @@ const HERO_INTERVAL = 8000
 
 // Homepage: hero + Netflix-style rows. Public rows (Trending, Top Ranked,
 // Most Watched) show for everyone; personalized rows (recommendations,
-// Friends Are Watching) only once the user is logged in and only from
+// Recently Ranked by Friends) only once the user is logged in and only from
 // their real data.
 export default function HomePage({ account, onOpen, onRank, onNavigate }) {
   const signedIn = account.status === 'ready'
@@ -28,7 +30,7 @@ export default function HomePage({ account, onOpen, onRank, onNavigate }) {
       <Hero onRank={onRank} />
       <div className="home__rows">
         {/* Picks go first so people actually find them (issue #38). */}
-        {signedIn && <RecommendationRows tiers={tiers} onOpen={onOpen} onRank={onRank} onNavigate={onNavigate} />}
+        {signedIn && <RecommendationRow tiers={tiers} inList={inList} onOpen={onOpen} onRank={onRank} onNavigate={onNavigate} />}
         <TrendingRow onOpen={onOpen} inList={inList} />
         <CommunityRow
           key="highest"
@@ -187,14 +189,44 @@ function CommunityRow({ category, title, icon, onOpen, inList, tiers, required =
   )
 }
 
-// "Because you ranked X highly" from the existing recommendation engine.
-// Unlocks at RECS_UNLOCK ranked movies; until then the row shows progress
+// Two rows from TMDb's picks for the user's top favorites, a teaser for the
+// full list under For You:
+//   * "Because You Loved X" for one favorite (rotates daily)
+//   * "More <genre> for You" for the genre they loved most, from the picks
+//     for all their top favorites
+// Unlocks at RECS_UNLOCK ranked movies; until then a row shows progress
 // instead of guessing.
-function RecommendationRows({ tiers, onOpen, onRank, onNavigate }) {
-  const recs = useMemo(() => buildRecommendations(tiers, getCatalog(), { perRow: 12, becauseRows: 3 }), [tiers])
-  const count = tiers.reduce((n, tier) => n + tier.length, 0)
+const HOME_FAVORITES = 5
+const RECS_ERROR = "Couldn't load your picks. Check your connection and try again."
 
-  if (recs.locked) {
+function RecommendationRow({ tiers, inList, onOpen, onRank, onNavigate }) {
+  const count = tiers.reduce((n, tier) => n + tier.length, 0)
+  const remaining = RECS_UNLOCK - count
+  const favorites = useMemo(
+    () => favoritesOf(tiers).filter((m) => Number.isInteger(m.tmdb_id) && m.tmdb_id > 0).slice(0, HOME_FAVORITES),
+    [tiers],
+  )
+  // A different favorite each day, so the row doesn't go stale.
+  const [day] = useState(() => Math.floor(Date.now() / 86_400_000))
+  const fav = favorites.length ? favorites[day % favorites.length] : null
+  const genre = useMemo(() => topGenre(favorites.map((m) => [m]))?.genre ?? null, [favorites])
+  const key = count >= RECS_UNLOCK ? favorites.map((m) => m.tmdb_id).join(',') : ''
+  const [result, setResult] = useState(null) // { key, results, error }
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    if (!key) return undefined
+    let current = true
+    getRecommendations(key.split(',').map(Number)).then(
+      (results) => current && setResult({ key, results, error: null }),
+      () => current && setResult({ key, results: null, error: RECS_ERROR }),
+    )
+    return () => {
+      current = false
+    }
+  }, [key, attempt])
+
+  if (count < RECS_UNLOCK) {
     return (
       <MovieRow
         title="Picked for You"
@@ -202,7 +234,7 @@ function RecommendationRows({ tiers, onOpen, onRank, onNavigate }) {
         empty={
           <div className="row-unlock">
             <div>
-              <strong>Rank {recs.remaining} more {recs.remaining === 1 ? 'movie' : 'movies'} to unlock recommendations</strong>
+              <strong>Rank {remaining} more {remaining === 1 ? 'movie' : 'movies'} to unlock recommendations</strong>
               <span>SceneIt learns from what you put at the top of your list and steers away from the bottom. Once unlocked, find your picks here and under For You in the top bar.</span>
               <span className="unlock__bar" role="progressbar" aria-valuemin={0} aria-valuemax={RECS_UNLOCK} aria-valuenow={count} aria-label="Movies ranked toward recommendations">
                 <span style={{ width: `${(count / RECS_UNLOCK) * 100}%` }} />
@@ -215,25 +247,41 @@ function RecommendationRows({ tiers, onOpen, onRank, onNavigate }) {
     )
   }
 
-  // One "because" row with enough in it to scroll, then the top picks.
-  const because = recs.rows.find((row) => row.because && row.items.length >= 4)
-  const top = recs.rows.find((row) => row.id === 'top')
-  const rows = [because, top].filter(Boolean)
-  if (!rows.length) return null
-
-  return rows.map((row) => (
-    <MovieRow
-      key={row.id}
-      title={row.because ? `Because You Ranked ${row.because.title} Highly` : 'Top Picks for You'}
-      icon="clapper"
-      seeAll="See all picks"
-      onSeeAll={() => onNavigate('for-you')}
-    >
-      {row.items.map(({ movie }) => (
+  if (!key) return null
+  const loaded = result?.key === key ? result : null
+  const seeds = new Map(favorites.map((m) => [m.tmdb_id, m]))
+  const fresh = (movies) => movies.filter((m) => !inList.has(m.id))
+  // TMDb's own order for the favorite's row.
+  const because = loaded?.results
+    ? fresh(mergeTmdbRecs(loaded.results.filter((r) => r.seed === fav.tmdb_id), seeds, movieFromDb).candidates).slice(0, 12)
+    : []
+  // Genre picks not already in that row, the ones most favorites point to first.
+  const shown = new Set(because.map((m) => m.id))
+  let genrePicks = []
+  if (loaded?.results && genre) {
+    const { candidates, links } = mergeTmdbRecs(loaded.results, seeds, movieFromDb)
+    const pull = (m) => [...(links.get(m.id)?.values() ?? [])].reduce((sum, s) => sum + s, 0)
+    genrePicks = fresh(candidates)
+      .filter((m) => !shown.has(m.id) && m.genres?.includes(genre))
+      .sort((a, b) => pull(b) - pull(a))
+      .slice(0, 12)
+  }
+  const status = !loaded ? 'loading' : loaded.error ? 'error' : undefined
+  const row = (title, movies, extra) => (
+    <MovieRow title={title} icon="clapper" seeAll="See all recommendations" onSeeAll={() => onNavigate('for-you')} {...extra}>
+      {movies.map((movie) => (
         <MovieCard key={movie.id} movie={movie} onOpen={onOpen} />
       ))}
     </MovieRow>
-  ))
+  )
+
+  return (
+    <>
+      {(status || because.length > 0) &&
+        row(`Because You Loved ${fav.title}`, because, { status, error: loaded?.error, onRetry: () => setAttempt((n) => n + 1) })}
+      {genrePicks.length > 0 && row(`More ${genre} for You`, genrePicks)}
+    </>
+  )
 }
 
 // What the user's friends have been ranking lately. With no friends yet, the
@@ -266,7 +314,7 @@ function FriendsRow({ onOpen, onNavigate, inList, tiers }) {
 
   return (
     <MovieRow
-      title="Friends Are Watching"
+      title="Recently Ranked by Friends"
       icon="people"
       status={status !== 'ready' || !loaded ? 'loading' : loaded.error ? 'error' : undefined}
       error={loaded?.error}
@@ -292,7 +340,7 @@ function FriendsRow({ onOpen, onNavigate, inList, tiers }) {
           friends.length === 0 ? (
             <div className="row-unlock">
               <div>
-                <strong>Add friends to see what they're watching</strong>
+                <strong>Add friends to see what they're ranking</strong>
                 <span>Find people by username and compare rankings once you're connected.</span>
               </div>
               <button type="button" className="btn btn--accent btn--sm" onClick={() => onNavigate('friends')}>Find friends</button>

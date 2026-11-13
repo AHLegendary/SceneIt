@@ -1,6 +1,6 @@
 // Data for the homepage rows that aren't already covered by another module:
 // Trending Now (TMDb through our API, with the catalog as a fallback) and
-// Friends Are Watching (friends' most recent rankings, readable under RLS
+// Recently Ranked by Friends (friends' most recent rankings, readable under RLS
 // because accepted friends can see each other's lists).
 
 import { getCatalog, movieFromDb } from './localStore.js'
