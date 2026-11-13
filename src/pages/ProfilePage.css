@@ -247,6 +247,11 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   .profile-hero__tools { top: 10px; right: 10px; }
   .profile-hero__tools .btn span { display: none; }
 }
+/* Narrow: name and bio take the rest of the avatar's row; Edit profile wraps below. */
+@media (max-width: 560px) {
+  .profile-hero__body { padding: 70px 18px 18px; gap: 14px; }
+  .profile-hero__who { flex-basis: calc(100% - 110px); }
+}
 
 .uprofile__identity { display: flex; align-items: center; gap: 14px; }
 .uprofile__avatar {
