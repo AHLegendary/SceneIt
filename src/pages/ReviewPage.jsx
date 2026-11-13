@@ -5,7 +5,7 @@ import Icon from '../components/Icon.jsx'
 import ReportControl from '../components/ReportControl.jsx'
 import ReviewCard from '../components/ReviewCard.jsx'
 import { scoreTiers } from '../features/ranking/scores.js'
-import { goBack } from '../lib/navMemory.js'
+import { cancelScrollRestore, goBack } from '../lib/navMemory.js'
 import {
   addComment,
   deleteComment,
@@ -37,7 +37,7 @@ function toLogin() {
 //
 // The username in the address is only for readable links: what's shown comes
 // from the review itself.
-export default function ReviewPage({ reviewId, account, onOpen }) {
+export default function ReviewPage({ reviewId, commentId = null, account, onOpen }) {
   const viewerId = account.user?.id ?? null
   const signedIn = account.status === 'ready'
   const accountLoading = account.status === 'loading'
@@ -47,6 +47,9 @@ export default function ReviewPage({ reviewId, account, onOpen }) {
   const [attempt, setAttempt] = useState(0)
   // { status: 'loading' | 'ready' | 'error', list }
   const [thread, setThread] = useState({ status: 'loading', list: [] })
+
+  // The comment whose highlight has already faded (see the effect below).
+  const [flashedId, setFlashedId] = useState(null)
 
   const author = load.page?.author ?? null
   const authorTiers = useUserTiers(author?.id ?? null)
@@ -74,6 +77,24 @@ export default function ReviewPage({ reviewId, account, onOpen }) {
       current = false
     }
   }, [reviewId, viewerId, accountLoading, attempt])
+
+  // Opened from a comment link (a notification): once the comments are on the
+  // page, scroll to that comment and flash it for a moment. This is a
+  // deliberate scroll, so it first cancels any saved-position restore that is
+  // still waiting for the page to grow (navMemory), or that would win later.
+  // If the comment isn't there (deleted since the link was made), the page
+  // just shows normally.
+  useEffect(() => {
+    if (!commentId || thread.status !== 'ready') return undefined
+    const element = document.getElementById(`comment-${commentId}`)
+    if (!element) return undefined
+    cancelScrollRestore()
+    element.scrollIntoView({ block: 'center' })
+    const timer = setTimeout(() => setFlashedId(commentId), 2000)
+    return () => clearTimeout(timer)
+  }, [commentId, thread.status])
+  // Highlighted from when the comments show until the timer above fires.
+  const flashId = commentId && thread.status === 'ready' && flashedId !== commentId ? commentId : null
 
   const retry = () => {
     setLoad({ status: 'loading', page: null })
@@ -203,6 +224,7 @@ export default function ReviewPage({ reviewId, account, onOpen }) {
           viewerId={viewerId}
           reviewAuthorId={review.userId}
           canWrite={signedIn}
+          flashId={flashId}
           onAdd={add}
           onEdit={edit}
           onDelete={remove}

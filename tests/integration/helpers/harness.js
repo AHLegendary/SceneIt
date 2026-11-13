@@ -42,6 +42,8 @@ export async function launch({ hash = '', as = null, backend = new FakeBackend()
   friends.startFriends()
   const blends = await import('../../../src/features/blends/blends.js')
   blends.startBlends()
+  const notifications = await import('../../../src/lib/notifications.js')
+  notifications.startNotifications()
   const { default: App } = await import('../../../src/App.jsx')
 
   const user = userEvent.setup()

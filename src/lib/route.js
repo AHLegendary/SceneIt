@@ -15,6 +15,9 @@ function decode(part) {
 //   #/u/reil_99              -> { page: 'user', username: 'reil_99' }
 //   #/u/reil_99/my-list      -> { page: 'user-list', username: 'reil_99' }
 //   #/u/reil_99/review/<id>  -> { page: 'review', username: 'reil_99', reviewId: '<id>' }
+//   #/u/reil_99/review/<id>/c/<commentId>
+//                            -> { page: 'review', username: 'reil_99', reviewId: '<id>', commentId: '<commentId>' }
+//                               (the same page, scrolled to that comment; notifications link here)
 //   #/blends/abc             -> { page: 'blend', username: null, blendId: 'abc' }
 //   #/community              -> { page: 'community', username: null, tab: 'reviews' }
 //   #/community/leaderboard  -> { page: 'community', username: null, tab: 'leaderboard' }
@@ -32,6 +35,15 @@ export function parseHash(hash) {
     const blendId = decode(blendMatch[1])
     if (blendId === null) return { page: DEFAULT_PAGE, username: null }
     return { page: 'blend', username: null, blendId }
+  }
+
+  const commentMatch = raw.match(/^u\/([^/?#]+)\/review\/([^/?#]+)\/c\/([^/?#]+)$/)
+  if (commentMatch) {
+    const username = decode(commentMatch[1])
+    const reviewId = decode(commentMatch[2])
+    const commentId = decode(commentMatch[3])
+    if (username === null || reviewId === null || commentId === null) return { page: DEFAULT_PAGE, username: null }
+    return { page: 'review', username, reviewId, commentId }
   }
 
   const reviewMatch = raw.match(/^u\/([^/?#]+)\/review\/([^/?#]+)$/)
@@ -72,6 +84,11 @@ export function userListHref(username) {
 // Link to the discussion page of a review: the review, then its comments.
 export function reviewHref(username, reviewId) {
   return `#/u/${encodeURIComponent(username)}/review/${encodeURIComponent(reviewId)}`
+}
+
+// Link to one comment (or reply) on a review: the same page as reviewHref, scrolled to it.
+export function reviewCommentHref(username, reviewId, commentId) {
+  return `${reviewHref(username, reviewId)}/c/${encodeURIComponent(commentId)}`
 }
 
 // Link to the Community page: its Reviews tab (the default) or its Leaderboard tab.

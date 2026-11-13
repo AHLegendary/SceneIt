@@ -17,12 +17,13 @@ import { userHref } from '../lib/route.js'
 //   onAdd           async (text, parentId | null)
 //   onEdit          async (comment, text)
 //   onDelete        async (comment)
+//   flashId         id of a comment to highlight for a moment (a notification link), or null
 //   onReport        async (comment, reason)
 //   onLogin         what the "Log in" button does when logged out
 //
 // The handlers throw an Error with a readable message on failure; the form
 // that called them shows it and keeps what was typed.
-export default function Comments({ comments, viewerId, reviewAuthorId, canWrite, onAdd, onEdit, onDelete, onReport, onLogin }) {
+export default function Comments({ comments, viewerId, reviewAuthorId, canWrite, flashId = null, onAdd, onEdit, onDelete, onReport, onLogin }) {
   const thread = threadComments(comments)
 
   return (
@@ -54,6 +55,7 @@ export default function Comments({ comments, viewerId, reviewAuthorId, canWrite,
                 reviewAuthorId={reviewAuthorId}
                 canWrite={canWrite}
                 canReply
+                flashing={flashId === comment.id}
                 onAdd={onAdd}
                 onEdit={onEdit}
                 onDelete={onDelete}
@@ -68,6 +70,7 @@ export default function Comments({ comments, viewerId, reviewAuthorId, canWrite,
                         viewerId={viewerId}
                         reviewAuthorId={reviewAuthorId}
                         canWrite={canWrite}
+                        flashing={flashId === reply.id}
                         onAdd={onAdd}
                         onEdit={onEdit}
                         onDelete={onDelete}
@@ -95,7 +98,7 @@ function formatDate(iso) {
 //   Edit    your own
 //   Delete  your own, or any comment on a review you wrote
 //   Report  other people's, when logged in
-function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false, onAdd, onEdit, onDelete, onReport }) {
+function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false, flashing = false, onAdd, onEdit, onDelete, onReport }) {
   // 'view' | 'edit' | 'reply' | 'delete'
   const [mode, setMode] = useState('view')
   const [error, setError] = useState(null)
@@ -117,7 +120,8 @@ function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false
   }
 
   return (
-    <article className="comment" aria-label={`Comment by ${name}`}>
+    // The id is what a notification link scrolls to (#/u/<name>/review/<id>/c/<commentId>).
+    <article id={`comment-${comment.id}`} className={flashing ? 'comment is-flash' : 'comment'} aria-label={`Comment by ${name}`}>
       <Avatar userId={comment.userId} username={comment.username} size={32} />
       <div className="comment__main">
         <header className="comment__head">

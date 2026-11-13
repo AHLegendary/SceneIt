@@ -59,6 +59,13 @@ function cancelRestore() {
   stopRestoring?.()
 }
 
+// Stops a scroll restore that is still waiting for its page to grow. A page
+// that scrolls somewhere on purpose (a link to one comment) calls this first,
+// so an old saved position can't pull it away afterwards.
+export function cancelScrollRestore() {
+  cancelRestore()
+}
+
 // Scrolls to y as soon as the page is tall enough, or as far as it gets after
 // a few seconds. If you start scrolling yourself in the meantime, it gives up.
 function restoreScroll(y) {

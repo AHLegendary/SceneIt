@@ -165,7 +165,7 @@ function App() {
         ) : page === 'user' ? (
           <UserProfilePage username={route.username} account={account} onOpen={openDetails} />
         ) : page === 'review' ? (
-          <ReviewPage key={route.reviewId} reviewId={route.reviewId} account={account} onOpen={openDetails} />
+          <ReviewPage key={route.reviewId} reviewId={route.reviewId} commentId={route.commentId ?? null} account={account} onOpen={openDetails} />
         ) : page === 'user-list' ? (
           <UserListPage username={route.username} account={account} onOpen={openDetails} />
         ) : page === 'my-list' ? (
