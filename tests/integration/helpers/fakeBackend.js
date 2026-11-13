@@ -94,6 +94,8 @@ export class FakeBackend {
     this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at }
     this.blends = [] // { id, owner_id, created_at }
     this.blend_members = [] // { blend_id, user_id, joined_at }
+    this.blend_invites = [] // { id, blend_id, inviter_id, invitee_id, status, created_at, expires_at }
+    this.notifications = [] // { id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at }
     this.buckets = new Map()
     this.files = new Map()
     this.validTokens = new Set()
@@ -227,7 +229,9 @@ export class FakeBackend {
   }
 
   addFriendship(a, b, status = 'accepted') {
-    this.friendships.push({ requester_id: a.id, addressee_id: b.id, status, created_at: this.now() })
+    const row = { requester_id: a.id, addressee_id: b.id, status, created_at: this.now() }
+    this.friendships.push(row)
+    this.onFriendshipInserted(row)
   }
 
   // A blend owned by `owner` with these other members already joined. Returns its id.
@@ -237,6 +241,31 @@ export class FakeBackend {
     this.blends.push({ id, owner_id: owner.id, created_at: this.now() })
     for (const user of [owner, ...members]) this.blend_members.push({ blend_id: id, user_id: user.id, joined_at: this.now() })
     return id
+  }
+
+  // An invite to a seeded blend, as invite_to_blend would insert it (the
+  // trigger notifies the invitee). Returns the invite row.
+  addBlendInvite(blendId, inviter, invitee, { status = 'pending', expiresAt } = {}) {
+    const stamp = this.now()
+    const invite = {
+      id: this.id(),
+      blend_id: blendId,
+      inviter_id: inviter.id,
+      invitee_id: invitee.id,
+      status,
+      created_at: stamp,
+      expires_at: expiresAt ?? new Date(Date.now() + 7 * 86400000).toISOString(),
+    }
+    this.blend_invites.push(invite)
+    this.onBlendInviteInserted(invite)
+    return invite
+  }
+
+  // Accept, decline or expire an invite (what respond_to_blend_invite and the
+  // blend-full trigger do to the row). The trigger marks its notification read.
+  setBlendInviteStatus(invite, status) {
+    invite.status = status
+    this.onBlendInviteStatusChanged(invite)
   }
 
   // Ranks movies for a user, in order, each into its category (default 'loved').
@@ -482,6 +511,7 @@ export class FakeBackend {
     const stamp = this.now()
     const comment = { id: this.id(), review_id: review.id, user_id: user.id, parent_id: parentId, body, created_at: stamp, updated_at: stamp }
     this.review_comments.push(comment)
+    this.onCommentInserted(comment)
     return comment
   }
 
@@ -493,6 +523,140 @@ export class FakeBackend {
     const review = { id: this.id(), user_id: user.id, movie_id: tmdbId, body, is_spoiler: isSpoiler, created_at: stamp, updated_at: stamp }
     this.reviews.push(review)
     return review
+  }
+
+  // ---------------------------------------------------------------- notifications
+  // Ports of 20261117000000_notifications.sql.
+
+  // The recipient's row, as the trigger functions insert it.
+  addNotification(recipientId, actorId, type, targets = {}) {
+    const row = {
+      id: this.id(),
+      recipient_id: recipientId,
+      actor_id: actorId,
+      type,
+      review_id: targets.review_id ?? null,
+      comment_id: targets.comment_id ?? null,
+      blend_invite_id: targets.blend_invite_id ?? null,
+      created_at: this.now(),
+      seen_at: null,
+      read_at: null,
+    }
+    this.notifications.push(row)
+    return row
+  }
+
+  // notify_on_comment (after insert on review_comments).
+  onCommentInserted(comment) {
+    const reviewAuthor = this.reviews.find((r) => r.id === comment.review_id)?.user_id ?? null
+    const targets = { review_id: comment.review_id, comment_id: comment.id }
+    if (comment.parent_id === null) {
+      if (reviewAuthor !== null && reviewAuthor !== comment.user_id) this.addNotification(reviewAuthor, comment.user_id, 'comment', targets)
+      return
+    }
+    const parentAuthor = this.review_comments.find((c) => c.id === comment.parent_id)?.user_id ?? null
+    if (parentAuthor !== null && parentAuthor !== comment.user_id) this.addNotification(parentAuthor, comment.user_id, 'reply', targets)
+    if (reviewAuthor !== null && reviewAuthor !== comment.user_id && reviewAuthor !== parentAuthor) {
+      this.addNotification(reviewAuthor, comment.user_id, 'comment', targets)
+    }
+  }
+
+  // notify_on_friend_request (after insert on friendships).
+  onFriendshipInserted(row) {
+    if (row.status === 'pending') this.addNotification(row.addressee_id, row.requester_id, 'friend_request')
+  }
+
+  // resolve_friend_request_notifications (after update or delete on friendships).
+  onFriendshipChanged(row) {
+    const stamp = this.now()
+    for (const n of this.notifications) {
+      if (n.type === 'friend_request' && n.actor_id === row.requester_id && n.recipient_id === row.addressee_id) {
+        n.read_at ??= stamp
+        n.seen_at ??= stamp
+      }
+    }
+  }
+
+  // notify_on_blend_invite (after insert on blend_invites).
+  onBlendInviteInserted(invite) {
+    this.addNotification(invite.invitee_id, invite.inviter_id, 'blend_invite', { blend_invite_id: invite.id })
+  }
+
+  // resolve_blend_invite_notifications (after update of status, when no longer pending).
+  onBlendInviteStatusChanged(invite) {
+    if (invite.status === 'pending') return
+    const stamp = this.now()
+    for (const n of this.notifications) {
+      if (n.type === 'blend_invite' && n.blend_invite_id === invite.id) {
+        n.read_at ??= stamp
+        n.seen_at ??= stamp
+      }
+    }
+  }
+
+  // notification_available: the one place that says whether a target can still be opened.
+  notificationAvailable(uid, n) {
+    if (n.type === 'comment' || n.type === 'reply') {
+      const comment = this.review_comments.find((c) => c.id === n.comment_id && c.review_id === n.review_id)
+      const review = comment && this.reviews.find((r) => r.id === comment.review_id)
+      // TODO(moderation): also require the comment and its review to not be hidden.
+      return Boolean(review) && this.canView(uid, review.user_id)
+    }
+    if (n.type === 'friend_request') {
+      return this.friendships.some((f) => f.requester_id === n.actor_id && f.addressee_id === n.recipient_id && f.status === 'pending')
+    }
+    if (n.type === 'blend_invite') {
+      const invite = this.blend_invites.find((i) => i.id === n.blend_invite_id)
+      return Boolean(invite) && invite.status === 'pending' && new Date(invite.expires_at).getTime() > Date.now()
+    }
+    return false
+  }
+
+  getNotifications(uid, limit = 30) {
+    if (!uid) throw pgError('Not signed in', '28000')
+    const take = Math.max(1, Math.min(limit ?? 30, 100))
+    return this.notifications
+      .filter((n) => n.recipient_id === uid)
+      .sort((a, b) => (a.created_at === b.created_at ? (a.id < b.id ? 1 : -1) : a.created_at < b.created_at ? 1 : -1))
+      .slice(0, take)
+      .map((n) => {
+        const review = this.reviews.find((r) => r.id === n.review_id)
+        const comment = this.review_comments.find((c) => c.id === n.comment_id)
+        const visible = Boolean(review) && this.canView(uid, review.user_id)
+        const available = this.notificationAvailable(uid, n)
+        return {
+          id: n.id,
+          type: n.type,
+          created_at: n.created_at,
+          seen_at: n.seen_at,
+          read_at: n.read_at,
+          actor_username: this.profiles.find((p) => p.id === n.actor_id)?.username ?? null,
+          review_id: n.review_id,
+          comment_id: n.comment_id,
+          review_author_username: visible ? this.profiles.find((p) => p.id === review.user_id)?.username ?? null : null,
+          movie_title: visible ? this.movies.find((m) => m.tmdb_id === review.movie_id)?.title ?? null : null,
+          preview: available && comment ? [...comment.body].slice(0, 120).join('') : null,
+          available,
+        }
+      })
+  }
+
+  openNotification(uid, id) {
+    if (!uid) throw pgError('Not signed in', '28000')
+    const n = this.notifications.find((row) => row.id === id && row.recipient_id === uid)
+    if (!n) return []
+    const stamp = this.now()
+    n.read_at ??= stamp
+    n.seen_at ??= stamp
+    const review = this.reviews.find((r) => r.id === n.review_id)
+    const visible = Boolean(review) && this.canView(uid, review.user_id)
+    return [{
+      available: this.notificationAvailable(uid, n),
+      type: n.type,
+      review_id: n.review_id,
+      comment_id: n.comment_id,
+      review_author_username: visible ? this.profiles.find((p) => p.id === review.user_id)?.username ?? null : null,
+    }]
   }
 
   // ---------------------------------------------------------------- blends
@@ -558,12 +722,15 @@ export class FakeBackend {
       (f) => (f.requester_id === uid && f.addressee_id === other) || (f.requester_id === other && f.addressee_id === uid),
     )
     if (!existing) {
-      this.friendships.push({ requester_id: uid, addressee_id: other, status: 'pending', created_at: this.now() })
+      const row = { requester_id: uid, addressee_id: other, status: 'pending', created_at: this.now() }
+      this.friendships.push(row)
+      this.onFriendshipInserted(row)
       return 'sent'
     }
     if (existing.status === 'accepted') return 'already_friends'
     if (existing.requester_id === uid) return 'already_sent'
     existing.status = 'accepted'
+    this.onFriendshipChanged(existing) // an update, not an insert: nobody is notified
     return 'accepted'
   }
 
@@ -868,7 +1035,7 @@ class FakeClient {
           return { data: b.sendFriendRequest(uid, args.p_user_id), error: null }
         case 'search_users':
           return { data: b.searchUsers(uid, args.q), error: null }
-        // Movie Blend: seeded blends and their members (addBlend). Invites aren't simulated.
+        // Movie Blend: seeded blends and their members (addBlend). The invite lists stay empty; addBlendInvite only drives notifications.
         case 'get_my_blends':
           return { data: b.getMyBlends(uid), error: null }
         case 'get_blend_members':
@@ -876,6 +1043,10 @@ class FakeClient {
         case 'get_my_blend_invites':
         case 'get_blend_sent_invites':
           return { data: [], error: null }
+        case 'get_notifications':
+          return { data: b.getNotifications(uid, args.p_limit ?? 30), error: null }
+        case 'open_notification':
+          return { data: b.openNotification(uid, args.p_id), error: null }
         case 'get_review_feed':
           return { data: b.getReviewFeed(uid, { scope: args.p_scope, sort: args.p_sort, limit: args.p_limit, offset: args.p_offset }), error: null }
         case 'get_review_comments':
@@ -1053,6 +1224,8 @@ const GRANTS = {
   reviews: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
   review_comments: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
   reports: { anon: [], authenticated: ['insert'] },
+  // 20261117000000_notifications.sql: read yours, and update (only seen_at / read_at).
+  notifications: { anon: [], authenticated: ['select', 'update'] },
 }
 
 // Which table an embedded select (movies(...)) points at, per table.
@@ -1142,6 +1315,8 @@ class Query {
       }
       case 'reports': return false // nobody reads reports through the API
       case 'blend_members': return b.isBlendMember(ctx.uid, row.blend_id)
+      case 'blend_invites': return ctx.uid !== null && (row.inviter_id === ctx.uid || row.invitee_id === ctx.uid)
+      case 'notifications': return ctx.uid !== null && row.recipient_id === ctx.uid
       case 'movies': return true
       case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)
@@ -1231,6 +1406,12 @@ class Query {
         if (this.table === 'profiles') return row.id === ctx.uid
         // addressee accepts: only `status`, and only to 'accepted'
         if (this.table === 'friendships') return row.addressee_id === ctx.uid && Object.keys(this.patch).every((k) => k === 'status') && this.patch.status === 'accepted'
+        // Column grant: the recipient may change seen_at and read_at, nothing else.
+        if (this.table === 'notifications') {
+          if (ctx.uid === null || row.recipient_id !== ctx.uid) return false
+          if (!Object.keys(this.patch).every((k) => k === 'seen_at' || k === 'read_at')) throw pgError('permission denied for table notifications', '42501')
+          return true
+        }
         // Column grants: an author may change only the text and the spoiler flag.
         if (this.table === 'reviews') {
           if (ctx.uid === null || row.user_id !== ctx.uid) return false
@@ -1247,6 +1428,7 @@ class Query {
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
       for (const row of hit) Object.assign(row, clone(this.patch))
       if (this.table === 'profiles') this.checkProfiles(hit)
+      if (this.table === 'friendships') for (const row of hit) b.onFriendshipChanged(row)
       if (this.table === 'reviews') {
         this.checkReviews(hit)
         for (const row of hit) row.updated_at = b.now()
@@ -1269,6 +1451,7 @@ class Query {
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
       const keep = this.rowsOfTable.filter((r) => !hit.includes(r))
       b[this.table].splice(0, b[this.table].length, ...keep)
+      if (this.table === 'friendships') for (const row of hit) b.onFriendshipChanged(row)
       // on delete cascade: a review takes its comments with it, a comment its replies.
       if (this.table === 'reviews') {
         const gone = new Set(hit.map((r) => r.id))
@@ -1310,6 +1493,7 @@ class Query {
       }
       saved.created_at = saved.updated_at = b.now()
       b.review_comments.push(saved)
+      b.onCommentInserted(saved)
       return out([saved])
     }
 

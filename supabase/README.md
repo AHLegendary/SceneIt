@@ -10,6 +10,7 @@
 - `migrations/20261113000100_reviews_grants.sql`: table grants for the three tables above (without them the API can't reach them)
 - `migrations/20261114000000_review_discussion.sql`: signed-out visitors can read public reviews and comments, and `get_review_comments` (a review's comments with commenters' usernames)
 - `migrations/20261115000000_review_feed.sql`: `get_review_feed`, a page of reviews for the Community page (everyone or friends, newest or most discussed)
+- `migrations/20261117000000_notifications.sql`: `notifications` (comments, replies, friend requests and blend invites, created by triggers), `notification_available`, `get_notifications` and `open_notification`
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -41,6 +42,7 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
 | `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters. Only for movies the user has ranked; un-ranking deletes it | same as the author's profile (signed-out visitors too, for public profiles) | the author; edits can change only `body` and `is_spoiler` |
 | `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review (use `get_review_comments` to also get usernames) | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
+| `notifications` | `(id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at)`. `type` is `comment`, `reply`, `friend_request` or `blend_invite`. The targets have no foreign keys, so a notification outlives a deleted comment, review or invite. Friend requests are identified by `(actor_id, recipient_id)` | the recipient | the recipient may set `seen_at` and `read_at` (nothing else); rows are created only by triggers |
 | `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
@@ -91,6 +93,18 @@ await supabase.rpc('get_review_comments', { p_review_id: reviewId })
 // limit is capped at 200. Open to signed-out visitors (public profiles only).
 // Use src/lib/reviewFeed.js from the UI.
 await supabase.rpc('get_review_feed', { p_scope: 'everyone', p_sort: 'recent', p_limit: 20, p_offset: 0 })
+
+// Notifications (the bell). Rows come from triggers; the app only reads them
+// and sets seen_at / read_at. Whether a target still exists is decided in one SQL
+// function, notification_available, which moderation will extend.
+// get_notifications: newest first, p_limit 1 to 100 (default 30). Each row:
+//   { id, type, created_at, seen_at, read_at, actor_username, review_id, comment_id,
+//     review_author_username, movie_title, preview, available }
+// preview (first 120 characters of the comment) is null once it isn't available.
+await supabase.rpc('get_notifications', { p_limit: 30 })
+// A click: marks it read and seen, and checks availability right now. Returns no row if
+// it isn't yours: [{ available, type, review_id, comment_id, review_author_username }]
+await supabase.rpc('open_notification', { p_id: notificationId })
 
 // Movie Blend. Use src/features/blends/blends.js from the UI instead of calling these.
 // Failures raise short messages like 'blend_full' or 'invite_expired'.
