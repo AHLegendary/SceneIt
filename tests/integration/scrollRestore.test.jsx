@@ -7,6 +7,7 @@ import { FakeBackend, goTo, launch, ready, scrollToEnd, screen, waitFor } from '
 // height is whatever `pageHeight` says.
 let scrollY
 let pageHeight
+let scrolledTo // elements scrollIntoView was called on
 
 function mockScrolling() {
   scrollY = 0
@@ -17,6 +18,13 @@ function mockScrolling() {
   })
   Object.defineProperty(window, 'scrollY', { configurable: true, get: () => scrollY })
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(() => pageHeight)
+  // jsdom has no scrollIntoView. Pretend an element sits 500px down the page.
+  scrolledTo = []
+  Element.prototype.scrollIntoView = vi.fn(function scrollIntoView(options) {
+    scrolledTo.push({ id: this.id, options })
+    scrollY = 500
+    window.dispatchEvent(new Event('scroll'))
+  })
 }
 // The user scrolls.
 function scrollBy(y) {
@@ -168,5 +176,63 @@ describe('going back', () => {
     await new Promise((resolve) => setTimeout(resolve, 200))
 
     expect(scrollY).toBe(0)
+  })
+})
+
+describe('opening a link to one comment', () => {
+  let review
+  let top
+  let reply
+
+  beforeEach(() => {
+    review = backend.reviews[0]
+    top = backend.addComment(alice, review, { body: 'First thoughts.' })
+    reply = backend.addComment(bob, review, { body: 'A reply.', parentId: top.id })
+    backend.addComment(alice, review, { body: 'Something else.' })
+  })
+
+  const link = (comment) => `#/u/bob/review/${review.id}/c/${comment.id}`
+  const flashing = () => [...document.querySelectorAll('.is-flash')].map((el) => el.id)
+
+  it('scrolls to the comment and highlights it', async () => {
+    await open('#/u/bob')
+    scrollBy(1234)
+    await goTo(link(top))
+
+    await waitFor(() => expect(scrolledTo).toEqual([{ id: `comment-${top.id}`, options: { block: 'center' } }]))
+    expect(flashing()).toEqual([`comment-${top.id}`])
+  })
+
+  it('does the same for a reply', async () => {
+    await open(link(reply))
+
+    await waitFor(() => expect(scrolledTo.map((t) => t.id)).toEqual([`comment-${reply.id}`]))
+    expect(flashing()).toEqual([`comment-${reply.id}`])
+  })
+
+  it('shows the page normally when the comment is gone', async () => {
+    await open(`#/u/bob/review/${review.id}/c/00000000-0000-4000-8000-0000000fffff`)
+
+    await screen.findByText('First thoughts.', { selector: '.comment__body' })
+    expect(scrolledTo).toEqual([])
+    expect(flashing()).toEqual([])
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('is not pulled away by a saved scroll position that is still waiting to be restored', async () => {
+    const { user } = await open(link(top))
+    await waitFor(() => expect(scrolledTo).toHaveLength(1))
+    scrollBy(900) // the reader scrolls on
+    await goTo('#/home')
+
+    pageHeight = 500 // too short to restore 900 yet, so the restore waits
+    window.history.back()
+    await waitFor(() => expect(scrolledTo).toHaveLength(2)) // comments loaded, scrolled to the comment
+    expect(scrollY).toBe(500)
+
+    pageHeight = 10000 // now the page is tall enough
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(scrollY).toBe(500) // the restore was cancelled, not applied on top
+    expect(user).toBeTruthy()
   })
 })

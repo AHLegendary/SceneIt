@@ -1265,6 +1265,7 @@ class Query {
   delete() { this.op = 'delete'; return this }
 
   eq(col, value) { this.filters.push((r) => r[col] === value); return this }
+  is(col, value) { this.filters.push((r) => r[col] === value); return this }
   in(col, values) { this.filters.push((r) => values.includes(r[col])); return this }
   ilike(col, pattern) {
     const re = likeToRegExp(pattern)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { blendHref, communityHref, parseHash, reviewHref, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
+import { blendHref, communityHref, parseHash, reviewCommentHref, reviewHref, userHref, userListHref, DEFAULT_PAGE } from '../../src/lib/route.js'
 
 describe('parseHash', () => {
   it('reads a sidebar page', () => {
@@ -105,5 +105,28 @@ describe('Community routes', () => {
     expect(communityHref('leaderboard')).toBe('#/community/leaderboard')
     expect(parseHash(communityHref('leaderboard')).tab).toBe('leaderboard')
     expect(parseHash(communityHref()).tab).toBe('reviews')
+  })
+})
+
+describe('comment deep links', () => {
+  it('reads a link to one comment', () => {
+    expect(parseHash('#/u/reil_99/review/abc/c/def')).toEqual({ page: 'review', username: 'reil_99', reviewId: 'abc', commentId: 'def' })
+  })
+  it('leaves commentId out of a plain review link', () => {
+    expect(parseHash('#/u/reil_99/review/abc').commentId).toBeUndefined()
+  })
+  it('decodes all three parts', () => {
+    expect(parseHash('#/u/a%5Fb/review/x%2Fy/c/p%2Fq')).toEqual({ page: 'review', username: 'a_b', reviewId: 'x/y', commentId: 'p/q' })
+  })
+  it('falls back for malformed comment paths', () => {
+    expect(parseHash('#/u/reil_99/review/abc/c').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/abc/c/').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/abc/c/d/e').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/abc/x/def').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u/reil_99/review/abc/c/%E0%A4%A').page).toBe(DEFAULT_PAGE)
+  })
+  it('builds links that parse back', () => {
+    const href = reviewCommentHref('a_b c', 'id/with slash', 'c/1')
+    expect(parseHash(href)).toEqual({ page: 'review', username: 'a_b c', reviewId: 'id/with slash', commentId: 'c/1' })
   })
 })
