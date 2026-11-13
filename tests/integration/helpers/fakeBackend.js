@@ -92,6 +92,8 @@ export class FakeBackend {
     this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
     this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at }
     this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at }
+    this.blends = [] // { id, owner_id, created_at }
+    this.blend_members = [] // { blend_id, user_id, joined_at }
     this.buckets = new Map()
     this.files = new Map()
     this.validTokens = new Set()
@@ -226,6 +228,15 @@ export class FakeBackend {
 
   addFriendship(a, b, status = 'accepted') {
     this.friendships.push({ requester_id: a.id, addressee_id: b.id, status, created_at: this.now() })
+  }
+
+  // A blend owned by `owner` with these other members already joined. Returns its id.
+  // Seeding skips create_blend's checks (15 rankings, friends only, 5 members).
+  addBlend(owner, members = []) {
+    const id = this.id()
+    this.blends.push({ id, owner_id: owner.id, created_at: this.now() })
+    for (const user of [owner, ...members]) this.blend_members.push({ blend_id: id, user_id: user.id, joined_at: this.now() })
+    return id
   }
 
   // Ranks movies for a user, in order, each into its category (default 'loved').
@@ -482,6 +493,43 @@ export class FakeBackend {
     const review = { id: this.id(), user_id: user.id, movie_id: tmdbId, body, is_spoiler: isSpoiler, created_at: stamp, updated_at: stamp }
     this.reviews.push(review)
     return review
+  }
+
+  // ---------------------------------------------------------------- blends
+  // Ports of get_my_blends and get_blend_members (20261104000000_movie_blends.sql).
+
+  isBlendMember(uid, blendId) {
+    return uid !== null && this.blend_members.some((m) => m.blend_id === blendId && m.user_id === uid)
+  }
+
+  getMyBlends(uid) {
+    const username = (id) => this.profiles.find((p) => p.id === id)?.username ?? null
+    return this.blends
+      .filter((blend) => this.isBlendMember(uid, blend.id))
+      .map((blend) => {
+        const members = this.blend_members.filter((m) => m.blend_id === blend.id)
+        return {
+          blend_id: blend.id,
+          owner_id: blend.owner_id,
+          owner_username: username(blend.owner_id),
+          member_usernames: members.map((m) => username(m.user_id)),
+          member_count: members.length,
+          joined_at: members.find((m) => m.user_id === uid).joined_at,
+        }
+      })
+  }
+
+  getBlendMembers(uid, blendId) {
+    if (!this.isBlendMember(uid, blendId)) return []
+    const owner = this.blends.find((b) => b.id === blendId)?.owner_id
+    return this.blend_members
+      .filter((m) => m.blend_id === blendId)
+      .map((m) => ({
+        user_id: m.user_id,
+        username: this.profiles.find((p) => p.id === m.user_id)?.username ?? null,
+        is_owner: m.user_id === owner,
+        joined_at: m.joined_at,
+      }))
   }
 
   getFriendships(uid) {
@@ -820,9 +868,13 @@ class FakeClient {
           return { data: b.sendFriendRequest(uid, args.p_user_id), error: null }
         case 'search_users':
           return { data: b.searchUsers(uid, args.q), error: null }
-        // Movie Blend isn't simulated: everyone just has no blends and no invites.
+        // Movie Blend: seeded blends and their members (addBlend). Invites aren't simulated.
         case 'get_my_blends':
+          return { data: b.getMyBlends(uid), error: null }
+        case 'get_blend_members':
+          return { data: b.getBlendMembers(uid, args.p_blend_id), error: null }
         case 'get_my_blend_invites':
+        case 'get_blend_sent_invites':
           return { data: [], error: null }
         case 'get_review_feed':
           return { data: b.getReviewFeed(uid, { scope: args.p_scope, sort: args.p_sort, limit: args.p_limit, offset: args.p_offset }), error: null }
@@ -1089,6 +1141,7 @@ class Query {
         return review ? b.canView(ctx.uid, review.user_id) : false
       }
       case 'reports': return false // nobody reads reports through the API
+      case 'blend_members': return b.isBlendMember(ctx.uid, row.blend_id)
       case 'movies': return true
       case 'movie_ratings': return false // only the service role (handled above) reads it
       default: throw new Error(`fake: no RLS policy for table ${this.table}`)

@@ -28,7 +28,7 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
 `send_friend_request`, `search_users`, `get_leaderboard`, `get_review_comments`,
-`get_review_feed`) and
+`get_review_feed`, plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
 the policies, constraints and cascades of `reviews`, `review_comments` and `reports`.
 For those tables it also enforces table privileges per role (the `GRANTS` map in
 `fakeBackend.js`), because a missing grant makes the API refuse the request before
@@ -85,6 +85,7 @@ await user.click(await screen.findByRole('button', { name: /^Rerank / }))
 | `leaderboard.test.jsx` | Periods, sorting, podium |
 | `home.test.jsx` | Hero, trending, community, picks, friends |
 | `forYou.test.jsx` | Unlock, picks, TMDb and friends' signals |
+| `blendRecs.test.jsx` | Blend recommendations: group picks, vetoes, TMDb discoveries, privacy, failures |
 
 ## Known gaps
 

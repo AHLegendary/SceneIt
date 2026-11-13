@@ -795,3 +795,44 @@ describe('unknown routes', () => {
     expect((await call('GET', '/api/movies')).status).toBe(404)
   })
 })
+
+describe('GET /api/blends/recommendations', () => {
+  const ids = MOVIES.slice(0, 3).map((m) => m.id)
+  let blendId
+  beforeEach(() => {
+    backend.seedList(alice, ids)
+    backend.seedList(bob, [ids[0]])
+    blendId = backend.addBlend(alice, [bob])
+  })
+  const recs = (token, id = blendId) => call('GET', `/api/blends/recommendations?id=${id}`, { token })
+
+  it('needs a valid token', async () => {
+    expect((await recs(null)).status).toBe(401)
+    expect((await recs('not-a-token')).status).toBe(401)
+  })
+
+  it('rejects a malformed blend id and other methods', async () => {
+    expect((await recs(tokenFor(alice), 'nope')).status).toBe(400)
+    expect((await call('POST', `/api/blends/recommendations?id=${blendId}`, { token: tokenFor(alice) })).status).toBe(405)
+  })
+
+  it("answers blend_not_found to someone who isn't a member, and for a blend that doesn't exist", async () => {
+    const cara = backend.addUser({ username: 'cara' })
+    expect(await recs(tokenFor(cara))).toEqual({ status: 404, body: { error: 'blend_not_found' } })
+    expect((await recs(tokenFor(alice), '00000000-0000-4000-8000-999999999999')).status).toBe(404)
+  })
+
+  it('returns only group-level facts: no user ids, usernames or per-member rankings', async () => {
+    const { status, body } = await recs(tokenFor(bob))
+    expect(status).toBe(200)
+    expect(body.results.length).toBeGreaterThan(0)
+    const text = JSON.stringify(body)
+    for (const secret of [alice.id, bob.id, 'Alice_99', '"bob"', 'category', 'position']) expect(text).not.toContain(secret)
+    for (const r of body.results) expect(Object.keys(r).sort()).toEqual(['because', 'lovedCount', 'memberCount', 'movie'])
+  })
+
+  it("fails cleanly when members' rankings can't be read", async () => {
+    backend.failQuery('rankings', 'select', 'boom')
+    expect(await recs(tokenFor(alice))).toEqual({ status: 500, body: { error: "Couldn't load recommendations, try again later." } })
+  })
+})
