@@ -71,7 +71,8 @@ describe('before recommendations unlock', () => {
 describe('once unlocked', () => {
   beforeEach(() => backend.seedList(alice, ids(15)))
 
-  it('shows picks from the catalog straight away, never movies you have ranked', async () => {
+  // TMDb has nothing for these seeds in the fake, so these picks come from the catalog fallback.
+  it('shows picks, never movies you have ranked', async () => {
     await open()
 
     expect(await screen.findByRole('region', { name: 'Top picks for you' })).toBeTruthy()
@@ -147,15 +148,19 @@ describe('with TMDb\'s recommendations', () => {
     expect(asked.length).toBeLessThanOrEqual(12)
   })
 
-  it('folds in a movie TMDb recommends for your favorite', async () => {
+  it('shows what TMDb recommends for your favorite, and no catalog movies', async () => {
     const pick = backend.addTmdbMovie({ id: 960001, title: 'Gnu Gone Wild', year: 2023, vote_count: 9000 })
     backend.setTmdbRecommendations(tmdbId(ids(15)[0]), [pick])
     await open()
 
-    await waitFor(() => {
-      const all = rowTitles().flatMap((name) => cards(name))
-      expect(all).toContain('Gnu Gone Wild')
-    })
+    await waitFor(() => expect(rowTitles().flatMap((name) => cards(name))).toEqual(['Gnu Gone Wild']))
+  })
+
+  it('says it is finding picks while TMDb answers', async () => {
+    backend.hold('GET /api/movies/recommendations')
+    await open()
+    expect(await screen.findByText('Finding picks for you…')).toBeTruthy()
+    expect(rowTitles()).toEqual([])
   })
 
   it('ignores movies TMDb recommends that hardly anyone has rated', async () => {
@@ -168,7 +173,7 @@ describe('with TMDb\'s recommendations', () => {
     expect(rowTitles().flatMap((name) => cards(name))).not.toContain('Nobody Saw This')
   })
 
-  it('goes without them, quietly, if TMDb recommendations fail', async () => {
+  it('falls back to the catalog, quietly, if TMDb recommendations fail', async () => {
     backend.failApi('GET /api/movies/recommendations', { status: 502, body: { error: 'down' } })
     await open()
 

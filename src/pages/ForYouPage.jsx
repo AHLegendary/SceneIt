@@ -18,9 +18,10 @@ import { useMyTiers } from '../lib/useMyList.js'
 // Personalized recommendations, unlocked at 15 ranked movies. Cards open the
 // movie details panel, where the user can rank them.
 //
-// Shows catalog-only picks right away, then folds in TMDb's recommendations
-// for the user's top and bottom movies and friends' rankings once they
-// load. If either fails, the page just goes without it.
+// Picks come from TMDb's recommendations for the user's top and bottom
+// movies, plus friends' rankings once they load. The built-in catalog is only
+// a fallback, for when TMDb has nothing (request failed, no seeds, no picks).
+// If friends' rankings fail, the page just goes without them.
 export default function ForYouPage({ onOpen, onAdd }) {
   const tiers = useMyTiers()
   const count = tiers.reduce((n, tier) => n + tier.length, 0)
@@ -35,11 +36,15 @@ export default function ForYouPage({ onOpen, onAdd }) {
     let cancelled = false
     getRecommendations(seedKey.split(',').map(Number))
       .then((results) => !cancelled && setFetched({ key: seedKey, results }))
-      .catch((error) => console.warn('TMDb recommendations unavailable:', error.message))
+      .catch((error) => {
+        console.warn('TMDb recommendations unavailable:', error.message)
+        if (!cancelled) setFetched({ key: seedKey, results: [] }) // falls back to the catalog
+      })
     return () => {
       cancelled = true
     }
   }, [seedKey])
+  const loading = Boolean(seedKey) && fetched.key !== seedKey
 
   // Friends' ranked lists, refetched when the set of friends changes.
   const { list: friendList } = useFriends()
@@ -59,15 +64,15 @@ export default function ForYouPage({ onOpen, onAdd }) {
   }, [friendKey])
 
   const recs = useMemo(() => {
-    const catalog = getCatalog()
-    let candidates = catalog
+    let candidates = []
     let links
     if (fetched.key === seedKey && fetched.results) {
       const seedsByTmdb = new Map([...seeds.likes, ...seeds.dislikes].map((m) => [m.tmdb_id, m]))
       const merged = mergeTmdbRecs(fetched.results, seedsByTmdb, movieFromDb)
-      candidates = [...merged.candidates, ...catalog]
+      candidates = merged.candidates
       links = merged.links
     }
+    if (!candidates.length) candidates = getCatalog()
     let signals
     if (friendKey && friendTiers.key === friendKey && friendTiers.byUser) {
       const withTiers = friends.map((f) => ({ ...f, tiers: friendTiers.byUser.get(f.id) ?? [] }))
@@ -113,6 +118,8 @@ export default function ForYouPage({ onOpen, onAdd }) {
             Rank a movie
           </button>
         </div>
+      ) : loading ? (
+        <div className="notice" role="status"><span>Finding picks for you…</span></div>
       ) : recs.rows.length === 0 ? (
         <div className="empty">
           <h2 className="empty__title">Nothing new to suggest</h2>
