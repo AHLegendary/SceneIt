@@ -3,14 +3,15 @@
 - `migrations/20261031000000_init_schema.sql`: tables, RLS policies, and database functions
 - `migrations/20261102000000_friend_requests.sql`: `get_friendships` and `send_friend_request`
 - `migrations/20261103000000_ranking_categories.sql`: `rankings.category` (loved / okay / meh), category-aware `save_ranking` and leaderboard scores
-- `migrations/20261104000000_movie_blends.sql`: Movie Blend tables, invites, the 5-member limit and group recommendations
+- `migrations/20261104000000_movie_blends.sql`: Movie Blend tables, invites, the 5-member limit and group recommendations (`get_blend_recommendations`, removed later)
 - `migrations/20261108000000_movie_ratings.sql`: `movie_ratings`, a cache of OMDb scores (IMDb, Rotten Tomatoes) filled by `/api/movies/ratings?id=`
 - `migrations/20261108000100_omdb_budget.sql`: `omdb_usage` and `claim_omdb_call`, a shared daily budget (900) for OMDb lookups
+- `migrations/20261112000000_blend_revisions.sql`: `user_movie_scores()`, the one SQL copy of the score formula; the owner leaving disbands a blend; a full blend's pending invites expire
 - `migrations/20261113000000_reviews_comments_reports.sql`: `reviews`, `review_comments` (one level of replies) and `reports`, with RLS; `remove_ranking` now also deletes the movie's review
 - `migrations/20261113000100_reviews_grants.sql`: table grants for the three tables above (without them the API can't reach them)
 - `migrations/20261114000000_review_discussion.sql`: signed-out visitors can read public reviews and comments, and `get_review_comments` (a review's comments with commenters' usernames)
 - `migrations/20261115000000_review_feed.sql`: `get_review_feed`, a page of reviews for the Community page (everyone or friends, newest or most discussed)
-- `migrations/20261117000000_notifications.sql`: `notifications` (comments, replies, friend requests and blend invites, created by triggers), `notification_available`, `get_notifications` and `open_notification`
+- `migrations/20261116000000_blend_recs_server.sql`: drops `get_blend_recommendations`; blend recommendations now come from `/api/blends/recommendations`. Deploy the frontend that calls that route before running it
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -125,4 +126,4 @@ Scores and leaderboards are calculated when you ask for them, not stored. In SQL
 
 ## Not here yet (later migrations)
 
-Achievements. Add each one as a new file in `migrations/`, and don't edit this one after it has been applied.
+Achievements. Add each change as a new file in `migrations/`, and never edit a migration after it has been applied.
