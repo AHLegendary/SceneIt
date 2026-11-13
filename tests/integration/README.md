@@ -28,8 +28,8 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
 `send_friend_request`, `search_users`, `get_leaderboard`, `get_review_comments`,
-`get_review_feed`, plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
-the policies, constraints and cascades of `reviews`, `review_comments` and `reports`.
+`get_review_feed`, `get_notifications`, `open_notification` (with the triggers that create them), plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
+the policies, constraints and cascades of `reviews`, `review_comments`, `reports` and `notifications`.
 For those tables it also enforces table privileges per role (the `GRANTS` map in
 `fakeBackend.js`), because a missing grant makes the API refuse the request before
 RLS is looked at. Real jsdom has no layout, so `setup.js` stubs `IntersectionObserver`

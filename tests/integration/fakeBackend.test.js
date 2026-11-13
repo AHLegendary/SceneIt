@@ -560,6 +560,289 @@ describe('table privileges on the review tables', () => {
   })
 })
 
+describe('notifications', () => {
+  const DUNE = 'dune-part-two-2024'
+  let review // alice's review of Dune
+
+  beforeEach(() => {
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Thoughts.' })
+  })
+
+  const comment = async (user, parentId = null, body = 'Agreed') => {
+    const client = await clientFor(user)
+    const { data, error } = await client
+      .from('review_comments')
+      .insert({ review_id: review.id, user_id: user.id, parent_id: parentId, body })
+      .select('*')
+      .single()
+    expect(error).toBeNull()
+    return data
+  }
+  const mine = async (user) => {
+    const { data, error } = await (await clientFor(user)).rpc('get_notifications')
+    expect(error).toBeNull()
+    return data
+  }
+
+  describe('comment triggers', () => {
+    it('tells the review author about a top-level comment', async () => {
+      const c = await comment(bob)
+      expect(await mine(alice)).toEqual([
+        expect.objectContaining({
+          type: 'comment',
+          actor_username: 'bob',
+          review_id: review.id,
+          comment_id: c.id,
+          review_author_username: 'alice',
+          movie_title: b.catalog(DUNE).title,
+          preview: 'Agreed',
+          available: true,
+          seen_at: null,
+          read_at: null,
+        }),
+      ])
+      expect(await mine(bob)).toEqual([])
+    })
+
+    it('does not tell you about your own comment on your own review', async () => {
+      await comment(alice)
+      expect(b.notifications).toEqual([])
+    })
+
+    it('tells the parent author about a reply, and the review author too', async () => {
+      const top = await comment(bob)
+      const reply = await comment(cara, top.id, 'Same')
+      expect(await mine(bob)).toEqual([expect.objectContaining({ type: 'reply', actor_username: 'cara', comment_id: reply.id })])
+      const forAlice = await mine(alice)
+      expect(forAlice.map((n) => n.type).sort()).toEqual(['comment', 'comment'])
+      expect(forAlice.find((n) => n.comment_id === reply.id).actor_username).toBe('cara')
+    })
+
+    it('sends only one notification when the review author is the parent author', async () => {
+      const top = await comment(alice)
+      const reply = await comment(bob, top.id)
+      expect(b.notifications).toEqual([expect.objectContaining({ recipient_id: alice.id, type: 'reply', comment_id: reply.id })])
+    })
+
+    it('gives nothing for replying to yourself, and nothing extra when you own the review', async () => {
+      const top = await comment(bob)
+      b.notifications.length = 0
+      await comment(bob, top.id) // bob replies to bob: only the review author hears
+      expect(b.notifications.map((n) => [n.recipient_id, n.type])).toEqual([[alice.id, 'comment']])
+      b.notifications.length = 0
+      await comment(alice, top.id) // alice (review author) replies to bob: only bob hears
+      expect(b.notifications.map((n) => [n.recipient_id, n.type])).toEqual([[bob.id, 'reply']])
+    })
+  })
+
+  describe('friend requests', () => {
+    it('notifies the addressee of a new request', async () => {
+      const asBob = await clientFor(bob)
+      await asBob.rpc('send_friend_request', { p_user_id: alice.id })
+      expect(await mine(alice)).toEqual([expect.objectContaining({ type: 'friend_request', actor_username: 'bob', available: true })])
+      expect(await mine(bob)).toEqual([])
+    })
+
+    it('does not notify when a mutual request is accepted', async () => {
+      await (await clientFor(bob)).rpc('send_friend_request', { p_user_id: alice.id })
+      const before = b.notifications.length
+      await (await clientFor(alice)).rpc('send_friend_request', { p_user_id: bob.id })
+      expect(b.notifications).toHaveLength(before)
+      expect(b.notifications.every((n) => n.recipient_id === alice.id)).toBe(true)
+    })
+
+    it('marks the notification read when the request is accepted, declined or cancelled', async () => {
+      const asAlice = await clientFor(alice)
+      const asBob = await clientFor(bob)
+      const asCara = await clientFor(cara)
+      await asBob.rpc('send_friend_request', { p_user_id: alice.id })
+      await asCara.rpc('send_friend_request', { p_user_id: alice.id })
+      expect(b.notifications.every((n) => n.read_at === null)).toBe(true)
+
+      await asAlice.from('friendships').update({ status: 'accepted' }).eq('requester_id', bob.id).eq('addressee_id', alice.id)
+      await asAlice.from('friendships').delete().eq('requester_id', cara.id).eq('addressee_id', alice.id)
+      const rows = await mine(alice)
+      expect(rows).toHaveLength(2)
+      for (const row of rows) {
+        expect(row.read_at).not.toBeNull()
+        expect(row.seen_at).not.toBeNull()
+      }
+      expect(rows.find((r) => r.actor_username === 'bob').available).toBe(false) // accepted: not pending any more
+    })
+
+    it('says "not available" once the sender cancels', async () => {
+      const asBob = await clientFor(bob)
+      await asBob.rpc('send_friend_request', { p_user_id: alice.id })
+      await asBob.from('friendships').delete().eq('requester_id', bob.id)
+      expect((await mine(alice))[0]).toMatchObject({ available: false, read_at: expect.any(String) })
+    })
+  })
+
+  describe('blend invites', () => {
+    let blend
+    beforeEach(() => {
+      blend = b.addBlend(bob)
+    })
+
+    it('notifies the invitee', async () => {
+      b.addBlendInvite(blend, bob, alice)
+      expect(await mine(alice)).toEqual([expect.objectContaining({ type: 'blend_invite', actor_username: 'bob', available: true })])
+      expect(await mine(bob)).toEqual([])
+    })
+
+    it('marks it read when the invite is accepted or declined, and then it is not available', async () => {
+      const accepted = b.addBlendInvite(blend, bob, alice)
+      const declined = b.addBlendInvite(blend, bob, cara)
+      b.setBlendInviteStatus(accepted, 'accepted')
+      b.setBlendInviteStatus(declined, 'declined')
+      for (const user of [alice, cara]) {
+        expect(await mine(user)).toEqual([expect.objectContaining({ available: false, read_at: expect.any(String) })])
+      }
+    })
+
+    it('is not available once it has expired', async () => {
+      b.addBlendInvite(blend, bob, alice, { expiresAt: new Date(Date.now() - 1000).toISOString() })
+      expect((await mine(alice))[0].available).toBe(false)
+    })
+  })
+
+  describe('when the target is gone', () => {
+    it('keeps the notification but says it is unavailable and drops the preview, when the comment is deleted', async () => {
+      const c = await comment(bob)
+      await (await clientFor(bob)).from('review_comments').delete().eq('id', c.id)
+      expect(await mine(alice)).toEqual([expect.objectContaining({ comment_id: c.id, available: false, preview: null })])
+    })
+
+    it('does the same when the whole review is deleted', async () => {
+      await comment(bob)
+      await (await clientFor(alice)).from('reviews').delete().eq('id', review.id)
+      expect(await mine(alice)).toEqual([
+        expect.objectContaining({ available: false, preview: null, review_author_username: null, movie_title: null }),
+      ])
+    })
+
+    it('does the same when the movie is un-ranked (which deletes the review)', async () => {
+      await comment(bob)
+      await (await clientFor(alice)).rpc('remove_ranking', { p_movie_id: tmdb(DUNE) })
+      expect(b.reviews).toEqual([])
+      expect(await mine(alice)).toEqual([expect.objectContaining({ available: false, preview: null })])
+    })
+
+    it('is unavailable, and reveals nothing, when you cannot see the review author', async () => {
+      const top = await comment(alice)
+      b.profiles.find((p) => p.id === alice.id).is_public = false // bob isn't alice's friend
+      const n = b.addNotification(bob.id, cara.id, 'reply', { review_id: review.id, comment_id: top.id })
+      expect((await mine(bob)).find((row) => row.id === n.id)).toMatchObject({
+        available: false,
+        preview: null,
+        review_author_username: null,
+        movie_title: null,
+      })
+    })
+
+    it('a report on its own changes nothing', async () => {
+      const c = await comment(bob)
+      await (await clientFor(cara)).from('reports').insert({ reporter_id: cara.id, target_type: 'comment', target_id: c.id, reason: 'rude' })
+      expect((await mine(alice))[0]).toMatchObject({ available: true, preview: 'Agreed' })
+    })
+  })
+
+  describe('open_notification', () => {
+    it('marks it read and seen, and returns where to go', async () => {
+      const c = await comment(bob)
+      const asAlice = await clientFor(alice)
+      const id = (await mine(alice))[0].id
+      const { data, error } = await asAlice.rpc('open_notification', { p_id: id })
+      expect(error).toBeNull()
+      expect(data).toEqual([{ available: true, type: 'comment', review_id: review.id, comment_id: c.id, review_author_username: 'alice' }])
+      expect((await mine(alice))[0]).toMatchObject({ read_at: expect.any(String), seen_at: expect.any(String) })
+    })
+
+    it('checks availability at click time', async () => {
+      const c = await comment(bob)
+      const id = (await mine(alice))[0].id
+      await (await clientFor(bob)).from('review_comments').delete().eq('id', c.id)
+      const { data } = await (await clientFor(alice)).rpc('open_notification', { p_id: id })
+      expect(data).toEqual([expect.objectContaining({ available: false, type: 'comment' })])
+    })
+
+    it("returns nothing, and changes nothing, for someone else's notification", async () => {
+      await comment(bob)
+      const id = (await mine(alice))[0].id
+      const { data, error } = await (await clientFor(cara)).rpc('open_notification', { p_id: id })
+      expect(error).toBeNull()
+      expect(data).toEqual([])
+      expect(b.notifications[0].read_at).toBeNull()
+    })
+
+    it('needs a signed-in user', async () => {
+      const anon = b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+      expect((await anon.rpc('open_notification', { p_id: b.id() })).error.code).toBe('28000')
+      expect((await anon.rpc('get_notifications')).error.code).toBe('28000')
+    })
+  })
+
+  describe('get_notifications', () => {
+    it('lists newest first and clamps the limit to 1..100', async () => {
+      const first = await comment(bob, null, 'one')
+      const second = await comment(cara, null, 'two')
+      const asAlice = await clientFor(alice)
+      expect((await mine(alice)).map((n) => n.comment_id)).toEqual([second.id, first.id])
+      expect((await asAlice.rpc('get_notifications', { p_limit: 1 })).data.map((n) => n.comment_id)).toEqual([second.id])
+      expect((await asAlice.rpc('get_notifications', { p_limit: 0 })).data).toHaveLength(1)
+      expect((await asAlice.rpc('get_notifications', { p_limit: 1000 })).data).toHaveLength(2)
+    })
+
+    it('cuts the preview at 120 characters', async () => {
+      await comment(bob, null, 'x'.repeat(300))
+      expect((await mine(alice))[0].preview).toHaveLength(120)
+    })
+  })
+
+  describe('privileges and row level security', () => {
+    it('lets you read only your own, and anon nothing', async () => {
+      await comment(bob)
+      const asAlice = await clientFor(alice)
+      expect((await asAlice.from('notifications').select('id')).data).toHaveLength(1)
+      expect((await (await clientFor(cara)).from('notifications').select('id')).data).toEqual([])
+      const anon = b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+      expect((await anon.from('notifications').select('id')).error.code).toBe('42501')
+    })
+
+    it('lets you update only seen_at and read_at, and only on your own rows', async () => {
+      await comment(bob)
+      const id = b.notifications[0].id
+      const stamp = new Date().toISOString()
+      const asAlice = await clientFor(alice)
+
+      expect((await asAlice.from('notifications').update({ seen_at: stamp }).eq('id', id).select('id')).data).toHaveLength(1)
+      expect((await asAlice.from('notifications').update({ read_at: stamp }).eq('id', id)).error).toBeNull()
+      expect(b.notifications[0]).toMatchObject({ seen_at: stamp, read_at: stamp })
+
+      for (const patch of [{ recipient_id: cara.id }, { type: 'reply' }, { comment_id: b.id() }, { actor_id: alice.id }]) {
+        expect((await asAlice.from('notifications').update(patch).eq('id', id)).error.code).toBe('42501')
+      }
+      // someone else's row: no error, nothing changes
+      const asCara = await clientFor(cara)
+      const res = await asCara.from('notifications').update({ read_at: null }).eq('id', id).select('id')
+      expect(res.data).toEqual([])
+      expect(b.notifications[0].read_at).toBe(stamp)
+      const anon = b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+      expect((await anon.from('notifications').update({ read_at: null }).eq('id', id)).error.code).toBe('42501')
+    })
+
+    it('has no insert or delete for the app', async () => {
+      await comment(bob)
+      const asAlice = await clientFor(alice)
+      const row = { recipient_id: alice.id, actor_id: bob.id, type: 'friend_request' }
+      expect((await asAlice.from('notifications').insert(row)).error.code).toBe('42501')
+      expect((await asAlice.from('notifications').delete().eq('id', b.notifications[0].id)).error.code).toBe('42501')
+      expect(b.notifications).toHaveLength(1)
+    })
+  })
+})
+
 describe('get_review_feed', () => {
   const firstMovies = (n) => MOVIES.slice(0, n).map((m) => m.id)
   const DUNE = 'dune-part-two-2024'
