@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, screen, skipReview, useMenu, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, relaunch, screen, skipReview, useMenu, waitFor, within } from './helpers/harness.js'
 
 const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
 const byId = (id) => MOVIES.find((m) => m.id === id)
@@ -327,26 +327,41 @@ describe('the Rank a movie dialog', () => {
   })
 
   // Issue #42: ranked picks used to stay in the list, greyed out, with nothing new to rank.
-  it('leaves already ranked movies out of the popular picks and shows new ones instead', async () => {
-    const pickTitles = (dialog) => within(dialog).getAllByRole('button', { name: /^Rank / }).map((b) => b.getAttribute('aria-label').slice(5))
+  // Two small tests instead of one long one: the first goes through the real
+  // ranking flow for a single movie, the second seeds several rankings straight
+  // into the backend (the flow itself is covered in ranking.test.jsx).
+  const pickTitles = (dialog) => within(dialog).getAllByRole('button', { name: /^Rank / }).map((b) => b.getAttribute('aria-label').slice(5))
+
+  it('drops a movie from the popular picks right after you rank it', async () => {
     const { user } = await open()
     const before = pickTitles(await openDialog(user))
     expect(before).toHaveLength(8)
     await user.click(screen.getByRole('button', { name: 'Close' }))
 
-    // Rank three of them, each with a different feeling so there are no
-    // head-to-head questions, then open the dialog again.
+    const ranked = MOVIES.find((m) => m.title === before[0])
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('button', { name: `Rank ${ranked.title}` }))
+    await user.click(screen.getByRole('button', { name: /^Loved it/ }))
+    await skipReview(user)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
+    await user.click(screen.getByRole('button', { name: 'See my list' }))
+    await goTo('#/home')
+
+    const after = pickTitles(await openDialog(user))
+    expect(after).toHaveLength(8)
+    expect(after).not.toContain(ranked.title)
+    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: /is already ranked$/ })).toBeNull()
+  })
+
+  it('shows new movies in place of several that are already ranked', async () => {
+    const first = await open()
+    const before = pickTitles(await openDialog(first.user))
+    expect(before).toHaveLength(8)
+
     const rankedIds = MOVIES.filter((m) => before.slice(0, 3).includes(m.title)).map((m) => m.id)
-    const feelings = ['Loved it', 'It was okay', 'Not a fan']
-    for (const [i, id] of rankedIds.entries()) {
-      const dialog = await openDialog(user)
-      await user.click(within(dialog).getByRole('button', { name: `Rank ${title(id)}` }))
-      await user.click(screen.getByRole('button', { name: new RegExp(`^${feelings[i]}`) }))
-      await skipReview(user)
-      await waitFor(() => expect(screen.getByRole('button', { name: 'See my list' }).disabled).toBe(false))
-      await user.click(screen.getByRole('button', { name: 'See my list' }))
-      await goTo('#/home')
-    }
+    backend.seedList(alice, rankedIds)
+    const { user } = await relaunch(first, { as: alice, hash: '#/home' })
+    await ready({ loggedIn: true })
     const dialog = await openDialog(user)
 
     const after = pickTitles(dialog)

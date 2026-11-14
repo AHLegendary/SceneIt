@@ -202,7 +202,9 @@ describe('their ranked movies', () => {
     await screen.findByText(/Horror fan/)
     // Let the first load finish, so the failure below can only hit the next one.
     await waitFor(() => expect(cardTitles()).toHaveLength(3))
-    backend.failQuery('rankings', 'select', 'boom', { times: 1 })
+    // Only the movie-list query (it embeds `movies(...)`). The profile page also
+    // asks for the ranking order, and the failure must not go to that one.
+    backend.failQuery('rankings', 'select', 'boom', { times: 1, cols: /movies\(/ })
     await goTo('#/leaderboard')
     await goTo('#/u/bob')
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import MOVIES from '../../src/data/movies.json'
 import { formatVotes } from '../../src/lib/movieDetails.js'
-import { FakeBackend, launch, ready, screen, skipReview, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, act, launch, ready, screen, skipReview, waitFor, within } from './helpers/harness.js'
 
 const DUNE = MOVIES.find((m) => m.id === 'dune-part-two-2024')
 const ids = (n) => MOVIES.filter((m) => m.id !== DUNE.id).slice(0, n).map((m) => m.id)
@@ -299,6 +299,13 @@ describe('outside scores for a movie from live search', () => {
     backend.addOmdbScores('tt9900010', { imdb: 8.1, votes: 1234567, rt: 91 })
   })
   const ratingsCalls = () => backend.callsTo('fetch:GET /api/movies/ratings')
+  // Resolves once a ratings request has been answered (or has failed) and the
+  // page has had the chance to react, so "nothing shows" can be asserted
+  // without sleeping and hoping that was long enough.
+  const waitForRatingsToFinish = async (count = 1) => {
+    await waitFor(() => expect(backend.callsTo('fetched:GET /api/movies/ratings')).toHaveLength(count))
+    await act(async () => {})
+  }
   const waitForScores = (dialog) => waitFor(() => expect(stat(dialog, 'IMDb')).not.toBeNull())
 
   it('shows IMDb and Rotten Tomatoes scores once they arrive', async () => {
@@ -396,8 +403,7 @@ describe('outside scores for a movie from live search', () => {
     const { user } = await open()
     const dialog = await showDetails(user, 'Scored Film')
 
-    await waitFor(() => expect(ratingsCalls()).toHaveLength(1))
-    await new Promise((r) => setTimeout(r, 150))
+    await waitForRatingsToFinish()
     expect(stat(dialog, 'IMDb')).toBeNull()
     expect(stat(dialog, 'Rotten Tomatoes')).toBeNull()
     expect(within(dialog).queryByRole('alert')).toBeNull()
@@ -408,8 +414,7 @@ describe('outside scores for a movie from live search', () => {
     const { user } = await open()
     const dialog = await showDetails(user, 'Scored Film')
 
-    await waitFor(() => expect(ratingsCalls()).toHaveLength(1))
-    await new Promise((r) => setTimeout(r, 150))
+    await waitForRatingsToFinish()
     expect(stat(dialog, 'IMDb')).toBeNull()
     expect(stat(dialog, 'Rotten Tomatoes')).toBeNull()
     expect(within(dialog).queryByRole('alert')).toBeNull()
