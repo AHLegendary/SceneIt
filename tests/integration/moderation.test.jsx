@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, launch, ready, screen, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, launch, openProfileMenu, ready, relaunch, screen, waitFor, within } from './helpers/harness.js'
+import { PUBLISHABLE_KEY, SUPABASE_URL } from './helpers/fakeBackend.js'
 
 // The forms check text in the browser first. These tests switch that check off
 // (moderateText always says yes), which is what someone skipping the browser
@@ -209,5 +210,237 @@ describe('hidden comments', () => {
     await ready({ loggedIn: true })
     expect(await screen.findByRole('link', { name: 'See 1 comment' })).toBeTruthy()
     expect(reply).toBeTruthy()
+  })
+})
+
+describe('the moderation page', () => {
+  const NO_ACCESS = "You don't have access to this page."
+  let mod
+  let carol
+  let review // bob's review of Dune
+  let comment // alice's comment on it
+
+  beforeEach(() => {
+    mod = backend.addUser({ username: 'modley', is_moderator: true })
+    carol = backend.addUser({ username: 'carol' })
+    review = backend.addReview(bob, DUNE.id, { body: 'A masterpiece.' })
+    comment = backend.addComment(alice, review, { body: 'Something nasty.' })
+  })
+
+  // Files a report the way the app does (through the database, so the snapshot trigger runs).
+  async function report(user, type, id, reason) {
+    const client = backend.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+    await client.auth.signInWithPassword({ email: user.email, password: user.password })
+    const { error } = await client.from('reports').insert({ reporter_id: user.id, target_type: type, target_id: id, reason })
+    expect(error).toBeNull()
+  }
+  const openQueue = async (as = mod) => {
+    const app = await launch({ backend, as, hash: '#/moderation' })
+    await ready({ loggedIn: true })
+    return app
+  }
+  const card = (name) => within(screen.getByRole('article', { name }))
+  const commentCard = () => card('Comment by Alice_99')
+  const tab = (name) => screen.getByRole('radio', { name })
+  const reviewLinkHref = `#/u/bob/review/`
+
+  describe('access', () => {
+    it("has no menu shortcut for regular users, and the page says they can't use it", async () => {
+      const { user } = await openQueue(carol)
+      expect(await screen.findByText(NO_ACCESS)).toBeTruthy()
+      expect(screen.queryByRole('radio', { name: 'Open' })).toBeNull()
+      const menu = await openProfileMenu(user)
+      expect(within(menu).queryByRole('menuitem', { name: 'Moderation' })).toBeNull()
+      expect(backend.callsTo('rpc:get_reports')).toHaveLength(0)
+    })
+
+    it('asks logged-out visitors to log in', async () => {
+      await launch({ backend, hash: '#/moderation' })
+      expect((await screen.findAllByRole('button', { name: /^log in$/i })).length).toBeGreaterThan(0)
+      expect(screen.queryByText(NO_ACCESS)).toBeNull()
+      expect(screen.queryByRole('radio', { name: 'Open' })).toBeNull()
+    })
+
+    it('gives moderators a menu shortcut that opens the page', async () => {
+      const { user } = await launch({ backend, as: mod, hash: '#/home' })
+      await ready({ loggedIn: true })
+      await waitFor(() => expect(screen.getByRole('button', { name: /^profile/i })).toBeTruthy())
+      await waitFor(async () => {
+        const menu = await openProfileMenu(user)
+        expect(within(menu).getByRole('menuitem', { name: 'Moderation' })).toBeTruthy()
+      })
+      await user.click(screen.getByRole('menuitem', { name: 'Moderation' }))
+      expect(await screen.findByRole('heading', { level: 1, name: 'Moderation' })).toBeTruthy()
+      expect(window.location.hash).toBe('#/moderation')
+      expect(screen.queryByText(NO_ACCESS)).toBeNull()
+    })
+  })
+
+  describe('the queue', () => {
+    it('says so when there is nothing to do', async () => {
+      const { user } = await openQueue()
+      expect(await screen.findByText('No open reports.')).toBeTruthy()
+      await user.click(tab('Resolved'))
+      expect(await screen.findByText('Nothing resolved yet.')).toBeTruthy()
+    })
+
+    it('shows reports on the same comment as one card, with the count, reasons and reporters', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      await report(carol, 'comment', comment.id, 'Hateful')
+      await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(screen.getAllByRole('article')).toHaveLength(1)
+      expect(commentCard().getByText('2 reports')).toBeTruthy()
+      expect(commentCard().getByText(/“Rude”/).textContent).toMatch(/bob · /)
+      expect(commentCard().getByText(/“Hateful”/).textContent).toMatch(/carol · /)
+      expect(commentCard().getByText('Something nasty.')).toBeTruthy()
+      expect(commentCard().queryByText('Now:')).toBeNull() // unchanged, so only one copy
+    })
+
+    it('has a "View in context" link to the comment, in the same tab', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      await report(carol, 'review', review.id, 'Spam')
+      await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      const toComment = commentCard().getByRole('link', { name: 'View in context' })
+      expect(toComment.getAttribute('href')).toBe(`${reviewLinkHref}${review.id}/c/${comment.id}`)
+      expect(toComment.getAttribute('target')).toBeNull()
+      expect(card('Review by bob').getByRole('link', { name: 'View in context' }).getAttribute('href')).toBe(`${reviewLinkHref}${review.id}`)
+    })
+
+    it('shows a load error with Try again', async () => {
+      backend.failRpc('get_reports', 'down', { times: 1 })
+      const { user } = await openQueue()
+      expect((await screen.findByRole('alert')).textContent).toContain("Couldn't load the reports.")
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(await screen.findByText('No open reports.')).toBeTruthy()
+    })
+  })
+
+  describe('hide and restore', () => {
+    // Opens bob's review as `viewer` in a fresh app and returns whether alice's comment shows as removed.
+    async function seenBy(app, viewer) {
+      const next = await relaunch(app, { as: viewer, hash: `#/u/bob/review/${review.id}` })
+      await ready({ loggedIn: true })
+      await screen.findByRole('heading', { level: 1, name: `Review of ${DUNE.title}` })
+      await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: /^Comments/ })).toBeTruthy())
+      await waitFor(() => expect(screen.queryByRole('article', { name: /Comment by|Removed comment/ })).not.toBeNull())
+      return next
+    }
+
+    it('hides a comment: the card leaves Open, shows in Resolved, and regular users see a placeholder', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      await report(carol, 'comment', comment.id, 'Hateful')
+      const app = await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+
+      await app.user.click(commentCard().getByRole('button', { name: 'Hide' }))
+      await app.user.type(commentCard().getByRole('textbox', { name: 'Reason (optional)' }), 'Insulting')
+      await app.user.click(commentCard().getByRole('button', { name: 'Hide it' }))
+
+      await waitFor(() => expect(screen.queryByRole('article', { name: 'Comment by Alice_99' })).toBeNull())
+      expect(screen.getByText('No open reports.')).toBeTruthy()
+      expect(comment.hidden_reason).toBe('Insulting')
+      expect(backend.reports.map((r) => r.status)).toEqual(['hidden', 'hidden'])
+
+      await app.user.click(tab('Resolved'))
+      const resolved = await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(within(resolved).getByText(/^Hidden by modley · /)).toBeTruthy()
+      expect(within(resolved).getByRole('button', { name: 'Restore' })).toBeTruthy()
+      expect(within(resolved).queryByRole('button', { name: 'Hide' })).toBeNull()
+
+      // A regular user now sees the placeholder.
+      await seenBy(app, carol)
+      expect(screen.getByText('This comment was removed by a moderator.')).toBeTruthy()
+      expect(screen.queryByText('Something nasty.')).toBeNull()
+    })
+
+    it('restores it from Resolved, and it is visible again', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      backend.moderateContent(mod.id, 'comment', comment.id, 'hide')
+      const app = await openQueue()
+      await app.user.click(tab('Resolved'))
+      await app.user.click(await screen.findByRole('button', { name: 'Restore' }))
+
+      await waitFor(() => expect(comment.hidden_at).toBeNull())
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull())
+      expect(screen.getByRole('article', { name: 'Comment by Alice_99' })).toBeTruthy() // the history stays
+
+      await seenBy(app, carol)
+      expect(screen.getByText('Something nasty.')).toBeTruthy()
+      expect(screen.queryByText('This comment was removed by a moderator.')).toBeNull()
+    })
+
+    it('hides a review, with no reason needed', async () => {
+      await report(carol, 'review', review.id, 'Spam')
+      const app = await openQueue()
+      await app.user.click(await card('Review by bob').findByRole('button', { name: 'Hide' }))
+      await app.user.click(card('Review by bob').getByRole('button', { name: 'Hide it' }))
+      await waitFor(() => expect(review.hidden_at).toBeTruthy())
+      expect(review.hidden_reason).toBeNull()
+      expect(await screen.findByText('No open reports.')).toBeTruthy()
+    })
+
+    it('puts the card back, with a message, when hiding fails', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      const app = await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      backend.failRpc('moderate_content', 'down', { times: 1 })
+
+      await app.user.click(commentCard().getByRole('button', { name: 'Hide' }))
+      await app.user.click(commentCard().getByRole('button', { name: 'Hide it' }))
+
+      expect((await commentCard().findByRole('alert')).textContent).toBe("Couldn't do that. Check your connection and try again.")
+      expect(commentCard().getByRole('button', { name: 'Dismiss' })).toBeTruthy()
+      expect(comment.hidden_at).toBeNull()
+      expect(backend.reports[0].status).toBe('open')
+    })
+  })
+
+  describe('dismiss', () => {
+    it('moves the card to Resolved and leaves the content visible', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      const app = await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      await app.user.click(commentCard().getByRole('button', { name: 'Dismiss' }))
+
+      await waitFor(() => expect(screen.queryByRole('article')).toBeNull())
+      expect(comment.hidden_at).toBeNull()
+      await app.user.click(tab('Resolved'))
+      const resolved = await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(within(resolved).getByText(/^Dismissed by modley · /)).toBeTruthy()
+      expect(within(resolved).queryByRole('button', { name: 'Restore' })).toBeNull()
+
+      const next = await relaunch(app, { as: carol, hash: `#/u/bob/review/${review.id}` })
+      await ready({ loggedIn: true })
+      expect(await screen.findByText('Something nasty.')).toBeTruthy()
+      expect(next).toBeTruthy()
+    })
+  })
+
+  describe('what was reported vs what it says now', () => {
+    it('shows both when the author edited it after the report', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      comment.body = 'Something much nicer.'
+      await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(commentCard().getByText('Reported text')).toBeTruthy()
+      expect(commentCard().getByText('Something nasty.')).toBeTruthy()
+      expect(commentCard().getByText('Now:')).toBeTruthy()
+      expect(commentCard().getByText('Something much nicer.')).toBeTruthy()
+    })
+
+    it('says "Deleted by the author" and does not offer Hide when it is gone', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      backend.review_comments = backend.review_comments.filter((c) => c.id !== comment.id)
+      const app = await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(commentCard().getByText('Deleted by the author')).toBeTruthy()
+      expect(commentCard().getByText('Something nasty.')).toBeTruthy() // the copy from report time
+      expect(commentCard().queryByRole('button', { name: 'Hide' })).toBeNull()
+
+      await app.user.click(commentCard().getByRole('button', { name: 'Dismiss' })) // still possible
+      await waitFor(() => expect(backend.reports[0].status).toBe('dismissed'))
+    })
   })
 })

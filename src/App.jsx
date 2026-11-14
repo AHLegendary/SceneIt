@@ -18,6 +18,7 @@ import { parseHash } from './lib/route.js'
 import { loadMyList } from './lib/supabaseStore.js'
 import { useAccount } from './lib/useMyList.js'
 import CommunityPage from './pages/CommunityPage.jsx'
+import ModerationPage from './pages/ModerationPage.jsx'
 import ForYouPage from './pages/ForYouPage.jsx'
 import FriendsPage from './pages/FriendsPage.jsx'
 import HomePage from './pages/HomePage.jsx'
@@ -178,6 +179,8 @@ function App() {
           <BlendsPage onRank={openRankSearch} />
         ) : page === 'blend' ? (
           <BlendDetailPage key={route.blendId} blendId={route.blendId} onOpen={openDetails} />
+        ) : page === 'moderation' ? (
+          <ModerationPage account={account} />
         ) : page === 'community' ? (
           <CommunityPage tab={route.tab} account={account} onOpen={openDetails} />
         ) : (
