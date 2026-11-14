@@ -28,7 +28,7 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
 `send_friend_request`, `search_users`, `get_leaderboard`, `get_review_comments`,
-`get_review_feed`, `text_is_allowed` with its triggers, the report snapshot trigger, `get_notifications`, `open_notification` (with the triggers that create them), plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
+`get_review_feed`, `get_reports`, `moderate_content`, hidden reviews and comments, `text_is_allowed` with its triggers, the report snapshot trigger, `get_notifications`, `open_notification` (with the triggers that create them), plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
 the policies, constraints and cascades of `reviews`, `review_comments`, `reports` and `notifications`.
 For those tables it also enforces table privileges per role (the `GRANTS` map in
 `fakeBackend.js`), because a missing grant makes the API refuse the request before
@@ -85,7 +85,7 @@ await user.click(await screen.findByRole('button', { name: /^Rerank / }))
 | `leaderboard.test.jsx` | Periods, sorting, podium |
 | `home.test.jsx` | Hero, trending, community, picks, friends |
 | `forYou.test.jsx` | Unlock, picks, TMDb and friends' signals |
-| `moderation.test.jsx` | Server-side text checks (flagged text refused by the database) and no Report button on your own posts |
+| `moderation.test.jsx` | Server-side text checks (flagged text refused by the database), no Report button on your own posts, hidden reviews and comments |
 | `notifications.test.jsx` | The bell: badge, panel, seen vs read, opening each kind, "no longer available" popups |
 | `blendRecs.test.jsx` | Blend recommendations: group picks, vetoes, TMDb discoveries, privacy, failures |
 

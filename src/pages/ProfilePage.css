@@ -428,6 +428,15 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   color: var(--ink-2);
   border: 1px solid var(--line-2);
 }
+.rcard__hidden {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  background: rgb(255 255 255 / 0.03);
+}
 .rcard__menu { position: absolute; top: 6px; right: 6px; }
 .rcard__more { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-2); }
 .rcard__more:hover, .rcard__more[aria-expanded="true"] { background: var(--hover); color: var(--ink); }

@@ -31,7 +31,7 @@ const savedMovies = new Set()
 //   'signed-out' nobody is logged in
 //   'ready'      logged in and the list is loaded
 //   'error'      logged in but the list failed to load (error has the message)
-const SIGNED_OUT = { status: 'signed-out', user: null, username: null, tiers: [], error: null }
+const SIGNED_OUT = { status: 'signed-out', user: null, username: null, isModerator: false, tiers: [], error: null }
 let state = { ...SIGNED_OUT, status: 'loading' }
 
 const listeners = new Set()
@@ -105,10 +105,13 @@ export async function loadMyList() {
   else setState({ status: 'ready', tiers: rowsToTiers(data), error: null })
 }
 
-// Username from the profiles table (falls back to the signup metadata).
+// Username and moderator flag from the profiles table (the username falls back
+// to the signup metadata). isModerator only decides whether to show the
+// Moderation link; the database checks it again on every moderator action.
 async function loadUsername(user) {
-  const { data } = await supabase.from('profiles').select('username').eq('id', user.id).maybeSingle()
-  if (data?.username && state.user?.id === user.id) setState({ username: data.username })
+  const { data } = await supabase.from('profiles').select('username, is_moderator').eq('id', user.id).maybeSingle()
+  if (!data || state.user?.id !== user.id) return
+  setState({ ...(data.username ? { username: data.username } : {}), isModerator: Boolean(data.is_moderator) })
 }
 
 function handleSession(session) {
@@ -119,7 +122,7 @@ function handleSession(session) {
   }
   // Token refreshes fire too; nothing to reload for the same user.
   if (state.user?.id === user.id && state.status !== 'error') return
-  setState({ status: 'loading', user, username: user.user_metadata?.username ?? null, tiers: [], error: null })
+  setState({ status: 'loading', user, username: user.user_metadata?.username ?? null, isModerator: false, tiers: [], error: null })
   loadMyList()
   loadUsername(user)
 }

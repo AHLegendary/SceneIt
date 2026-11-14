@@ -371,6 +371,7 @@ Passing CI checks does not replace teammate review. Both the required checks and
 ## Database Changes and Deployment
 
 - **Database changes:** add a new file in `supabase/migrations/` named `<YYYYMMDDHHMMSS>_<what>.sql`. Never edit a migration that has already been applied. Describe it in `supabase/README.md`, and update the fake backend in `tests/integration/helpers/fakeBackend.js` if it changes what the app sees.
+- **Moderators:** there is no UI for it. A teammate with access runs `update public.profiles set is_moderator = true where username = '...';` in the Supabase **SQL Editor**. Users can't set it themselves.
 - **Applying to the live database:** after the PR merges, a teammate with access pastes the new migration into the Supabase **SQL Editor** for the live project and runs it. If the migration removes something the old frontend still uses, merge (deploy) the frontend first.
 - **Deploying the app:** Vercel deploys automatically. Every push to `main` (a merged PR) goes to https://sceneitmovies.vercel.app within a few minutes; pull requests get their own preview URL. Environment variables for production are set in the Vercel project settings, not in the repo.
 

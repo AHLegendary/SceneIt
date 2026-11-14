@@ -243,6 +243,52 @@ describe('clicking a comment notification', () => {
     })
   })
 
+  describe('about hidden content', () => {
+    let mod
+    let top // cara's comment on alice's review
+    let reply // bob's reply to it: cara gets a "reply" notification
+
+    beforeEach(() => {
+      mod = backend.addUser({ username: 'mod', is_moderator: true })
+      top = backend.addComment(cara, review, { body: 'Cara says hi.' })
+      reply = backend.addComment(bob, review, { body: 'Bob answers.', parentId: top.id })
+    })
+
+    it('still lists a reply on a hidden review, without the movie title, and says it is gone when clicked', async () => {
+      const { user } = await open({ as: cara })
+      await waitFor(() => expect(badgeText()).toBe('1'))
+      let panel = await openPanel(user)
+      expect(row(panel, /bob replied/).textContent).toContain(DUNE.title) // before: "... on Dune: Part Two"
+
+      backend.moderateContent(mod.id, 'review', review.id, 'hide')
+      await user.keyboard('{Escape}')
+      panel = await openPanel(user)
+      const hidden = await panel.findByRole('button', { name: /bob replied/ })
+      expect(hidden.textContent).not.toContain(DUNE.title)
+      expect(hidden.textContent).not.toContain('Bob answers.') // no preview either
+
+      await user.click(hidden)
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(GONE_COMMENT)).toBeTruthy()
+      expect(window.location.hash).toBe('#/home')
+    })
+
+    it('says a hidden comment is gone, and opens it again once it is restored', async () => {
+      backend.moderateContent(mod.id, 'comment', reply.id, 'hide')
+      const { user } = await open({ as: cara })
+      let panel = await openPanel(user)
+      await user.click(await panel.findByRole('button', { name: /bob replied/ }))
+      expect(within(await screen.findByRole('dialog')).getByText(GONE_COMMENT)).toBeTruthy()
+      await user.click(screen.getByRole('button', { name: 'OK' }))
+
+      backend.moderateContent(mod.id, 'comment', reply.id, 'restore')
+      panel = await openPanel(user)
+      await user.click(await panel.findByRole('button', { name: /bob replied/ }))
+      await waitFor(() => expect(window.location.hash).toBe(`#/u/Alice_99/review/${review.id}/c/${reply.id}`))
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+  })
+
   it('shows the error inline, and does not navigate, when opening fails', async () => {
     backend.addComment(bob, review)
     const { user } = await open()

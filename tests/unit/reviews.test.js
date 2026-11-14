@@ -115,9 +115,18 @@ describe('rowToReview / rowToComment', () => {
   it('converts a comment row', () => {
     expect(reviews.rowToComment(COMMENT_ROW)).toEqual({
       id: COMMENT_ID, reviewId: REVIEW_ID, userId: ME, parentId: null, body: 'Agreed', username: null,
-      createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z',
+      createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z', isHidden: false, hiddenReason: null,
     })
     expect(reviews.rowToComment({ ...COMMENT_ROW, username: 'bob' }).username).toBe('bob')
+  })
+
+  it('carries the hidden state of reviews and comments', () => {
+    expect(reviews.rowToReview(REVIEW_ROW)).toMatchObject({ isHidden: false, hiddenReason: null })
+    expect(reviews.rowToReview({ ...REVIEW_ROW, hidden_at: '2026-11-03T00:00:00Z', hidden_reason: 'Rude' })).toMatchObject({ isHidden: true, hiddenReason: 'Rude' })
+    expect(reviews.rowToComment({ ...COMMENT_ROW, hidden_at: '2026-11-03T00:00:00Z' })).toMatchObject({ isHidden: true, hiddenReason: null })
+    // From get_review_comments: a placeholder says so with is_hidden and has no text or author.
+    const placeholder = reviews.rowToComment({ ...COMMENT_ROW, body: null, user_id: null, username: null, is_hidden: true, hidden_reason: null })
+    expect(placeholder).toMatchObject({ isHidden: true, body: null, userId: null, username: null })
   })
 })
 

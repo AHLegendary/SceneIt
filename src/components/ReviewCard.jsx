@@ -13,7 +13,9 @@ import { moderateText } from '../lib/moderation.js'
 // The card only shows things; the parent owns the data:
 //   movie        the movie object
 //   score        number, or null while scores are locked (nothing is shown then)
-//   review       { id, body, isSpoiler, commentCount } or null
+//   review       { id, body, isSpoiler, commentCount, isHidden, hiddenReason } or null.
+//                A hidden review only ever reaches its author and moderators, and
+//                the card says so (see ReviewSection)
 //   author       { id, username, href } to show who wrote it, top left, linking
 //                to their profile (the Community feed; a profile's own list
 //                leaves it out, since everything on it is theirs)
@@ -200,6 +202,13 @@ function ReviewSection({ review, isOwner, onSave, onDelete }) {
             </div>
           )}
         </div>
+      )}
+
+      {review.isHidden && (
+        <p className="rcard__hidden" role="status">
+          {isOwner ? 'Hidden by a moderator. Only you can see this.' : 'Hidden'}
+          {review.hiddenReason ? ` Reason: ${review.hiddenReason}` : ''}
+        </p>
       )}
 
       {review.isSpoiler && revealed && <span className="rcard__tag">Spoiler</span>}

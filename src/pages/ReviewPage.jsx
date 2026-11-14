@@ -205,7 +205,7 @@ export default function ReviewPage({ reviewId, commentId = null, account, onOpen
       ) : (
         <p className="uprofile__muted">This movie isn't available any more.</p>
       )}
-      {signedIn && !mine && (
+      {signedIn && !mine && !review.isHidden && (
         <div className="discuss__report">
           <ReportControl what="review" onReport={(reason) => reportContent('review', review.id, reason)} />
         </div>
@@ -223,7 +223,8 @@ export default function ReviewPage({ reviewId, commentId = null, account, onOpen
           comments={thread.list}
           viewerId={viewerId}
           reviewAuthorId={review.userId}
-          canWrite={signedIn}
+          canWrite={signedIn && !review.isHidden}
+          closed={review.isHidden}
           flashId={flashId}
           onAdd={add}
           onEdit={edit}
