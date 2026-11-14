@@ -349,6 +349,22 @@
   color: var(--ink-3);
   border: 1px solid transparent;
 }
+.wheel__mod {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  border: 1px solid transparent;
+}
+.wheel__mod:hover { color: var(--ink); border-color: var(--line-2); background: var(--hover); }
 .wheel__logout:hover { color: var(--ink); border-color: var(--line-2); background: var(--hover); }
 .wheel__logout:disabled { opacity: 0.6; cursor: default; }
 .wheel__error {

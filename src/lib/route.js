@@ -18,6 +18,7 @@ function decode(part) {
 //   #/u/reil_99/review/<id>/c/<commentId>
 //                            -> { page: 'review', username: 'reil_99', reviewId: '<id>', commentId: '<commentId>' }
 //                               (the same page, scrolled to that comment; notifications link here)
+//   #/moderation             -> { page: 'moderation', username: null }
 //   #/blends/abc             -> { page: 'blend', username: null, blendId: 'abc' }
 //   #/community              -> { page: 'community', username: null, tab: 'reviews' }
 //   #/community/leaderboard  -> { page: 'community', username: null, tab: 'leaderboard' }

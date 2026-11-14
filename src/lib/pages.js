@@ -9,6 +9,7 @@ export const PAGES = [
   { id: 'login', label: 'Log in' },
   { id: 'signup', label: 'Sign up' },
   { id: 'profile', label: 'Profile' },
+  { id: 'moderation', label: 'Moderation' },
 ]
 
 // Pages in the top navigation, in display order.
@@ -26,6 +27,7 @@ export const PROFILE_SHORTCUTS = [
   { id: 'profile', label: 'Bio' },
 ]
 
+// 'moderation' is the reports queue (#/moderation). It needs an account, and the page itself says "no access" unless you are a moderator.
 // 'community' is the Reviews and Leaderboard tabs (#/community, #/community/leaderboard); the old #/leaderboard address opens the second one.
 // 'user' is someone else's profile (#/u/name, see route.js); it has no tab.
 // 'review' is one review and its comments (#/u/name/review/id); it has no tab, and anyone can read it.

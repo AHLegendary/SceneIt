@@ -40,6 +40,8 @@ describe('Movie Blend routes', () => {
     expect(parseHash('#/blends')).toEqual({ page: 'blends', username: null })
   })
   it('reads one blend, and blendHref builds a link it reads back', () => {
+    expect(parseHash('#/moderation')).toEqual({ page: 'moderation', username: null })
+    expect(parseHash('#/moderation/x').page).toBe(DEFAULT_PAGE)
     expect(parseHash('#/blends/abc')).toEqual({ page: 'blend', username: null, blendId: 'abc' })
     expect(parseHash(blendHref('abc'))).toEqual({ page: 'blend', username: null, blendId: 'abc' })
   })

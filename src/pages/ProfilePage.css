@@ -471,3 +471,39 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   .rcard__inner { gap: 10px; }
   .rcard .poster--md { width: 64px; height: 96px; }
 }
+
+/* The moderation queue (pages/ModerationPage.jsx) */
+.modq { max-width: 760px; }
+.modq__list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.modq__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.03);
+}
+.modq__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.modq__title { margin: 0; font-size: 16px; font-weight: 600; }
+.modq__label { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+.modq__text { display: flex; flex-direction: column; gap: 6px; }
+.modq__quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line-2);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.modq__deleted { margin: 0; font-size: 14px; font-style: italic; color: var(--ink-3); }
+.modq__reports { display: flex; flex-direction: column; gap: 4px; }
+.modq__reports ul { margin: 0; padding-left: 18px; font-size: 14px; }
+.modq__by { color: var(--ink-3); font-size: 13px; }
+.modq__outcome { margin: 0; font-size: 13px; color: var(--ink-2); }
+.modq__actions, .modq__hide { display: flex; gap: 8px; flex-wrap: wrap; }
+.modq__hide { flex-direction: column; align-items: stretch; }
+@media (max-width: 760px) {
+  .modq__card { padding: 12px; }
+}

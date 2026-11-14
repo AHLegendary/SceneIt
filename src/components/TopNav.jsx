@@ -72,6 +72,7 @@ export default function TopNav({ current, account, onNavigate, onOpen, onRank, o
             <ProfileMenu
               current={current}
               username={account.username}
+              isModerator={account.isModerator}
               requests={requests}
               onNavigate={onNavigate}
               onRank={onRank}
@@ -125,7 +126,7 @@ const SHORTCUT_ICONS = { friends: 'friends', 'my-list': 'bookmark', rank: 'sword
 // while open the page behind is dimmed and blurred, and Escape or a click
 // anywhere outside closes it. Each shortcut is its own circular button so
 // it works with keyboard and touch.
-function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
+function ProfileMenu({ current, username, isModerator, requests, onNavigate, onRank }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -174,7 +175,7 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
     }
   }
 
-  const active = current === 'profile' || current === 'friends' || current === 'my-list'
+  const active = current === 'profile' || current === 'friends' || current === 'my-list' || current === 'moderation'
 
   return (
     <div className="pmenu" ref={wrap}>
@@ -222,6 +223,12 @@ function ProfileMenu({ current, username, requests, onNavigate, onRank }) {
             <span className="wheel__label">{item.label}</span>
           </button>
         ))}
+        {isModerator && (
+          <button type="button" role="menuitem" className="wheel__mod" onClick={() => go('moderation')}>
+            <Icon name="card" size={14} />
+            Moderation
+          </button>
+        )}
         <button type="button" role="menuitem" className="wheel__logout" onClick={logOut} disabled={busy}>
           <Icon name="logout" size={14} />
           {busy ? 'Logging out…' : 'Log out'}
