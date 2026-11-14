@@ -12,6 +12,7 @@
 - `migrations/20261114000000_review_discussion.sql`: signed-out visitors can read public reviews and comments, and `get_review_comments` (a review's comments with commenters' usernames)
 - `migrations/20261115000000_review_feed.sql`: `get_review_feed`, a page of reviews for the Community page (everyone or friends, newest or most discussed)
 - `migrations/20261116000000_blend_recs_server.sql`: drops `get_blend_recommendations`; blend recommendations now come from `/api/blends/recommendations`. Deploy the frontend that calls that route before running it
+- `migrations/20261118000000_moderation_checks.sql`: `text_is_allowed` and triggers that refuse flagged text (`content_flagged`), no blank review/comment/report text, and report snapshots (`target_user_id`, `review_id`, `target_body`, `status`, ...). Run it before deploying the frontend
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -41,10 +42,10 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `blends` | `owner_id` of a Movie Blend | its members | through the blend functions only |
 | `blend_members` | `(blend_id, user_id, joined_at)`, 5 at most per blend (enforced by a trigger) | the blend's members | through the blend functions only |
 | `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
-| `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters. Only for movies the user has ranked; un-ranking deletes it | same as the author's profile (signed-out visitors too, for public profiles) | the author; edits can change only `body` and `is_spoiler` |
+| `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at)`, one per user and movie, `body` 1 to 2000 characters, not blank, and refused if it breaks the text rules (`content_flagged`). Only for movies the user has ranked; un-ranking deletes it | same as the author's profile (signed-out visitors too, for public profiles) | the author; edits can change only `body` and `is_spoiler` |
 | `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review (use `get_review_comments` to also get usernames) | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
 | `notifications` | `(id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at)`. `type` is `comment`, `reply`, `friend_request` or `blend_invite`. The targets have no foreign keys, so a notification outlives a deleted comment, review or invite. Friend requests are identified by `(actor_id, recipient_id)` | the recipient | the recipient may set `seen_at` and `read_at` (nothing else); rows are created only by triggers |
-| `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
+| `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target, plus a snapshot a trigger fills in (`target_user_id`, `review_id`, `target_body`, `status` open/dismissed/hidden, `resolved_by`, `resolved_at`); you can't report your own post (`cannot_report_self`) | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
 
