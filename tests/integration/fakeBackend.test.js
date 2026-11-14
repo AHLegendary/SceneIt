@@ -1064,6 +1064,26 @@ describe('failure injection and holds', () => {
     expect((await save(client, 'inception-2010', 'loved', 0)).error).toBeNull()
   })
 
+  it('can limit a failure to the query that selects certain columns', async () => {
+    const client = await clientFor(alice)
+    b.failQuery('rankings', 'select', 'boom', { times: 1, cols: /movies\(/ })
+    expect((await client.from('rankings').select('movie_id, updated_at')).error).toBeNull() // other query: untouched
+    expect((await client.from('rankings').select('movie_id, movies(title)')).error.message).toBe('boom')
+    expect((await client.from('rankings').select('movie_id, movies(title)')).error).toBeNull() // used up
+  })
+
+  it('records when a request has been answered, as well as when it started', async () => {
+    vi.stubEnv('TMDB_READ_TOKEN', TMDB_TOKEN)
+    b.failApi('GET /api/health', { status: 503, body: { error: 'down' } }, { times: 1 })
+    const pending = b.fetch('/api/health')
+    expect(b.callsTo('fetch:GET /api/health')).toHaveLength(1)
+    await pending
+    expect(b.callsTo('fetched:GET /api/health').map((c) => c.args)).toEqual([{ status: 503 }])
+    b.failApi('GET /api/health', { network: true }, { times: 1 })
+    await expect(b.fetch('/api/health')).rejects.toThrow('Failed to fetch')
+    expect(b.callsTo('fetched:GET /api/health').map((c) => c.args)).toEqual([{ status: 503 }, { status: null }])
+  })
+
   it('pauses a call until it is released', async () => {
     const client = await clientFor(alice)
     const gate = b.hold('rpc:get_friendships')

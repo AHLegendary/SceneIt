@@ -314,8 +314,10 @@ export class FakeBackend {
   // 'auth:<method>', and for the network 'GET /api/movies/search'.
   // error: for Supabase, { message, status?, code? } or a string; for the
   // network, { status, body } or { network: true }.
-  fail(key, error = 'Something broke', { times = Infinity } = {}) {
-    this.failures.push({ key, error, times })
+  // `cols` (a RegExp) limits the failure to calls whose select() columns match
+  // it, for when two queries hit the same table and only one should break.
+  fail(key, error = 'Something broke', { times = Infinity, cols = null } = {}) {
+    this.failures.push({ key, error, times, cols })
   }
 
   failRpc(name, error, opts) {
@@ -349,8 +351,8 @@ export class FakeBackend {
     this.tmdb.down = true
   }
 
-  takeFailure(key) {
-    const failure = this.failures.find((f) => f.key === key && f.times > 0)
+  takeFailure(key, info = {}) {
+    const failure = this.failures.find((f) => f.key === key && f.times > 0 && (!f.cols || f.cols.test(info.cols ?? '')))
     if (!failure) return null
     failure.times -= 1
     return failure.error
@@ -859,8 +861,23 @@ export class FakeBackend {
 
   // ---------------------------------------------------------------- network
 
+  // Logs `fetch:<key>` when a request starts and `fetched:<key>` when it has
+  // an answer (or failed to connect), so a test can wait for a request to be
+  // over instead of sleeping and hoping.
   async fetch(input, init = {}) {
     const url = new URL(typeof input === 'string' ? input : input.url ?? input.href ?? String(input), 'http://localhost')
+    const key = `${(init.method ?? 'GET').toUpperCase()} ${url.pathname}`
+    let status = null
+    try {
+      const response = await this.answer(url, init)
+      status = response.status
+      return response
+    } finally {
+      this.log(`fetched:${key}`, { status })
+    }
+  }
+
+  async answer(url, init) {
     const method = (init.method ?? 'GET').toUpperCase()
     const key = `${method} ${url.pathname}`
     this.log(`fetch:${key}`, { url: url.href, init })
@@ -1349,7 +1366,7 @@ class Query {
     b.log(key, { cols: this.cols })
     await Promise.resolve()
     await b.whileOpen()
-    const injected = b.takeFailure(key)
+    const injected = b.takeFailure(key, { cols: this.cols })
     if (injected) return { data: null, error: typeof injected === 'string' ? { message: injected } : injected }
     await b.gate(key)
 

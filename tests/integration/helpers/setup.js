@@ -3,7 +3,9 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { cleanup, configure } from '@testing-library/react'
 
 // Searches are debounced and some flows chain a few requests: allow for it.
-configure({ asyncUtilTimeout: 3000 })
+// Generous on purpose: a busy machine (CI) is slow, and waiting longer only
+// costs time when something is actually wrong.
+configure({ asyncUtilTimeout: 5000 })
 
 // The app and the api/ handlers both import createClient from here; hand them
 // the fake. harness.js puts the current FakeBackend on globalThis.
