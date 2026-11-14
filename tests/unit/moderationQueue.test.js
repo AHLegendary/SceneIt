@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// Only the pure helpers are tested here. The store imports the Supabase client
+// and the account store, which need env vars and a login, so both are mocked
+// (CI has no .env). The store itself is covered in tests/integration/moderation.test.jsx.
+vi.mock('../../src/lib/supabase.js', () => ({ supabase: {} }))
+vi.mock('../../src/lib/supabaseStore.js', () => ({ getState: () => ({ user: null }) }))
+
 import { reportKey, rowsToReports } from '../../src/lib/moderationQueue.js'
 
 describe('rowsToReports', () => {
