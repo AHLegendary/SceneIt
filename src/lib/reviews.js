@@ -11,7 +11,7 @@
 // calls and the errors.
 
 import { getMovie, getMovieByTmdbId, movieFromDb } from './localStore.js'
-import { moderateText } from './moderation.js'
+import { FLAGGED_MESSAGE } from './moderation.js'
 import { getState as getAccount } from './supabaseStore.js'
 import { supabase } from './supabase.js'
 
@@ -27,6 +27,7 @@ export const COMMENT_SAVE_ERROR = "Couldn't post your comment. Check your connec
 export const COMMENT_DELETE_ERROR = "Couldn't delete that comment. Check your connection and try again."
 export const REPORT_ERROR = "Couldn't send your report. Check your connection and try again."
 export const ALREADY_REPORTED = "You've already reported that."
+export const CANNOT_REPORT_SELF = "You can't report your own post."
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -109,14 +110,11 @@ function cleanBody(text, max, what) {
   return body
 }
 
-// cleanBody, plus the content check. For anything other people will read
-// (reviews, edits, comments), so every write path goes through it even if a
-// form forgot to check first. Throws the moderation message when flagged.
-function cleanPublicBody(text, max, what) {
-  const body = cleanBody(text, max, what)
-  const verdict = moderateText(body)
-  if (!verdict.ok) throw new Error(verdict.reason)
-  return body
+// The database refuses flagged text (a trigger raises 'content_flagged'), so
+// this is the real content check: the forms only run moderateText first to
+// give an instant message. Turn that refusal into the same message.
+function throwIfFlagged(error) {
+  if (error?.message?.includes('content_flagged')) throw new Error(FLAGGED_MESSAGE)
 }
 
 // ------------------------------------------------------------------ reviews
@@ -127,7 +125,7 @@ function cleanPublicBody(text, max, what) {
 export async function saveReview(movieId, { body, isSpoiler = false }) {
   const userId = requireUserId()
   const movie = tmdbIdOf(movieId)
-  const text = cleanPublicBody(body, MAX_REVIEW_LENGTH, 'review')
+  const text = cleanBody(body, MAX_REVIEW_LENGTH, 'review')
   const fields = { body: text, is_spoiler: Boolean(isSpoiler) }
 
   // Not an upsert: edits may only touch body and is_spoiler (column grants),
@@ -138,6 +136,7 @@ export async function saveReview(movieId, { body, isSpoiler = false }) {
     .eq('user_id', userId)
     .eq('movie_id', movie)
     .select(REVIEW_COLUMNS)
+  throwIfFlagged(updated.error)
   if (updated.error) {
     console.error('saveReview failed', updated.error)
     throw new Error(REVIEW_SAVE_ERROR)
@@ -149,6 +148,7 @@ export async function saveReview(movieId, { body, isSpoiler = false }) {
     .insert({ user_id: userId, movie_id: movie, ...fields })
     .select(REVIEW_COLUMNS)
     .single()
+  throwIfFlagged(inserted.error)
   if (inserted.error) {
     console.error('saveReview failed', inserted.error)
     throw new Error(REVIEW_SAVE_ERROR)
@@ -160,12 +160,13 @@ export async function saveReview(movieId, { body, isSpoiler = false }) {
 export async function updateReview(reviewId, { body, isSpoiler = false }) {
   requireUserId()
   requireId(reviewId, 'review')
-  const text = cleanPublicBody(body, MAX_REVIEW_LENGTH, 'review')
+  const text = cleanBody(body, MAX_REVIEW_LENGTH, 'review')
   const { data, error } = await supabase
     .from('reviews')
     .update({ body: text, is_spoiler: Boolean(isSpoiler) })
     .eq('id', reviewId)
     .select(REVIEW_COLUMNS)
+  throwIfFlagged(error)
   if (error || !data?.length) {
     if (error) console.error('updateReview failed', error)
     throw new Error(REVIEW_SAVE_ERROR)
@@ -297,12 +298,13 @@ export async function addComment(reviewId, body, parentId = null) {
   const userId = requireUserId()
   requireId(reviewId, 'review')
   if (parentId !== null) requireId(parentId, 'comment')
-  const text = cleanPublicBody(body, MAX_COMMENT_LENGTH, 'comment')
+  const text = cleanBody(body, MAX_COMMENT_LENGTH, 'comment')
   const { data, error } = await supabase
     .from('review_comments')
     .insert({ review_id: reviewId, user_id: userId, parent_id: parentId, body: text })
     .select(COMMENT_COLUMNS)
     .single()
+  throwIfFlagged(error)
   if (error) {
     console.error('addComment failed', error)
     throw new Error(COMMENT_SAVE_ERROR)
@@ -314,12 +316,13 @@ export async function addComment(reviewId, body, parentId = null) {
 export async function updateComment(commentId, body) {
   requireUserId()
   requireId(commentId, 'comment')
-  const text = cleanPublicBody(body, MAX_COMMENT_LENGTH, 'comment')
+  const text = cleanBody(body, MAX_COMMENT_LENGTH, 'comment')
   const { data, error } = await supabase
     .from('review_comments')
     .update({ body: text })
     .eq('id', commentId)
     .select(COMMENT_COLUMNS)
+  throwIfFlagged(error)
   if (error || !data?.length) {
     if (error) console.error('updateComment failed', error)
     throw new Error(COMMENT_SAVE_ERROR)
@@ -342,7 +345,8 @@ export async function deleteComment(commentId) {
 // ------------------------------------------------------------------ reports
 
 // Reports a review or a comment. type is 'review' or 'comment'. Reporting the
-// same thing twice throws ALREADY_REPORTED.
+// same thing twice throws ALREADY_REPORTED, and your own post CANNOT_REPORT_SELF.
+// The database fills in the copy of the text that moderators see.
 export async function reportContent(type, targetId, reason) {
   const userId = requireUserId()
   if (type !== 'review' && type !== 'comment') throw new Error(`Unknown report type: ${type}`)
@@ -352,6 +356,7 @@ export async function reportContent(type, targetId, reason) {
     .from('reports')
     .insert({ reporter_id: userId, target_type: type, target_id: targetId, reason: text })
   if (error?.code === '23505') throw new Error(ALREADY_REPORTED) // unique violation
+  if (error?.message?.includes('cannot_report_self')) throw new Error(CANNOT_REPORT_SELF)
   if (error) {
     console.error('reportContent failed', error)
     throw new Error(REPORT_ERROR)

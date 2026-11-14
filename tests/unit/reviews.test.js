@@ -383,6 +383,12 @@ describe('reportContent', () => {
     await expect(reviews.reportContent('comment', COMMENT_ID, 'Rude')).rejects.toThrow(reviews.ALREADY_REPORTED)
   })
 
+  it("says so when it's your own post", async () => {
+    db.results = [fail({ code: '42501', message: 'cannot_report_self' })]
+    await expect(reviews.reportContent('comment', COMMENT_ID, 'Rude')).rejects.toThrow(reviews.CANNOT_REPORT_SELF)
+    expect(reviews.CANNOT_REPORT_SELF).toBe("You can't report your own post.")
+  })
+
   it('surfaces other failures', async () => {
     db.results = [fail()]
     await expect(reviews.reportContent('comment', COMMENT_ID, 'Rude')).rejects.toThrow(reviews.REPORT_ERROR)
@@ -400,14 +406,27 @@ describe('reportContent', () => {
 
 describe('content check', () => {
   const FLAGGED = "That text can't be posted because it may break our community rules. Edit it and try again."
+  // What the database's trigger sends back for flagged text.
+  const flagged = () => fail({ code: 'P0001', message: 'content_flagged' })
 
-  it('blocks flagged text on every write path before calling the database', async () => {
-    await expect(reviews.saveReview('dune-part-two-2024', { body: 'just kys' })).rejects.toThrow(FLAGGED)
+  it('turns the database refusal into the moderation message on every write path', async () => {
+    db.results = [flagged()]
     await expect(reviews.updateReview(REVIEW_ID, { body: 'just kys' })).rejects.toThrow(FLAGGED)
+    db.results = [ok([]), flagged()] // saveReview: update finds nothing, then the insert is refused
+    await expect(reviews.saveReview('dune-part-two-2024', { body: 'just kys' })).rejects.toThrow(FLAGGED)
+    db.results = [flagged()] // saveReview when the review exists: the update itself is refused
+    await expect(reviews.saveReview('dune-part-two-2024', { body: 'just kys' })).rejects.toThrow(FLAGGED)
+    db.results = [flagged()]
     await expect(reviews.addComment(REVIEW_ID, 'just kys')).rejects.toThrow(FLAGGED)
+    db.results = [flagged()]
     await expect(reviews.addComment(REVIEW_ID, 'just kys', PARENT_ID)).rejects.toThrow(FLAGGED)
+    db.results = [flagged()]
     await expect(reviews.updateComment(COMMENT_ID, 'just kys')).rejects.toThrow(FLAGGED)
-    expect(db.calls).toHaveLength(0)
+  })
+
+  it('leaves other failures as the usual save errors', async () => {
+    db.results = [fail()]
+    await expect(reviews.addComment(REVIEW_ID, 'fine')).rejects.toThrow(reviews.COMMENT_SAVE_ERROR)
   })
 
   it('does not run on report reasons (people may quote what they are reporting)', async () => {

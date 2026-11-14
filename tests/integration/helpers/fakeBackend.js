@@ -91,7 +91,7 @@ export class FakeBackend {
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
     this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
     this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at }
-    this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at }
+    this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at, target_user_id, review_id, target_body, status, resolved_by, resolved_at }
     this.blends = [] // { id, owner_id, created_at }
     this.blend_members = [] // { blend_id, user_id, joined_at }
     this.blend_invites = [] // { id, blend_id, inviter_id, invitee_id, status, created_at, expires_at }
@@ -494,6 +494,21 @@ export class FakeBackend {
     const gone = new Set(this.reviews.filter(test).map((r) => r.id))
     this.reviews = this.reviews.filter((r) => !gone.has(r.id))
     this.review_comments = this.review_comments.filter((c) => !gone.has(c.review_id))
+  }
+
+  // Port of text_is_allowed in 20261118000000_moderation_checks.sql. Written
+  // out again here (not imported from src/lib/moderation.js) so the fake pins
+  // the SQL's rules, not the browser's. [[:alnum:]] becomes letters and digits.
+  textIsAllowed(text) {
+    const value = String(text ?? '')
+    const phrase = /(^|[^\p{L}\p{N}])(kill yourself|kys)($|[^\p{L}\p{N}])/iu
+    const spam = /(\S)\1{20,}/u
+    return !(phrase.test(value) || spam.test(value))
+  }
+
+  // The `before insert or update of body` trigger on reviews and review_comments.
+  checkTextTrigger(body) {
+    if (!this.textIsAllowed(body)) throw pgError('content_flagged', 'P0001')
   }
 
   // Port of get_review_comments in 20261114000000_review_discussion.sql: the
@@ -1252,6 +1267,10 @@ const EMBEDS = {
   reviews: { review_comments: { local: 'id', foreign: 'review_id', table: 'review_comments', count: true } },
 }
 
+// The not-blank checks (20261118000000_moderation_checks.sql): only spaces,
+// tabs and line breaks.
+const isBlank = (text) => String(text ?? '').replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '').length === 0
+
 // A query builder like supabase-js's: chain filters, then await it.
 class Query {
   constructor(client, table) {
@@ -1444,15 +1463,18 @@ class Query {
         return false
       }
       const hit = this.rowsOfTable.filter((r) => matches(r) && allowed(r))
+      // Like one SQL statement, nothing changes if any row is refused: the
+      // triggers and constraints look at the new values before they are written.
+      if (this.table === 'reviews' || this.table === 'review_comments') {
+        const check = this.table === 'reviews' ? this.checkReviews : this.checkComments
+        // before update of body: runs when the statement names body, even unchanged.
+        if ('body' in this.patch && hit.length) b.checkTextTrigger(this.patch.body)
+        check.call(this, hit.map((row) => ({ ...row, ...clone(this.patch) })))
+      }
       for (const row of hit) Object.assign(row, clone(this.patch))
       if (this.table === 'profiles') this.checkProfiles(hit)
       if (this.table === 'friendships') for (const row of hit) b.onFriendshipChanged(row)
-      if (this.table === 'reviews') {
-        this.checkReviews(hit)
-        for (const row of hit) row.updated_at = b.now()
-      }
-      if (this.table === 'review_comments') {
-        this.checkComments(hit)
+      if (this.table === 'reviews' || this.table === 'review_comments') {
         for (const row of hit) row.updated_at = b.now()
       }
       return out(hit)
@@ -1485,6 +1507,7 @@ class Query {
     if (this.op === 'insert' && this.table === 'reviews') {
       // Policy: as yourself, for a movie you've ranked. Unique per user and movie.
       const row = clone(this.row)
+      b.checkTextTrigger(row.body) // BEFORE triggers run ahead of the policy check
       const ranked = b.rankings.some((r) => r.user_id === ctx.uid && r.movie_id === row.movie_id)
       if (ctx.uid === null || row.user_id !== ctx.uid || !ranked) throw pgError('new row violates row-level security policy for table "reviews"', '42501')
       if (b.reviews.some((r) => r.user_id === row.user_id && r.movie_id === row.movie_id)) throw pgError('duplicate key value violates unique constraint "reviews_user_id_movie_id_key"', '23505')
@@ -1498,6 +1521,7 @@ class Query {
     if (this.op === 'insert' && this.table === 'review_comments') {
       // Policy: as yourself, on a review you can see. Trigger: replies go on top-level comments of the same review.
       const row = clone(this.row)
+      b.checkTextTrigger(row.body) // BEFORE triggers run ahead of the policy check
       const review = b.reviews.find((r) => r.id === row.review_id)
       const visible = Boolean(review) && b.canView(ctx.uid, review.user_id)
       if (ctx.uid === null || row.user_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "review_comments"', '42501')
@@ -1518,6 +1542,20 @@ class Query {
     if (this.op === 'insert' && this.table === 'reports') {
       // Policy: as yourself, about a review or comment you can see. One per reporter and target.
       const row = clone(this.row)
+      // Trigger fill_report_snapshot (BEFORE INSERT): copies what was reported from
+      // the real row and ignores what the client sent for those columns.
+      const target = row.target_type === 'review'
+        ? b.reviews.find((r) => r.id === row.target_id)
+        : b.review_comments.find((c) => c.id === row.target_id)
+      if (target && target.user_id === row.reporter_id) throw pgError('cannot_report_self', '42501')
+      const snapshot = {
+        target_user_id: target?.user_id ?? null,
+        review_id: target ? (row.target_type === 'review' ? target.id : target.review_id) : null,
+        target_body: target?.body ?? null,
+        status: 'open',
+        resolved_by: null,
+        resolved_at: null,
+      }
       const seen = (list, check) => list.some((x) => x.id === row.target_id && check(x))
       const visible = row.target_type === 'review'
         ? seen(b.reviews, (r) => b.canView(ctx.uid, r.user_id))
@@ -1527,10 +1565,11 @@ class Query {
       if (ctx.uid === null || row.reporter_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "reports"', '42501')
       const length = [...(row.reason ?? '')].length
       if (length < 1 || length > 500) throw pgError('new row for relation "reports" violates check constraint "reports_reason_check"', '23514')
+      if (isBlank(row.reason)) throw pgError('new row for relation "reports" violates check constraint "reports_reason_not_blank"', '23514')
       if (b.reports.some((r) => r.reporter_id === row.reporter_id && r.target_type === row.target_type && r.target_id === row.target_id)) {
         throw pgError('duplicate key value violates unique constraint "reports_reporter_id_target_type_target_id_key"', '23505')
       }
-      const saved = { id: b.id(), reporter_id: row.reporter_id, target_type: row.target_type, target_id: row.target_id, reason: row.reason, created_at: b.now() }
+      const saved = { id: b.id(), reporter_id: row.reporter_id, target_type: row.target_type, target_id: row.target_id, reason: row.reason, created_at: b.now(), ...snapshot }
       b.reports.push(saved)
       return out([saved])
     }
@@ -1554,6 +1593,7 @@ class Query {
     for (const row of rows) {
       const length = [...row.body].length
       if (length < 1 || length > 2000) throw pgError('new row for relation "review_comments" violates check constraint "review_comments_body_check"', '23514')
+      if (isBlank(row.body)) throw pgError('new row for relation "review_comments" violates check constraint "review_comments_body_not_blank"', '23514')
     }
   }
 
@@ -1562,6 +1602,7 @@ class Query {
     for (const row of rows) {
       const length = [...row.body].length
       if (length < 1 || length > 2000) throw pgError('new row for relation "reviews" violates check constraint "reviews_body_check"', '23514')
+      if (isBlank(row.body)) throw pgError('new row for relation "reviews" violates check constraint "reviews_body_not_blank"', '23514')
     }
   }
 

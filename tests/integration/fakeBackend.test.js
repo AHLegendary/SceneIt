@@ -304,8 +304,8 @@ describe('reviews', () => {
     expect((await insertReview(client, alice, DUNE, 'Again')).error.code).toBe('23505')
     b.reviews.length = 0
     expect((await insertReview(client, alice, DUNE, '')).error.code).toBe('23514')
-    expect((await insertReview(client, alice, DUNE, 'a'.repeat(2001))).error.code).toBe('23514')
-    expect((await insertReview(client, alice, DUNE, 'a'.repeat(2000))).error).toBeNull()
+    expect((await insertReview(client, alice, DUNE, 'ab'.repeat(1000) + 'a')).error.code).toBe('23514')
+    expect((await insertReview(client, alice, DUNE, 'ab'.repeat(1000))).error).toBeNull()
   })
 
   it('follows profile privacy: public, own and friends can read; strangers cannot', async () => {
@@ -394,8 +394,8 @@ describe('review comments', () => {
   it('takes 1 to 2000 characters', async () => {
     const asBob = await clientFor(bob)
     expect((await comment(asBob, bob, '')).error.code).toBe('23514')
-    expect((await comment(asBob, bob, 'a'.repeat(2001))).error.code).toBe('23514')
-    expect((await comment(asBob, bob, 'a'.repeat(2000))).error).toBeNull()
+    expect((await comment(asBob, bob, 'ab'.repeat(1000) + 'a')).error.code).toBe('23514')
+    expect((await comment(asBob, bob, 'ab'.repeat(1000))).error).toBeNull()
   })
 
   it('allows one level of replies and refuses replies to replies', async () => {
@@ -528,6 +528,150 @@ describe('reports', () => {
     await report(asBob, bob, 'review', review.id)
     const read = await asBob.from('reports').select('*')
     expect(read.error?.code).toBe('42501') // no select privilege at all
+  })
+})
+
+describe('moderation checks (20261118000000_moderation_checks.sql)', () => {
+  const DUNE = 'dune-part-two-2024'
+  let review
+  let commentRow
+
+  beforeEach(() => {
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Original review' })
+    commentRow = b.addComment(alice, review, { body: 'Original comment' })
+  })
+
+  const insertReview = (client, body) =>
+    client.from('reviews').insert({ user_id: alice.id, movie_id: tmdb('inception-2010'), body })
+  const insertComment = (client, body, extra = {}) =>
+    client.from('review_comments').insert({ review_id: review.id, user_id: bob.id, body, ...extra })
+  const report = (client, user, type, id, reason = 'Spam', extra = {}) =>
+    client.from('reports').insert({ reporter_id: user.id, target_type: type, target_id: id, reason, ...extra })
+
+  describe('flagged text', () => {
+    it('is rejected on insert, for reviews and comments', async () => {
+      b.seedList(alice, [DUNE, 'inception-2010'])
+      const asAlice = await clientFor(alice)
+      const asBob = await clientFor(bob)
+      for (const bad of ['just kys', 'Kill Yourself', 'x '.repeat(3) + 'a'.repeat(21)]) {
+        expect((await insertReview(asAlice, bad)).error).toMatchObject({ message: 'content_flagged', code: 'P0001' })
+        expect((await insertComment(asBob, bad)).error).toMatchObject({ message: 'content_flagged', code: 'P0001' })
+      }
+      expect(b.reviews).toHaveLength(1)
+      expect(b.review_comments).toHaveLength(1)
+    })
+
+    it('is rejected on update, and the old text stays', async () => {
+      const asAlice = await clientFor(alice)
+      const r = await asAlice.from('reviews').update({ body: 'go kys' }).eq('id', review.id)
+      expect(r.error?.message).toBe('content_flagged')
+      const c = await asAlice.from('review_comments').update({ body: '!'.repeat(30) }).eq('id', commentRow.id)
+      expect(c.error?.message).toBe('content_flagged')
+      expect(review.body).toBe('Original review')
+      expect(commentRow.body).toBe('Original comment')
+    })
+
+    it('does not look at an edit that leaves the text alone', async () => {
+      // `before update of body`: changing only the spoiler flag never runs the check.
+      review.body = 'old kys text' // as if posted before the check existed
+      const asAlice = await clientFor(alice)
+      expect((await asAlice.from('reviews').update({ is_spoiler: true }).eq('id', review.id)).error).toBeNull()
+      expect(review.is_spoiler).toBe(true)
+    })
+
+    it('lets normal text through, including "kys" inside a word and 20 repeats', async () => {
+      const asBob = await clientFor(bob)
+      for (const fine of ['Skys and monkeys', 'kyshtym', 'Sooooooo good', 'a'.repeat(20), 'I like turkeys']) {
+        expect((await insertComment(asBob, fine)).error, fine).toBeNull()
+      }
+    })
+
+    it('matches the phrase at the edges and next to punctuation', async () => {
+      const asBob = await clientFor(bob)
+      for (const bad of ['kys', 'KYS!', '(kys)', 'a_kys_b', 'you should kill yourself']) {
+        expect((await insertComment(asBob, bad)).error?.message, bad).toBe('content_flagged')
+      }
+    })
+  })
+
+  describe('blank bodies and reasons', () => {
+    it('are rejected for reviews and comments, on insert and update', async () => {
+      b.seedList(alice, [DUNE, 'inception-2010'])
+      const asAlice = await clientFor(alice)
+      const asBob = await clientFor(bob)
+      for (const blank of ['   ', '\n\t ', ' \r\n ']) {
+        expect((await insertReview(asAlice, blank)).error?.code, JSON.stringify(blank)).toBe('23514')
+        expect((await insertComment(asBob, blank)).error?.code).toBe('23514')
+        expect((await asAlice.from('reviews').update({ body: blank }).eq('id', review.id)).error?.code).toBe('23514')
+        expect((await asAlice.from('review_comments').update({ body: blank }).eq('id', commentRow.id)).error?.code).toBe('23514')
+      }
+      expect(review.body).toBe('Original review')
+      expect(commentRow.body).toBe('Original comment')
+    })
+
+    it('are rejected for report reasons', async () => {
+      const asBob = await clientFor(bob)
+      expect((await report(asBob, bob, 'review', review.id, '  \n ')).error?.code).toBe('23514')
+      expect(b.reports).toEqual([])
+    })
+  })
+
+  describe('report snapshots', () => {
+    it('are filled from the reported review or comment', async () => {
+      const asBob = await clientFor(bob)
+      expect((await report(asBob, bob, 'review', review.id)).error).toBeNull()
+      expect((await report(asBob, bob, 'comment', commentRow.id)).error).toBeNull()
+      const [onReview, onComment] = b.reports
+      expect(onReview).toMatchObject({ target_user_id: alice.id, review_id: review.id, target_body: 'Original review', status: 'open', resolved_by: null, resolved_at: null })
+      expect(onComment).toMatchObject({ target_user_id: alice.id, review_id: review.id, target_body: 'Original comment', status: 'open' })
+    })
+
+    it("ignore what the client sends for those columns", async () => {
+      const asBob = await clientFor(bob)
+      const lies = {
+        target_user_id: bob.id,
+        review_id: '00000000-0000-4000-8000-0000000000ff',
+        target_body: 'Something else',
+        status: 'hidden',
+        resolved_by: bob.id,
+        resolved_at: '2020-01-01T00:00:00Z',
+      }
+      expect((await report(asBob, bob, 'review', review.id, 'Spam', lies)).error).toBeNull()
+      expect(b.reports[0]).toMatchObject({ target_user_id: alice.id, review_id: review.id, target_body: 'Original review', status: 'open', resolved_by: null, resolved_at: null })
+    })
+
+    it("can't be filed about your own review or comment", async () => {
+      const asAlice = await clientFor(alice)
+      expect((await report(asAlice, alice, 'review', review.id)).error).toMatchObject({ message: 'cannot_report_self', code: '42501' })
+      expect((await report(asAlice, alice, 'comment', commentRow.id)).error?.message).toBe('cannot_report_self')
+      const bobsComment = b.addComment(bob, review, { body: 'Bob here' })
+      expect((await report(asAlice, alice, 'comment', bobsComment.id)).error).toBeNull() // someone else's is fine
+      expect(b.reports).toHaveLength(1)
+    })
+
+    it('stay the same when the target is edited or deleted afterwards', async () => {
+      const asBob = await clientFor(bob)
+      const asAlice = await clientFor(alice)
+      await report(asBob, bob, 'review', review.id)
+      await report(asBob, bob, 'comment', commentRow.id)
+      const before = JSON.parse(JSON.stringify(b.reports))
+
+      await asAlice.from('reviews').update({ body: 'Edited review' }).eq('id', review.id)
+      await asAlice.from('review_comments').update({ body: 'Edited comment' }).eq('id', commentRow.id)
+      expect(b.reports).toEqual(before)
+
+      await asAlice.from('reviews').delete().eq('id', review.id) // takes the comment with it
+      expect(b.reviews).toEqual([])
+      expect(b.reports).toEqual(before)
+      expect(b.reports.map((r) => r.target_body)).toEqual(['Original review', 'Original comment'])
+    })
+
+    it('are empty when the target does not exist, and the report is refused', async () => {
+      const asBob = await clientFor(bob)
+      expect((await report(asBob, bob, 'comment', '00000000-0000-4000-8000-0000000000ff')).error?.code).toBe('42501')
+      expect(b.reports).toEqual([])
+    })
   })
 })
 
@@ -795,7 +939,7 @@ describe('notifications', () => {
     })
 
     it('cuts the preview at 120 characters', async () => {
-      await comment(bob, null, 'x'.repeat(300))
+      await comment(bob, null, 'xy'.repeat(150))
       expect((await mine(alice))[0].preview).toHaveLength(120)
     })
   })
