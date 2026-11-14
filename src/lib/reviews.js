@@ -31,16 +31,18 @@ export const CANNOT_REPORT_SELF = "You can't report your own post."
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const REVIEW_COLUMNS = 'id, user_id, movie_id, body, is_spoiler, created_at, updated_at'
+const REVIEW_COLUMNS = 'id, user_id, movie_id, body, is_spoiler, created_at, updated_at, hidden_at, hidden_reason'
 // Same, plus how many comments each review has (PostgREST counts the rows).
 const REVIEW_WITH_COUNT = `${REVIEW_COLUMNS}, review_comments(count)`
-const COMMENT_COLUMNS = 'id, review_id, user_id, parent_id, body, created_at, updated_at'
+const COMMENT_COLUMNS = 'id, review_id, user_id, parent_id, body, created_at, updated_at, hidden_at, hidden_reason'
 
 // ------------------------------------------------------------------ shapes
 
 // Review row -> { id, userId, movieId, body, isSpoiler, createdAt, updatedAt,
-// commentCount }. movieId is the UI id (catalog slug when there is one, else
-// "tmdb-<id>"). commentCount is 0 unless the row came with the comment count
+// commentCount, isHidden, hiddenReason }. A moderator can hide a review: then
+// only its author and moderators get it back from the database at all, and
+// hiddenReason is the moderator's note (null if there is none). movieId is the
+// UI id (catalog slug when there is one, else "tmdb-<id>"). commentCount is 0 unless the row came with the comment count
 // (review_comments(count) from a table query, or comment_count from the feed).
 export function rowToReview(row) {
   return {
@@ -52,14 +54,22 @@ export function rowToReview(row) {
     isSpoiler: Boolean(row.is_spoiler),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    isHidden: Boolean(row.hidden_at),
+    hiddenReason: row.hidden_reason ?? null,
   }
 }
 
 // Comment row -> { id, reviewId, userId, parentId, body, createdAt, updatedAt,
-// username }. username is only there when the row came from
-// get_review_comments (null otherwise).
+// username, isHidden, hiddenReason }. username is only there when the row came
+// from get_review_comments (null otherwise).
+//
+// A hidden comment is a placeholder for everyone except its author and
+// moderators: isHidden is true and body, userId and username are null. (The
+// function says so with is_hidden; a plain table row says it with hidden_at.)
 export function rowToComment(row) {
   return {
+    isHidden: row.is_hidden ?? Boolean(row.hidden_at),
+    hiddenReason: row.hidden_reason ?? null,
     username: row.username ?? null,
     id: row.id,
     reviewId: row.review_id,

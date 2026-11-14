@@ -14,6 +14,7 @@ import { userHref } from '../lib/route.js'
 //   viewerId        who is looking, or null when logged out
 //   reviewAuthorId  the review's author, who may delete any comment
 //   canWrite        logged in: can comment, reply and report
+//   closed          the review is hidden: no comment box (and no "Log in" nudge)
 //   onAdd           async (text, parentId | null)
 //   onEdit          async (comment, text)
 //   onDelete        async (comment)
@@ -23,16 +24,19 @@ import { userHref } from '../lib/route.js'
 //
 // The handlers throw an Error with a readable message on failure; the form
 // that called them shows it and keeps what was typed.
-export default function Comments({ comments, viewerId, reviewAuthorId, canWrite, flashId = null, onAdd, onEdit, onDelete, onReport, onLogin }) {
+export default function Comments({ comments, viewerId, reviewAuthorId, canWrite, closed = false, flashId = null, onAdd, onEdit, onDelete, onReport, onLogin }) {
   const thread = threadComments(comments)
+  // Comments a moderator removed show as a placeholder for everyone else; they
+  // keep their place in the thread (so replies stay) but don't count.
+  const count = comments.filter((c) => !isPlaceholder(c)).length
 
   return (
     <section className="comments" aria-labelledby="comments-title">
       <h2 className="recs__title" id="comments-title">
-        {comments.length === 0 ? 'Comments' : `Comments (${comments.length})`}
+        {count === 0 ? 'Comments' : `Comments (${count})`}
       </h2>
 
-      {canWrite ? (
+      {closed ? null : canWrite ? (
         <Composer label="Add a comment" placeholder="Join the discussion" submitLabel="Comment" onSubmit={(text) => onAdd(text, null)} />
       ) : (
         onLogin && (
@@ -88,6 +92,10 @@ export default function Comments({ comments, viewerId, reviewAuthorId, canWrite,
   )
 }
 
+// A comment a moderator hid, as the database sends it to people who may not
+// read it: no body, no author.
+const isPlaceholder = (comment) => comment.isHidden && comment.body === null
+
 function formatDate(iso) {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -107,6 +115,17 @@ function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false
   const mine = viewerId !== null && comment.userId === viewerId
   const canDelete = mine || (viewerId !== null && viewerId === reviewAuthorId)
   const edited = comment.updatedAt !== comment.createdAt
+
+  if (isPlaceholder(comment)) {
+    return (
+      <article id={`comment-${comment.id}`} className={flashing ? 'comment comment--removed is-flash' : 'comment comment--removed'} aria-label="Removed comment">
+        <p className="comment__removed">This comment was removed by a moderator.</p>
+      </article>
+    )
+  }
+  // Only the author and moderators ever get a hidden comment's text. The
+  // author is told a moderator did it; a moderator just sees the state.
+  const hiddenLabel = comment.isHidden ? (mine ? 'Hidden by a moderator' : 'Hidden') : null
 
   async function remove() {
     setBusy(true)
@@ -132,7 +151,9 @@ function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false
           )}
           <span>{formatDate(comment.createdAt)}</span>
           {edited && <span>(edited)</span>}
+          {hiddenLabel && <span className="comment__hidden">{hiddenLabel}</span>}
         </header>
+        {hiddenLabel && comment.hiddenReason && <p className="comment__hiddenreason">Reason: {comment.hiddenReason}</p>}
 
         {mode === 'edit' ? (
           <Composer
@@ -166,7 +187,7 @@ function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false
 
         {mode !== 'edit' && mode !== 'delete' && (
           <div className="comment__actions">
-            {canWrite && canReply && (
+            {canWrite && canReply && !comment.isHidden && (
               <button type="button" className="linkbtn" onClick={() => { setError(null); setMode(mode === 'reply' ? 'view' : 'reply') }} aria-label={`Reply to ${name}`}>
                 Reply
               </button>
@@ -181,7 +202,7 @@ function Comment({ comment, viewerId, reviewAuthorId, canWrite, canReply = false
                 Delete
               </button>
             )}
-            {canWrite && !mine && (
+            {canWrite && !mine && !comment.isHidden && (
               <ReportControl what={`comment by ${name}`} onReport={(reason) => onReport(comment, reason)} />
             )}
           </div>

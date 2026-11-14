@@ -675,6 +675,401 @@ describe('moderation checks (20261118000000_moderation_checks.sql)', () => {
   })
 })
 
+describe('moderation: hidden content (20261119000000_moderation_hidden.sql)', () => {
+  const DUNE = 'dune-part-two-2024'
+  let dan
+  let mod
+  let review // alice's review of Dune
+  let top // cara's top-level comment on it
+  let reply // bob's reply to cara's comment
+
+  beforeEach(() => {
+    dan = b.addUser({ username: 'dan' })
+    mod = b.addUser({ username: 'mod', is_moderator: true })
+    cara.is_public = true // cara is private in the other suites; here she comments openly
+    b.profileOf(cara).is_public = true
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Original review' })
+    top = b.addComment(cara, review, { body: 'Top-level comment' })
+    reply = b.addComment(bob, review, { body: 'A reply', parentId: top.id })
+  })
+
+  const anon = () => b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })
+  // Who is looking: logged out, a stranger, the author, a moderator.
+  const viewers = async () => ({ out: anon(), other: await clientFor(dan), author: await clientFor(alice), moderator: await clientFor(mod) })
+  const asMod = () => clientFor(mod)
+  const hide = async (type, id, reason = null) => {
+    const { error } = await (await asMod()).rpc('moderate_content', { p_target_type: type, p_target_id: id, p_action: 'hide', p_reason: reason })
+    expect(error).toBeNull()
+  }
+  const moderate = async (client, type, id, action, reason = null) =>
+    client.rpc('moderate_content', { p_target_type: type, p_target_id: id, p_action: action, p_reason: reason })
+  const report = async (user, type, id, reason = 'Rude') => {
+    const { error } = await (await clientFor(user)).from('reports').insert({ reporter_id: user.id, target_type: type, target_id: id, reason })
+    expect(error).toBeNull()
+  }
+  const reviewIds = async (client) => (await client.from('reviews').select('id')).data.map((r) => r.id)
+  const commentIds = async (client) => (await client.from('review_comments').select('id')).data.map((c) => c.id)
+
+  describe('who can set what', () => {
+    it('does not let a user make themselves a moderator', async () => {
+      const asAlice = await clientFor(alice)
+      const { error } = await asAlice.from('profiles').update({ is_moderator: true }).eq('id', alice.id)
+      expect(error?.code).toBe('42501')
+      expect(b.profileOf(alice).is_moderator).toBe(false)
+      // The columns users may edit still work.
+      expect((await asAlice.from('profiles').update({ bio: 'hi' }).eq('id', alice.id)).error).toBeNull()
+    })
+
+    it('does not let users write the hidden columns, on their own posts either', async () => {
+      const asAlice = await clientFor(alice)
+      const asCara = await clientFor(cara)
+      for (const column of ['hidden_at', 'hidden_by', 'hidden_reason']) {
+        const value = column === 'hidden_at' ? '2026-01-01T00:00:00Z' : column === 'hidden_by' ? alice.id : 'x'
+        expect((await asAlice.from('reviews').update({ [column]: value }).eq('id', review.id)).error?.code).toBe('42501')
+        expect((await asCara.from('review_comments').update({ [column]: value }).eq('id', top.id)).error?.code).toBe('42501')
+      }
+      expect(review.hidden_at).toBeNull()
+      expect(top.hidden_at).toBeNull()
+    })
+  })
+
+  describe('a hidden review', () => {
+    beforeEach(async () => {
+      await hide('review', review.id, 'Off topic')
+    })
+
+    it('is gone for logged-out visitors and other users, and visible to its author and moderators', async () => {
+      const v = await viewers()
+      expect(await reviewIds(v.out)).toEqual([])
+      expect(await reviewIds(v.other)).toEqual([])
+      expect(await reviewIds(v.author)).toEqual([review.id])
+      expect(await reviewIds(v.moderator)).toEqual([review.id])
+      const asAuthor = await v.author.from('reviews').select('id, hidden_at, hidden_reason').eq('id', review.id).single()
+      expect(asAuthor.data).toMatchObject({ hidden_reason: 'Off topic' })
+      expect(asAuthor.data.hidden_at).toBeTruthy()
+    })
+
+    it('hides its comments too, except from its author and moderators', async () => {
+      const v = await viewers()
+      expect(await commentIds(v.out)).toEqual([])
+      expect(await commentIds(v.other)).toEqual([])
+      expect((await v.other.rpc('get_review_comments', { p_review_id: review.id })).data).toEqual([])
+      expect((await v.out.rpc('get_review_comments', { p_review_id: review.id })).data).toEqual([])
+      expect((await v.author.rpc('get_review_comments', { p_review_id: review.id })).data).toHaveLength(2)
+      expect((await v.moderator.rpc('get_review_comments', { p_review_id: review.id })).data).toHaveLength(2)
+      expect((await v.author.from('review_comments').select('id')).data).toHaveLength(2)
+    })
+
+    it('is left out of the community feed for everyone, its author and moderators too', async () => {
+      const v = await viewers()
+      for (const client of Object.values(v)) expect((await client.rpc('get_review_feed')).data).toEqual([])
+      await moderate(v.moderator, 'review', review.id, 'restore')
+      expect((await v.other.rpc('get_review_feed')).data.map((r) => r.id)).toEqual([review.id])
+    })
+
+    it('can still be edited and deleted by its author, and editing does not unhide it', async () => {
+      const asAlice = await clientFor(alice)
+      const edited = await asAlice.from('reviews').update({ body: 'Rewritten' }).eq('id', review.id).select('*')
+      expect(edited.error).toBeNull()
+      expect(edited.data[0]).toMatchObject({ body: 'Rewritten' })
+      expect(edited.data[0].hidden_at).toBeTruthy()
+      expect((await asAlice.from('reviews').delete().eq('id', review.id)).error).toBeNull()
+      expect(b.reviews).toEqual([])
+    })
+
+    it('can not be commented on, by anyone', async () => {
+      for (const user of [alice, bob, mod]) {
+        const client = await clientFor(user)
+        const { error } = await client.from('review_comments').insert({ review_id: review.id, user_id: user.id, body: 'Hello' })
+        expect(error?.code, user.username).toBe('42501')
+      }
+      expect(b.review_comments).toHaveLength(2)
+    })
+
+    it('can not be reported by someone who can not see it', async () => {
+      const asDan = await clientFor(dan)
+      const { error } = await asDan.from('reports').insert({ reporter_id: dan.id, target_type: 'review', target_id: review.id, reason: 'x' })
+      expect(error?.code).toBe('42501')
+    })
+  })
+
+  describe('a hidden comment', () => {
+    beforeEach(async () => {
+      await hide('comment', top.id, 'Insult')
+    })
+
+    it('is a placeholder with no text, user or username for other people', async () => {
+      const v = await viewers()
+      for (const client of [v.out, v.other, v.author]) {
+        const rows = (await client.rpc('get_review_comments', { p_review_id: review.id })).data
+        const placeholder = rows.find((c) => c.id === top.id)
+        expect(placeholder).toMatchObject({ body: null, user_id: null, username: null, is_hidden: true, hidden_reason: null, review_id: review.id })
+      }
+    })
+
+    it('keeps its replies in the thread', async () => {
+      const rows = (await (await clientFor(dan)).rpc('get_review_comments', { p_review_id: review.id })).data
+      expect(rows.map((c) => c.id)).toEqual([top.id, reply.id])
+      expect(rows[1]).toMatchObject({ parent_id: top.id, body: 'A reply', username: 'bob', is_hidden: false })
+    })
+
+    it('shows its text to its own author and to moderators', async () => {
+      const asCara = await clientFor(cara)
+      const own = (await asCara.rpc('get_review_comments', { p_review_id: review.id })).data.find((c) => c.id === top.id)
+      expect(own).toMatchObject({ body: 'Top-level comment', user_id: cara.id, username: 'cara', is_hidden: true, hidden_reason: 'Insult' })
+      const seen = (await (await asMod()).rpc('get_review_comments', { p_review_id: review.id })).data.find((c) => c.id === top.id)
+      expect(seen).toMatchObject({ body: 'Top-level comment', username: 'cara', is_hidden: true })
+    })
+
+    it('is not readable straight from the table by other people', async () => {
+      const v = await viewers()
+      expect(await commentIds(v.out)).toEqual([reply.id])
+      expect(await commentIds(v.other)).toEqual([reply.id])
+      expect(await commentIds(v.author)).toEqual([reply.id]) // the review's author, not the comment's
+      expect((await commentIds(await clientFor(cara))).sort()).toEqual([top.id, reply.id].sort())
+      expect((await commentIds(v.moderator)).sort()).toEqual([top.id, reply.id].sort())
+    })
+
+    it('does not count towards the comment count, except for people who can read it', async () => {
+      const count = async (client) => (await client.from('reviews').select('id, review_comments(count)').eq('id', review.id).single()).data.review_comments[0].count
+      const v = await viewers()
+      expect(await count(v.out)).toBe(1)
+      expect(await count(v.other)).toBe(1)
+      expect(await count(v.moderator)).toBe(2)
+    })
+
+    it('does not count in the community feed', async () => {
+      const row = (await (await clientFor(dan)).rpc('get_review_feed')).data.find((r) => r.id === review.id)
+      expect(row.comment_count).toBe(1)
+    })
+
+    it('can not be replied to', async () => {
+      // A stranger can't see it, so for them it doesn't exist.
+      const asDan = await clientFor(dan)
+      expect((await asDan.from('review_comments').insert({ review_id: review.id, user_id: dan.id, parent_id: top.id, body: 'Hi' })).error?.code).toBe('23503')
+      // Its author and moderators can see it, and are told why.
+      for (const user of [cara, mod]) {
+        const client = await clientFor(user)
+        const { error } = await client.from('review_comments').insert({ review_id: review.id, user_id: user.id, parent_id: top.id, body: 'Hi' })
+        expect(error, user.username).toMatchObject({ code: '23514', message: "Can't reply to a hidden comment" })
+      }
+      expect(b.review_comments).toHaveLength(2)
+    })
+
+    it('can still be edited and deleted by its author, and editing does not unhide it', async () => {
+      const asCara = await clientFor(cara)
+      const edited = await asCara.from('review_comments').update({ body: 'Sorry' }).eq('id', top.id).select('*')
+      expect(edited.error).toBeNull()
+      expect(edited.data[0].hidden_at).toBeTruthy()
+      expect((await asCara.from('review_comments').delete().eq('id', top.id)).error).toBeNull()
+      expect(b.review_comments.map((c) => c.id)).toEqual([]) // the reply goes with it
+    })
+  })
+
+  describe('moderator functions', () => {
+    it('refuse everyone who is not a moderator', async () => {
+      for (const client of [anon(), await clientFor(alice), await clientFor(dan)]) {
+        expect((await client.rpc('get_reports')).error).toMatchObject({ message: 'not_moderator', code: '42501' })
+        expect((await moderate(client, 'review', review.id, 'hide')).error).toMatchObject({ message: 'not_moderator', code: '42501' })
+        expect((await moderate(client, 'review', review.id, 'dismiss')).error?.message).toBe('not_moderator')
+      }
+      expect(review.hidden_at).toBeNull()
+    })
+
+    it('hide marks every open report on the target as hidden, and records who and why', async () => {
+      await report(bob, 'comment', top.id, 'Rude')
+      await report(dan, 'comment', top.id, 'Nasty')
+      await report(dan, 'review', review.id, 'Other thing')
+      await hide('comment', top.id, '  Insulting  ')
+      expect(top).toMatchObject({ hidden_by: mod.id, hidden_reason: 'Insulting' })
+      const [one, two, other] = b.reports
+      for (const r of [one, two]) expect(r).toMatchObject({ status: 'hidden', resolved_by: mod.id })
+      expect(one.resolved_at).toBeTruthy()
+      expect(other.status).toBe('open')
+    })
+
+    it('hide leaves already-resolved reports alone and takes an empty reason as none', async () => {
+      await report(bob, 'comment', top.id)
+      await moderate(await asMod(), 'comment', top.id, 'dismiss')
+      await hide('comment', top.id, '   ')
+      expect(b.reports[0].status).toBe('dismissed')
+      expect(top.hidden_reason).toBeNull()
+    })
+
+    it('restore un-hides but leaves the reports as they are', async () => {
+      await report(bob, 'comment', top.id)
+      await hide('comment', top.id, 'Insult')
+      const before = JSON.parse(JSON.stringify(b.reports))
+      expect((await moderate(await asMod(), 'comment', top.id, 'restore')).error).toBeNull()
+      expect(top).toMatchObject({ hidden_at: null, hidden_by: null, hidden_reason: null })
+      expect(b.reports).toEqual(before)
+    })
+
+    it('dismiss clears the open reports and keeps the content visible', async () => {
+      await report(bob, 'review', review.id)
+      await report(dan, 'review', review.id)
+      expect((await moderate(await asMod(), 'review', review.id, 'dismiss')).error).toBeNull()
+      expect(b.reports.map((r) => [r.status, r.resolved_by])).toEqual([['dismissed', mod.id], ['dismissed', mod.id]])
+      expect(review.hidden_at).toBeNull()
+    })
+
+    it('dismiss works on deleted targets, hide and restore do not', async () => {
+      await report(bob, 'comment', top.id)
+      const asCara = await clientFor(cara)
+      await asCara.from('review_comments').delete().eq('id', top.id)
+      const client = await asMod()
+      expect((await moderate(client, 'comment', top.id, 'hide')).error).toMatchObject({ message: 'target_not_found' })
+      expect((await moderate(client, 'comment', top.id, 'restore')).error?.message).toBe('target_not_found')
+      expect(b.reports[0].status).toBe('open') // a failed hide resolves nothing
+      expect((await moderate(client, 'comment', top.id, 'dismiss')).error).toBeNull()
+      expect(b.reports[0].status).toBe('dismissed')
+    })
+
+    it('rejects unknown types and actions, and reasons over 500 characters', async () => {
+      const client = await asMod()
+      expect((await moderate(client, 'user', review.id, 'hide')).error?.code).toBe('22023')
+      expect((await moderate(client, 'review', review.id, 'delete')).error?.code).toBe('22023')
+      expect((await moderate(client, 'review', review.id, 'hide', 'ab'.repeat(251))).error?.code).toBe('22023')
+      expect(review.hidden_at).toBeNull()
+    })
+
+    it('hiding and restoring do not change updated_at, an edit does', async () => {
+      const before = { review: review.updated_at, comment: top.updated_at }
+      await hide('review', review.id)
+      await hide('comment', top.id)
+      expect([review.updated_at, top.updated_at]).toEqual([before.review, before.comment])
+      const client = await asMod()
+      await moderate(client, 'review', review.id, 'restore')
+      await moderate(client, 'comment', top.id, 'restore')
+      expect([review.updated_at, top.updated_at]).toEqual([before.review, before.comment])
+      await (await clientFor(alice)).from('reviews').update({ body: 'Edited' }).eq('id', review.id)
+      expect(review.updated_at).not.toBe(before.review)
+    })
+
+    describe('get_reports', () => {
+      it('gives one row per target with the count, reasons, snapshot and current state', async () => {
+        await report(bob, 'comment', top.id, 'Rude')
+        await report(dan, 'comment', top.id, 'Nasty')
+        await (await clientFor(cara)).from('review_comments').update({ body: 'Edited after the reports' }).eq('id', top.id)
+        const { data, error } = await (await asMod()).rpc('get_reports')
+        expect(error).toBeNull()
+        expect(data).toHaveLength(1)
+        expect(data[0]).toMatchObject({
+          target_type: 'comment',
+          target_id: top.id,
+          review_id: review.id,
+          review_author_username: 'alice',
+          target_author_username: 'cara',
+          target_body: 'Top-level comment', // as reported
+          current_body: 'Edited after the reports',
+          is_deleted: false,
+          is_hidden: false,
+          report_count: 2,
+          status: 'open',
+          resolved_by_username: null,
+          resolved_at: null,
+        })
+        expect(data[0].reports.map((r) => [r.reason, r.reporter])).toEqual([['Rude', 'bob'], ['Nasty', 'dan']])
+      })
+
+      it('takes the text from the earliest report, orders by newest report, and pages', async () => {
+        await report(bob, 'comment', top.id, 'First')
+        await report(bob, 'review', review.id, 'Second')
+        await report(dan, 'comment', top.id, 'Third') // makes the comment the most recently reported
+        const client = await asMod()
+        const all = (await client.rpc('get_reports')).data
+        expect(all.map((r) => r.target_type)).toEqual(['comment', 'review'])
+        expect((await client.rpc('get_reports', { p_limit: 1 })).data.map((r) => r.target_type)).toEqual(['comment'])
+        expect((await client.rpc('get_reports', { p_limit: 1, p_offset: 1 })).data.map((r) => r.target_type)).toEqual(['review'])
+      })
+
+      it('shows deleted and hidden targets, and filters by status', async () => {
+        await report(bob, 'comment', top.id)
+        await report(bob, 'review', review.id)
+        const client = await asMod()
+        await (await clientFor(cara)).from('review_comments').delete().eq('id', top.id)
+        await hide('review', review.id, 'Spam') // after the delete: with the review hidden, cara could no longer reach her comment
+
+        expect((await client.rpc('get_reports')).data.map((r) => r.target_id)).toEqual([top.id])
+        const open = (await client.rpc('get_reports', { p_status: 'open' })).data[0]
+        expect(open).toMatchObject({ is_deleted: true, current_body: null, target_body: 'Top-level comment' })
+
+        const resolved = (await client.rpc('get_reports', { p_status: 'resolved' })).data
+        expect(resolved).toHaveLength(1)
+        expect(resolved[0]).toMatchObject({ target_id: review.id, status: 'hidden', is_hidden: true, resolved_by_username: 'mod' })
+        expect(resolved[0].resolved_at).toBeTruthy()
+        expect((await client.rpc('get_reports', { p_status: 'hidden' })).data).toHaveLength(1)
+        expect((await client.rpc('get_reports', { p_status: 'dismissed' })).data).toEqual([])
+        expect((await client.rpc('get_reports', { p_status: 'nope' })).error?.code).toBe('22023')
+      })
+
+      it('keeps old and new reports on the same target as separate rows', async () => {
+        await report(bob, 'review', review.id, 'Old')
+        await hide('review', review.id)
+        const client = await asMod()
+        await moderate(client, 'review', review.id, 'restore')
+        await report(dan, 'review', review.id, 'New')
+        expect((await client.rpc('get_reports', { p_status: 'open' })).data.map((r) => r.report_count)).toEqual([1])
+        expect((await client.rpc('get_reports', { p_status: 'resolved' })).data.map((r) => r.status)).toEqual(['hidden'])
+      })
+    })
+  })
+
+  describe('notifications about hidden content', () => {
+    // cara commented on alice's review, and bob replied to cara: cara gets a
+    // 'reply' notification, alice a 'comment' one. (addComment fires the same
+    // triggers as the real insert.)
+    const panel = async (user) => (await (await clientFor(user)).rpc('get_notifications')).data
+    const replyNotice = async () => (await panel(cara)).find((n) => n.type === 'reply')
+    const open = async (user, id) => (await (await clientFor(user)).rpc('open_notification', { p_id: id })).data[0]
+
+    it('says a notification about a hidden comment is no longer available, and comes back after restore', async () => {
+      expect(await replyNotice()).toMatchObject({ available: true, preview: 'A reply' })
+      await hide('comment', reply.id)
+      expect(await replyNotice()).toMatchObject({ available: false, preview: null })
+      expect((await panel(alice)).find((n) => n.comment_id === top.id)).toMatchObject({ available: true }) // cara's comment, still fine
+      await moderate(await asMod(), 'comment', reply.id, 'restore')
+      expect(await replyNotice()).toMatchObject({ available: true, preview: 'A reply' })
+    })
+
+    it('says so when the review is hidden, for everyone including its author', async () => {
+      await hide('review', review.id)
+      expect((await replyNotice()).available).toBe(false)
+      expect((await panel(alice))[0].available).toBe(false)
+      await moderate(await asMod(), 'review', review.id, 'restore')
+      expect((await replyNotice()).available).toBe(true)
+      expect((await panel(alice))[0].available).toBe(true)
+    })
+
+    it('keeps the row but drops the review author and movie title for a hidden review, and restore brings them back', async () => {
+      const title = b.catalog(DUNE).title
+      expect(await replyNotice()).toMatchObject({ review_author_username: 'alice', movie_title: title })
+
+      await hide('review', review.id)
+      const hidden = await replyNotice()
+      expect(hidden).toMatchObject({ type: 'reply', actor_username: 'bob', available: false, review_author_username: null, movie_title: null, preview: null })
+      const opened = await open(cara, hidden.id)
+      expect(opened).toMatchObject({ available: false, type: 'reply', review_id: review.id, review_author_username: null })
+
+      await moderate(await asMod(), 'review', review.id, 'restore')
+      expect(await replyNotice()).toMatchObject({ available: true, review_author_username: 'alice', movie_title: title, preview: 'A reply' })
+      expect(await open(cara, hidden.id)).toMatchObject({ available: true, review_author_username: 'alice' })
+    })
+
+    it('still gives the review author and moderators the username and title of a hidden review', async () => {
+      const title = b.catalog(DUNE).title
+      await hide('review', review.id)
+      const aliceNotice = (await panel(alice)).find((n) => n.comment_id === top.id)
+      expect(aliceNotice).toMatchObject({ available: false, review_author_username: 'alice', movie_title: title })
+      // A moderator who is also a recipient: cara's comment on a review mod wrote? Use a notice addressed to the moderator.
+      b.addNotification(mod.id, bob.id, 'reply', { review_id: review.id, comment_id: reply.id })
+      const modNotice = (await panel(mod))[0]
+      expect(modNotice).toMatchObject({ available: false, review_author_username: 'alice', movie_title: title, preview: null })
+    })
+  })
+})
+
 describe('table privileges on the review tables', () => {
   const DUNE = 'dune-part-two-2024'
   const anonClient = () => b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })

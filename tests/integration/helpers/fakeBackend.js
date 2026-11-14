@@ -89,8 +89,8 @@ export class FakeBackend {
     this.movie_ratings = [] // cache of OMDb scores: { tmdb_id, imdb_id, imdb, imdb_votes, rt, checked_at }
     this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
-    this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at }
-    this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at }
+    this.reviews = [] // { id, user_id, movie_id, body, is_spoiler, created_at, updated_at, hidden_at, hidden_by, hidden_reason }
+    this.review_comments = [] // { id, review_id, user_id, parent_id, body, created_at, updated_at, hidden_at, hidden_by, hidden_reason }
     this.reports = [] // { id, reporter_id, target_type, target_id, reason, created_at, target_user_id, review_id, target_body, status, resolved_by, resolved_at }
     this.blends = [] // { id, owner_id, created_at }
     this.blend_members = [] // { blend_id, user_id, joined_at }
@@ -220,11 +220,11 @@ export class FakeBackend {
     return { id: m.tmdb_id, title: m.title, release_date: `${m.year}-01-01`, poster_path: m.poster_path, genre_ids: [], overview: m.overview, vote_average: 8, vote_count: 10000, adult: false, ...extra }
   }
 
-  addUser({ username, email = `${username.toLowerCase()}@example.com`, password = 'password123', is_public = true, bio = null, pronouns = null, confirmed = true } = {}) {
+  addUser({ username, email = `${username.toLowerCase()}@example.com`, password = 'password123', is_public = true, bio = null, pronouns = null, confirmed = true, is_moderator = false } = {}) {
     const id = this.id()
     const user = { id, email, password, username, confirmed }
     this.users.push(user)
-    this.profiles.push({ id, username, bio, pronouns, is_public, created_at: this.now() })
+    this.profiles.push({ id, username, bio, pronouns, is_public, is_moderator, created_at: this.now() })
     return user
   }
 
@@ -496,6 +496,106 @@ export class FakeBackend {
     this.review_comments = this.review_comments.filter((c) => !gone.has(c.review_id))
   }
 
+  // Port of is_moderator() in 20261119000000_moderation_hidden.sql.
+  isModerator(uid) {
+    return uid !== null && uid !== undefined && Boolean(this.profiles.find((p) => p.id === uid)?.is_moderator)
+  }
+
+  // The hidden clause of the reviews / review_comments select policies: a
+  // hidden row is only for its author and moderators.
+  canSeeHidden(uid, row) {
+    return !row.hidden_at || (uid !== null && row.user_id === uid) || this.isModerator(uid)
+  }
+
+  // The select policies of reviews and review_comments (as amended in
+  // 20261119000000_moderation_hidden.sql).
+  reviewVisible(uid, review) {
+    return this.canView(uid, review.user_id) && this.canSeeHidden(uid, review)
+  }
+
+  commentVisible(uid, comment) {
+    const review = this.reviews.find((r) => r.id === comment.review_id)
+    return Boolean(review) && this.reviewVisible(uid, review) && this.canSeeHidden(uid, comment)
+  }
+
+  // ---------------------------------------------------------------- moderation
+  // Ports of get_reports and moderate_content (20261119000000_moderation_hidden.sql).
+
+  requireModerator(uid) {
+    if (!this.isModerator(uid)) throw pgError('not_moderator', '42501')
+  }
+
+  getReports(uid, { status = 'open', limit = 50, offset = 0 } = {}) {
+    this.requireModerator(uid)
+    if (!['open', 'dismissed', 'hidden', 'resolved'].includes(status)) throw pgError('Status must be open, dismissed, hidden or resolved', '22023')
+    const cap = Math.min(Math.max(limit ?? 50, 1), 200)
+    const skip = Math.max(offset ?? 0, 0)
+    const name = (id) => this.profiles.find((p) => p.id === id)?.username ?? null
+
+    const groups = new Map()
+    for (const rp of this.reports) {
+      if (!(rp.status === status || (status === 'resolved' && rp.status !== 'open'))) continue
+      const key = `${rp.target_type}:${rp.target_id}:${rp.status}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(rp)
+    }
+    const rows = [...groups.values()].map((list) => {
+      const byDate = [...list].sort((x, y) => (x.created_at < y.created_at ? -1 : x.created_at > y.created_at ? 1 : 0))
+      const first = byDate[0]
+      const resolved = [...list].filter((r) => r.resolved_at).sort((x, y) => (x.resolved_at < y.resolved_at ? 1 : -1))
+      const review = this.reviews.find((r) => r.id === first.review_id)
+      const target = first.target_type === 'review' ? review : this.review_comments.find((c) => c.id === first.target_id)
+      return {
+        target_type: first.target_type,
+        target_id: first.target_id,
+        review_id: first.review_id,
+        review_author_username: review ? name(review.user_id) : null,
+        target_author_username: name(first.target_user_id),
+        target_body: first.target_body,
+        current_body: target ? target.body : null,
+        is_deleted: !target,
+        is_hidden: Boolean(target?.hidden_at),
+        report_count: list.length,
+        reports: byDate.map((r) => ({ reason: r.reason, reporter: name(r.reporter_id), created_at: r.created_at })),
+        status: first.status,
+        resolved_by_username: resolved[0] ? name(resolved[0].resolved_by) : null,
+        resolved_at: resolved[0]?.resolved_at ?? null,
+        last_reported_at: byDate[byDate.length - 1].created_at,
+      }
+    })
+    rows.sort((x, y) => (x.last_reported_at < y.last_reported_at ? 1 : x.last_reported_at > y.last_reported_at ? -1 : x.target_id < y.target_id ? -1 : 1))
+    return clone(rows.slice(skip, skip + cap))
+  }
+
+  moderateContent(uid, type, id, action, reason = null) {
+    this.requireModerator(uid)
+    if (!['review', 'comment'].includes(type)) throw pgError('Target type must be review or comment', '22023')
+    if (!['hide', 'restore', 'dismiss'].includes(action)) throw pgError('Action must be hide, restore or dismiss', '22023')
+    const text = reason === null || reason === undefined ? null : String(reason).trim() || null
+    if (text !== null && [...text].length > 500) throw pgError('The reason is too long (500 characters at most)', '22023')
+
+    const stamp = this.now()
+    const resolveOpen = (status) => {
+      for (const rp of this.reports) {
+        if (rp.target_type === type && rp.target_id === id && rp.status === 'open') {
+          Object.assign(rp, { status, resolved_by: uid, resolved_at: stamp })
+        }
+      }
+    }
+    if (action === 'dismiss') return resolveOpen('dismissed')
+
+    // Hiding or restoring never touches updated_at (touch_updated_at skips it).
+    const target = (type === 'review' ? this.reviews : this.review_comments).find((row) => row.id === id)
+    if (action === 'hide') {
+      if (!target) throw pgError('target_not_found', 'P0002')
+      Object.assign(target, { hidden_at: stamp, hidden_by: uid, hidden_reason: text })
+      return resolveOpen('hidden')
+    }
+    if (!target) throw pgError('target_not_found', 'P0002')
+    Object.assign(target, { hidden_at: null, hidden_by: null, hidden_reason: null })
+    return undefined
+  }
+
   // Port of text_is_allowed in 20261118000000_moderation_checks.sql. Written
   // out again here (not imported from src/lib/moderation.js) so the fake pins
   // the SQL's rules, not the browser's. [[:alnum:]] becomes letters and digits.
@@ -516,17 +616,34 @@ export class FakeBackend {
   // (readable even when their own profile isn't).
   getReviewComments(uid, reviewId) {
     const review = this.reviews.find((r) => r.id === reviewId)
-    if (!review || !this.canView(uid, review.user_id)) return []
+    if (!review || !this.canView(uid, review.user_id) || !this.canSeeHidden(uid, review)) return []
     return this.review_comments
       .filter((c) => c.review_id === reviewId)
       .sort((a, b) => (a.created_at === b.created_at ? (a.id < b.id ? -1 : 1) : a.created_at < b.created_at ? -1 : 1))
-      .map((c) => ({ ...clone(c), username: this.profiles.find((p) => p.id === c.user_id)?.username ?? null }))
+      .map((c) => {
+        // 20261119000000: a hidden comment is a placeholder (no body, user or
+        // username) for everyone except its author and moderators.
+        const masked = Boolean(c.hidden_at) && c.user_id !== uid && !this.isModerator(uid)
+        const row = { ...clone(c), username: this.profiles.find((p) => p.id === c.user_id)?.username ?? null }
+        delete row.hidden_at
+        delete row.hidden_by
+        const hiddenReason = row.hidden_reason ?? null
+        delete row.hidden_reason
+        return {
+          ...row,
+          user_id: masked ? null : row.user_id,
+          body: masked ? null : row.body,
+          username: masked ? null : row.username,
+          is_hidden: Boolean(c.hidden_at),
+          hidden_reason: masked ? null : hiddenReason,
+        }
+      })
   }
 
   // Test helper: a comment as if the user had written it.
   addComment(user, review, { body = 'A comment.', parentId = null } = {}) {
     const stamp = this.now()
-    const comment = { id: this.id(), review_id: review.id, user_id: user.id, parent_id: parentId, body, created_at: stamp, updated_at: stamp }
+    const comment = { id: this.id(), review_id: review.id, user_id: user.id, parent_id: parentId, body, created_at: stamp, updated_at: stamp, hidden_at: null, hidden_by: null, hidden_reason: null }
     this.review_comments.push(comment)
     this.onCommentInserted(comment)
     return comment
@@ -537,7 +654,7 @@ export class FakeBackend {
   addReview(user, movieId, { body = 'A review.', isSpoiler = false, createdAt } = {}) {
     const tmdbId = typeof movieId === 'number' ? movieId : this.catalog(movieId).tmdb_id
     const stamp = createdAt ?? this.now()
-    const review = { id: this.id(), user_id: user.id, movie_id: tmdbId, body, is_spoiler: isSpoiler, created_at: stamp, updated_at: stamp }
+    const review = { id: this.id(), user_id: user.id, movie_id: tmdbId, body, is_spoiler: isSpoiler, created_at: stamp, updated_at: stamp, hidden_at: null, hidden_by: null, hidden_reason: null }
     this.reviews.push(review)
     return review
   }
@@ -616,8 +733,7 @@ export class FakeBackend {
     if (n.type === 'comment' || n.type === 'reply') {
       const comment = this.review_comments.find((c) => c.id === n.comment_id && c.review_id === n.review_id)
       const review = comment && this.reviews.find((r) => r.id === comment.review_id)
-      // TODO(moderation): also require the comment and its review to not be hidden.
-      return Boolean(review) && this.canView(uid, review.user_id)
+      return Boolean(review) && this.canView(uid, review.user_id) && !comment.hidden_at && !review.hidden_at
     }
     if (n.type === 'friend_request') {
       return this.friendships.some((f) => f.requester_id === n.actor_id && f.addressee_id === n.recipient_id && f.status === 'pending')
@@ -639,7 +755,7 @@ export class FakeBackend {
       .map((n) => {
         const review = this.reviews.find((r) => r.id === n.review_id)
         const comment = this.review_comments.find((c) => c.id === n.comment_id)
-        const visible = Boolean(review) && this.canView(uid, review.user_id)
+        const visible = Boolean(review) && this.canView(uid, review.user_id) && this.canSeeHidden(uid, review)
         const available = this.notificationAvailable(uid, n)
         return {
           id: n.id,
@@ -666,7 +782,7 @@ export class FakeBackend {
     n.read_at ??= stamp
     n.seen_at ??= stamp
     const review = this.reviews.find((r) => r.id === n.review_id)
-    const visible = Boolean(review) && this.canView(uid, review.user_id)
+    const visible = Boolean(review) && this.canView(uid, review.user_id) && this.canSeeHidden(uid, review)
     return [{
       available: this.notificationAvailable(uid, n),
       type: n.type,
@@ -792,10 +908,10 @@ export class FakeBackend {
     if (!['recent', 'discussed'].includes(sort)) throw pgError('Sort must be recent or discussed', '22023')
     const cap = Math.min(Math.max(limit ?? 20, 1), 200)
     const skip = Math.max(offset ?? 0, 0)
-    const comments = (reviewId) => this.review_comments.filter((c) => c.review_id === reviewId).length
+    const comments = (reviewId) => this.review_comments.filter((c) => c.review_id === reviewId && !c.hidden_at).length
 
     const visible = this.reviews.filter(
-      (r) => this.canView(uid, r.user_id) && (scope === 'everyone' || (uid !== null && r.user_id !== uid && this.areFriends(uid, r.user_id))),
+      (r) => this.canView(uid, r.user_id) && !r.hidden_at && (scope === 'everyone' || (uid !== null && r.user_id !== uid && this.areFriends(uid, r.user_id))),
     )
     visible.sort(
       (a, b) =>
@@ -1081,6 +1197,11 @@ class FakeClient {
           return { data: b.openNotification(uid, args.p_id), error: null }
         case 'get_review_feed':
           return { data: b.getReviewFeed(uid, { scope: args.p_scope, sort: args.p_sort, limit: args.p_limit, offset: args.p_offset }), error: null }
+        case 'get_reports':
+          return { data: b.getReports(uid, { status: args.p_status, limit: args.p_limit, offset: args.p_offset }), error: null }
+        case 'moderate_content':
+          b.moderateContent(uid, args.p_target_type, args.p_target_id, args.p_action, args.p_reason ?? null)
+          return { data: null, error: null }
         case 'get_review_comments':
           return { data: b.getReviewComments(uid, args.p_review_id), error: null }
         case 'get_leaderboard':
@@ -1260,6 +1381,9 @@ const GRANTS = {
   notifications: { anon: [], authenticated: ['select', 'update'] },
 }
 
+// The profiles update grant (init migration; 20261119000000 deliberately leaves is_moderator out).
+const PROFILE_UPDATE_COLUMNS = ['username', 'bio', 'pronouns', 'is_public', 'top_movies']
+
 // Which table an embedded select (movies(...)) points at, per table.
 // `count: true` is PostgREST's `table(count)`: [{ count: n }] of the rows pointing back at this one.
 const EMBEDS = {
@@ -1345,11 +1469,8 @@ class Query {
       case 'profiles': return b.canView(ctx.uid, row.id)
       case 'rankings': return b.canView(ctx.uid, row.user_id)
       case 'friendships': return ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid)
-      case 'reviews': return b.canView(ctx.uid, row.user_id)
-      case 'review_comments': {
-        const review = b.reviews.find((r) => r.id === row.review_id)
-        return review ? b.canView(ctx.uid, review.user_id) : false
-      }
+      case 'reviews': return b.reviewVisible(ctx.uid, row)
+      case 'review_comments': return b.commentVisible(ctx.uid, row)
       case 'reports': return false // nobody reads reports through the API
       case 'blend_members': return b.isBlendMember(ctx.uid, row.blend_id)
       case 'blend_invites': return ctx.uid !== null && (row.inviter_id === ctx.uid || row.invitee_id === ctx.uid)
@@ -1369,7 +1490,10 @@ class Query {
         const spec = EMBEDS[this.table]?.[embed[1]]
         if (!spec) throw new Error(`fake: unknown embed ${embed[1]} on ${this.table}`)
         if (spec.count) {
-          out[embed[1]] = [{ count: this.backend[spec.table].filter((r) => r[spec.foreign] === row[spec.local]).length }]
+          // The count runs as the caller, so RLS applies to the rows being counted.
+          const ctx = this.ctxNow
+          const countable = (r) => !ctx || ctx.service || spec.table !== 'review_comments' || this.backend.commentVisible(ctx.uid, r)
+          out[embed[1]] = [{ count: this.backend[spec.table].filter((r) => r[spec.foreign] === row[spec.local] && countable(r)).length }]
           continue
         }
         const target = this.backend[spec.table].find((r) => r[spec.foreign] === row[spec.local])
@@ -1412,6 +1536,7 @@ class Query {
   // Applies the operation and returns the affected (or selected) rows, projected.
   run(ctx) {
     const b = this.backend
+    this.ctxNow = ctx
     const matches = (row) => this.canSee(row, ctx) && this.filters.every((f) => f(row))
     const out = (rows) => rows.map((r) => clone(this.project(r, this.cols)))
 
@@ -1440,7 +1565,12 @@ class Query {
     if (this.op === 'update') {
       const allowed = (row) => {
         if (ctx.service) return true
-        if (this.table === 'profiles') return row.id === ctx.uid
+        // Column grant: username, bio, pronouns, is_public, top_movies. Not is_moderator.
+        if (this.table === 'profiles') {
+          if (row.id !== ctx.uid) return false
+          if (!Object.keys(this.patch).every((k) => PROFILE_UPDATE_COLUMNS.includes(k))) throw pgError('permission denied for table profiles', '42501')
+          return true
+        }
         // addressee accepts: only `status`, and only to 'accepted'
         if (this.table === 'friendships') return row.addressee_id === ctx.uid && Object.keys(this.patch).every((k) => k === 'status') && this.patch.status === 'accepted'
         // Column grant: the recipient may change seen_at and read_at, nothing else.
@@ -1512,7 +1642,7 @@ class Query {
       if (ctx.uid === null || row.user_id !== ctx.uid || !ranked) throw pgError('new row violates row-level security policy for table "reviews"', '42501')
       if (b.reviews.some((r) => r.user_id === row.user_id && r.movie_id === row.movie_id)) throw pgError('duplicate key value violates unique constraint "reviews_user_id_movie_id_key"', '23505')
       const stamp = b.now()
-      const saved = { id: b.id(), user_id: row.user_id, movie_id: row.movie_id, body: row.body, is_spoiler: row.is_spoiler ?? false, created_at: stamp, updated_at: stamp }
+      const saved = { id: b.id(), user_id: row.user_id, movie_id: row.movie_id, body: row.body, is_spoiler: row.is_spoiler ?? false, created_at: stamp, updated_at: stamp, hidden_at: null, hidden_by: null, hidden_reason: null }
       this.checkReviews([saved])
       b.reviews.push(saved)
       return out([saved])
@@ -1523,15 +1653,18 @@ class Query {
       const row = clone(this.row)
       b.checkTextTrigger(row.body) // BEFORE triggers run ahead of the policy check
       const review = b.reviews.find((r) => r.id === row.review_id)
-      const visible = Boolean(review) && b.canView(ctx.uid, review.user_id)
+      // The policy's subquery runs as the caller, and also requires the review not to be hidden.
+      const visible = Boolean(review) && b.reviewVisible(ctx.uid, review) && !review.hidden_at
       if (ctx.uid === null || row.user_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "review_comments"', '42501')
-      const saved = { id: b.id(), review_id: row.review_id, user_id: row.user_id, parent_id: row.parent_id ?? null, body: row.body, created_at: null, updated_at: null }
+      const saved = { id: b.id(), review_id: row.review_id, user_id: row.user_id, parent_id: row.parent_id ?? null, body: row.body, created_at: null, updated_at: null, hidden_at: null, hidden_by: null, hidden_reason: null }
       this.checkComments([saved])
       if (saved.parent_id !== null) {
-        const parent = b.review_comments.find((c) => c.id === saved.parent_id)
+        // The trigger runs as the caller: a parent they can't see is "not found".
+        const parent = b.review_comments.find((c) => c.id === saved.parent_id && b.commentVisible(ctx.uid, c))
         if (!parent) throw pgError('Reply target not found', '23503')
         if (parent.parent_id !== null) throw pgError("Replies can't have replies", '23514')
         if (parent.review_id !== saved.review_id) throw pgError('Reply must be on the same review', '23514')
+        if (parent.hidden_at) throw pgError("Can't reply to a hidden comment", '23514')
       }
       saved.created_at = saved.updated_at = b.now()
       b.review_comments.push(saved)
@@ -1558,9 +1691,9 @@ class Query {
       }
       const seen = (list, check) => list.some((x) => x.id === row.target_id && check(x))
       const visible = row.target_type === 'review'
-        ? seen(b.reviews, (r) => b.canView(ctx.uid, r.user_id))
+        ? seen(b.reviews, (r) => b.reviewVisible(ctx.uid, r))
         : row.target_type === 'comment'
-          ? seen(b.review_comments, (c) => b.canView(ctx.uid, b.reviews.find((r) => r.id === c.review_id)?.user_id))
+          ? seen(b.review_comments, (c) => b.commentVisible(ctx.uid, c))
           : false
       if (ctx.uid === null || row.reporter_id !== ctx.uid || !visible) throw pgError('new row violates row-level security policy for table "reports"', '42501')
       const length = [...(row.reason ?? '')].length

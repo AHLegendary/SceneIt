@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const db = vi.hoisted(() => ({
   rows: [],
   username: 'reil',
+  isModerator: false,
   failLoad: false,
   failRpc: false,
   failSignOut: false,
@@ -30,7 +31,7 @@ vi.mock('../../src/lib/supabase.js', () => {
   function query(table) {
     const result = () =>
       table === 'profiles'
-        ? { data: { username: db.username }, error: null }
+        ? { data: { username: db.username, is_moderator: db.isModerator }, error: null }
         : db.failLoad
           ? { data: null, error: { message: 'network down' } }
           : { data: db.rows, error: null }
@@ -170,6 +171,20 @@ describe('login state', () => {
     expect(store.getMyList().map((m) => m.id)).toEqual(['dune-part-two-2024', 'past-lives-2023'])
     expect(store.isInList('dune-part-two-2024')).toBe(true)
     expect(store.isInList('whiplash-2014')).toBe(false)
+  })
+
+  it('knows whether you are a moderator, and forgets it on log out', async () => {
+    await logIn()
+    expect(store.getState().isModerator).toBe(false)
+    await store.signOut()
+    await settle()
+    db.isModerator = true
+    await logIn()
+    expect(store.getState().isModerator).toBe(true)
+    await store.signOut()
+    await settle()
+    expect(store.getState().isModerator).toBe(false)
+    db.isModerator = false
   })
 
   it('goes to the error state if the list fails to load, and recovers on retry', async () => {
