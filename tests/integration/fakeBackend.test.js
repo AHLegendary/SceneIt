@@ -3,7 +3,7 @@
 // a SQL function or policy, change the fake and these tests with it.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, REPORT_COOLDOWN_MS, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
+import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, RATE_LIMITS, REPORT_COOLDOWN_MS, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
 
 let b
 let alice
@@ -1973,5 +1973,158 @@ describe('moderation v2: report cooldown, totals, hidden-content notifications (
       expect((await asAlice.from('notifications').update({ type: 'comment' }).eq('type', 'content_hidden')).error?.code).toBe('42501')
       expect((await asAlice.from('notifications').insert({ recipient_id: alice.id, type: 'content_hidden', review_id: review.id })).error).toBeTruthy()
     })
+  })
+})
+
+describe('rate limits (20261121000000_rate_limits.sql)', () => {
+  const DUNE = 'dune-part-two-2024'
+  const SECOND = 1000
+  const DAY = 24 * 60 * 60 * 1000
+  let dan
+  let review // alice's review of Dune
+  let targets // 40 comments by dan, so bob can file many different open reports
+
+  beforeEach(() => {
+    dan = b.addUser({ username: 'dan' })
+    b.seedList(alice, [DUNE])
+    b.seedList(bob, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Original review' })
+    targets = Array.from({ length: 40 }, (_, i) => b.addComment(dan, review, { body: `Dan ${i}` }))
+  })
+
+  // One new post of each kind, as `user`. Returns the insert's { error }.
+  // A review is unique per movie, so it is deleted right after (which must not
+  // reset anything, see below); a report goes on a different comment each time.
+  let n = 0
+  const post = {
+    report: async (client, user) => client.from('reports').insert({ reporter_id: user.id, target_type: 'comment', target_id: targets[(n += 1) % targets.length].id, reason: 'Rude' }),
+    comment: async (client, user) => client.from('review_comments').insert({ review_id: review.id, user_id: user.id, body: 'Hello' }),
+    review: async (client, user) => {
+      const made = await client.from('reviews').insert({ user_id: user.id, movie_id: tmdb(DUNE), body: 'Mine' })
+      if (!made.error) expect((await client.from('reviews').delete().eq('user_id', user.id)).error).toBeNull()
+      return made
+    },
+  }
+  const kinds = ['report', 'comment', 'review']
+  const refused = (result) => expect(result.error).toMatchObject({ message: 'rate_limited', code: 'P0001' })
+
+  beforeEach(() => { n = 0 })
+
+  describe.each(kinds)('%s', (kind) => {
+    const limit = RATE_LIMITS[kind]
+
+    it('refuses the one after the burst limit, and works again once the window has passed', async () => {
+      const client = await clientFor(bob)
+      for (let i = 0; i < limit.burst; i += 1) expect((await post[kind](client, bob)).error).toBeNull()
+      refused(await post[kind](client, bob)) // the 11th (or 21st)
+      b.advanceTime(limit.burstMs - 5 * SECOND)
+      refused(await post[kind](client, bob)) // not yet
+      b.advanceTime(10 * SECOND)
+      expect((await post[kind](client, bob)).error).toBeNull()
+    })
+
+    it('refuses the one after the daily cap, even when spaced out under the burst limit', async () => {
+      const client = await clientFor(bob)
+      const gap = (limit.burstMs / limit.burst) * 2 // never more than half the burst limit in a window
+      for (let i = 0; i < limit.daily; i += 1) {
+        expect((await post[kind](client, bob)).error, `post ${i + 1}`).toBeNull()
+        b.advanceTime(gap)
+      }
+      refused(await post[kind](client, bob)) // the burst window is empty by now: this is the daily cap
+      b.advanceTime(DAY)
+      expect((await post[kind](client, bob)).error).toBeNull()
+    })
+
+    it("is per person: someone else isn't affected by bob hitting the limit", async () => {
+      b.seedList(cara, [DUNE])
+      b.profileOf(cara).is_public = true
+      const asBob = await clientFor(bob)
+      for (let i = 0; i < limit.burst; i += 1) await post[kind](asBob, bob)
+      refused(await post[kind](asBob, bob))
+      expect((await post[kind](await clientFor(cara), cara)).error).toBeNull()
+    })
+
+    it('counts a post that was refused for another reason as nothing', async () => {
+      const client = await clientFor(bob)
+      // Someone else's reporter_id / user_id: the insert policy refuses it.
+      const bad = {
+        report: () => client.from('reports').insert({ reporter_id: alice.id, target_type: 'comment', target_id: targets[0].id, reason: 'x' }),
+        comment: () => client.from('review_comments').insert({ review_id: review.id, user_id: alice.id, body: 'x' }),
+        review: () => client.from('reviews').insert({ user_id: alice.id, movie_id: tmdb(DUNE), body: 'x' }),
+      }[kind]
+      expect((await bad()).error.code).toBe('42501')
+      expect(b.rate_limit_events).toEqual([])
+    })
+  })
+
+  it('does not reset when posts are deleted', async () => {
+    const client = await clientFor(bob)
+    for (let i = 0; i < RATE_LIMITS.comment.burst; i += 1) expect((await post.comment(client, bob)).error).toBeNull()
+    expect((await client.from('review_comments').delete().eq('user_id', bob.id)).error).toBeNull()
+    expect(b.review_comments.filter((c) => c.user_id === bob.id)).toEqual([])
+    refused(await post.comment(client, bob))
+  })
+
+  it('does not count edits, and edits still work when you are limited', async () => {
+    const client = await clientFor(bob)
+    const made = await client.from('review_comments').insert({ review_id: review.id, user_id: bob.id, body: 'First' }).select('id').single()
+    for (let i = 0; i < 30; i += 1) {
+      expect((await client.from('review_comments').update({ body: `Edit ${i}` }).eq('id', made.data.id)).error).toBeNull()
+    }
+    expect(b.rate_limit_events).toHaveLength(1)
+
+    b.useUpRateLimit(bob, 'comment')
+    refused(await post.comment(client, bob))
+    expect((await client.from('review_comments').update({ body: 'Still editable' }).eq('id', made.data.id)).error).toBeNull()
+  })
+
+  it('replies count as comments', async () => {
+    const client = await clientFor(bob)
+    for (let i = 0; i < RATE_LIMITS.comment.burst; i += 1) {
+      expect((await client.from('review_comments').insert({ review_id: review.id, user_id: bob.id, parent_id: targets[0].id, body: 'Reply' })).error).toBeNull()
+    }
+    refused(await post.comment(client, bob))
+  })
+
+  it('has a limit per kind: using up comments leaves reports alone', async () => {
+    b.useUpRateLimit(bob, 'comment')
+    const client = await clientFor(bob)
+    refused(await post.comment(client, bob))
+    expect((await post.report(client, bob)).error).toBeNull()
+  })
+
+  it('refuses before the text check, so spam is rejected cheaply', async () => {
+    b.useUpRateLimit(bob, 'comment')
+    const client = await clientFor(bob)
+    refused(await client.from('review_comments').insert({ review_id: review.id, user_id: bob.id, body: 'kill yourself' }))
+    b.advanceTime(2 * 60 * SECOND)
+    expect((await client.from('review_comments').insert({ review_id: review.id, user_id: bob.id, body: 'kill yourself' })).error?.message).toBe('content_flagged')
+    expect(b.rate_limit_events.filter((e) => e.user_id === bob.id && e.kind === 'comment')).toHaveLength(RATE_LIMITS.comment.burst) // the flagged one wasn't counted
+  })
+
+  it('refuses before the report cooldown and snapshot checks too', async () => {
+    const client = await clientFor(bob)
+    b.useUpRateLimit(bob, 'report')
+    // Your own post would be cannot_report_self; limited people hear about the limit first.
+    refused(await client.from('reports').insert({ reporter_id: bob.id, target_type: 'review', target_id: b.addReview(bob, DUNE).id, reason: 'x' }))
+  })
+
+  it('cannot be read or written through the API, by anyone', async () => {
+    b.useUpRateLimit(bob, 'comment', 1)
+    for (const client of [await clientFor(bob), b.createClient(SUPABASE_URL, PUBLISHABLE_KEY, { auth: { persistSession: false } })]) {
+      expect((await client.from('rate_limit_events').select('*')).error?.code).toBe('42501')
+      expect((await client.from('rate_limit_events').insert({ user_id: bob.id, kind: 'comment' })).error?.code).toBe('42501')
+      expect((await client.from('rate_limit_events').delete().eq('user_id', bob.id)).error?.code).toBe('42501')
+      expect((await client.from('rate_limit_events').update({ kind: 'report' }).eq('user_id', bob.id)).error?.code).toBe('42501')
+    }
+    expect(b.rate_limit_events).toHaveLength(1)
+  })
+
+  it('cleans up events older than a day as the person posts', async () => {
+    const client = await clientFor(bob)
+    await post.comment(client, bob)
+    b.advanceTime(DAY + SECOND)
+    await post.comment(client, bob)
+    expect(b.rate_limit_events).toHaveLength(1)
   })
 })

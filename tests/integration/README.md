@@ -28,7 +28,7 @@ one. Check your version with `node -v`. Node 20 can't start the test workers at 
 The fake database applies the same row level security as `supabase/migrations`
 and ports the SQL functions (`save_ranking`, `remove_ranking`, `get_friendships`,
 `send_friend_request`, `search_users`, `get_leaderboard`, `get_review_comments`,
-`get_review_feed`, `get_reports` (with all-time totals), `moderate_content` (with its `content_hidden` notifications), the report cooldown, hidden reviews and comments, `text_is_allowed` with its triggers, the report snapshot trigger, `get_notifications`, `open_notification` (with the triggers that create them), plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
+`get_review_feed`, `get_reports` (with all-time totals), `moderate_content` (with its `content_hidden` notifications), the report cooldown, the rate limit triggers (`RATE_LIMITS`, `useUpRateLimit`), hidden reviews and comments, `text_is_allowed` with its triggers, the report snapshot trigger, `get_notifications`, `open_notification` (with the triggers that create them), plus `get_my_blends` and `get_blend_members` for blends seeded with `addBlend`) and
 the policies, constraints and cascades of `reviews`, `review_comments`, `reports` and `notifications`.
 For those tables it also enforces table privileges per role (the `GRANTS` map in
 `fakeBackend.js`), because a missing grant makes the API refuse the request before

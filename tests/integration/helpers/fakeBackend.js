@@ -30,6 +30,18 @@ const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
 // public.report_cooldown() in 20261120000000_moderation_v2_reports.sql.
 export const REPORT_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
+// public.rate_limit_config() in 20261121000000_rate_limits.sql. tests/unit/rateLimitsSql.test.js
+// fails if these numbers and the migration's drift apart.
+export const RATE_LIMITS = {
+  report: { burst: 10, burstMs: 5 * MINUTE, daily: 30, dailyMs: 24 * HOUR },
+  comment: { burst: 10, burstMs: 1 * MINUTE, daily: 200, dailyMs: 24 * HOUR },
+  review: { burst: 20, burstMs: 5 * MINUTE, daily: 100, dailyMs: 24 * HOUR },
+}
+// The table each kind of post goes into (the a_rate_limit trigger sits on all three).
+const RATE_LIMITED_TABLES = { reports: 'report', review_comments: 'comment', reviews: 'review' }
+
 // ------------------------------------------------------------------ helpers
 
 const clone = (value) => (value === undefined ? undefined : structuredClone(value))
@@ -98,6 +110,7 @@ export class FakeBackend {
     this.blends = [] // { id, owner_id, created_at }
     this.blend_members = [] // { blend_id, user_id, joined_at }
     this.blend_invites = [] // { id, blend_id, inviter_id, invitee_id, status, created_at, expires_at }
+    this.rate_limit_events = [] // { user_id, kind, created_at }: only the rate limit trigger touches it
     this.notifications = [] // { id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at }
     this.buckets = new Map()
     this.files = new Map()
@@ -532,6 +545,34 @@ export class FakeBackend {
   commentVisible(uid, comment) {
     const review = this.reviews.find((r) => r.id === comment.review_id)
     return Boolean(review) && this.reviewVisible(uid, review) && this.canSeeHidden(uid, comment)
+  }
+
+  // ---------------------------------------------------------------- rate limits
+  // Port of enforce_rate_limit (BEFORE INSERT trigger a_rate_limit on reports,
+  // review_comments and reviews, 20261121000000_rate_limits.sql). Counts the
+  // caller's earlier events in the burst and daily windows, refuses when either
+  // is full, otherwise records this one and clears out events older than the
+  // daily window. Returns the recorded event so a failed statement can take it
+  // back (like the rollback of the real transaction), or null when nobody is
+  // signed in (not limited).
+  takeRateLimit(uid, kind) {
+    if (uid === null || uid === undefined) return null
+    const limit = RATE_LIMITS[kind]
+    const now = this.nowMs()
+    const mine = this.rate_limit_events.filter((e) => e.user_id === uid && e.kind === kind && new Date(e.created_at).getTime() > now - limit.dailyMs)
+    const inBurst = mine.filter((e) => new Date(e.created_at).getTime() > now - limit.burstMs).length
+    if (inBurst >= limit.burst || mine.length >= limit.daily) throw pgError('rate_limited', 'P0001')
+    const event = { user_id: uid, kind, created_at: this.now() }
+    this.rate_limit_events.push(event)
+    const kept = this.rate_limit_events.filter((e) => !(e.user_id === uid && e.kind === kind && new Date(e.created_at).getTime() <= now - limit.dailyMs))
+    this.rate_limit_events.splice(0, this.rate_limit_events.length, ...kept)
+    return event
+  }
+
+  // Test helper: records `count` events for `user` just now (default: exactly
+  // the burst limit), so their next post is the one that gets refused.
+  useUpRateLimit(user, kind, count = RATE_LIMITS[kind].burst) {
+    for (let i = 0; i < count; i += 1) this.rate_limit_events.push({ user_id: user.id, kind, created_at: this.now() })
   }
 
   // ---------------------------------------------------------------- moderation
@@ -1419,6 +1460,8 @@ const GRANTS = {
   reviews: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
   review_comments: { anon: ['select'], authenticated: ['select', 'insert', 'update', 'delete'] },
   reports: { anon: [], authenticated: ['insert'] },
+  // 20261121000000_rate_limits.sql: RLS on, no policies, no grants. Only the trigger touches it.
+  rate_limit_events: { anon: [], authenticated: [] },
   // 20261117000000_notifications.sql: read yours, and update (only seen_at / read_at).
   notifications: { anon: [], authenticated: ['select', 'update'] },
 }
@@ -1514,6 +1557,7 @@ class Query {
       case 'reviews': return b.reviewVisible(ctx.uid, row)
       case 'review_comments': return b.commentVisible(ctx.uid, row)
       case 'reports': return false // nobody reads reports through the API
+      case 'rate_limit_events': return false
       case 'blend_members': return b.isBlendMember(ctx.uid, row.blend_id)
       case 'blend_invites': return ctx.uid !== null && (row.inviter_id === ctx.uid || row.invitee_id === ctx.uid)
       case 'notifications': return ctx.uid !== null && row.recipient_id === ctx.uid
@@ -1576,7 +1620,25 @@ class Query {
   }
 
   // Applies the operation and returns the affected (or selected) rows, projected.
+  // New reports, comments and reviews go through the rate limit trigger first. If the
+  // rest of the statement fails (flagged text, a policy, a constraint) the event it
+  // recorded goes with it, as in the real transaction.
   run(ctx) {
+    const kind = this.op === 'insert' && !ctx.service ? RATE_LIMITED_TABLES[this.table] : undefined
+    if (!kind || ctx.uid === null) return this.runStatement(ctx)
+    const grants = GRANTS[this.table]
+    if (!grants.authenticated.includes('insert')) return this.runStatement(ctx) // refused before any trigger runs
+    const event = this.backend.takeRateLimit(ctx.uid, kind)
+    try {
+      return this.runStatement(ctx)
+    } catch (error) {
+      const at = this.backend.rate_limit_events.indexOf(event)
+      if (at !== -1) this.backend.rate_limit_events.splice(at, 1)
+      throw error
+    }
+  }
+
+  runStatement(ctx) {
     const b = this.backend
     this.ctxNow = ctx
     const matches = (row) => this.canSee(row, ctx) && this.filters.every((f) => f(row))

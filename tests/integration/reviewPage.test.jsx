@@ -9,6 +9,7 @@ const LOAD_ERROR = "Couldn't load this review. Check your connection and try aga
 const COMMENTS_ERROR = "Couldn't load the comments. Check your connection and try again."
 const COMMENT_SAVE_ERROR = "Couldn't post your comment. Check your connection and try again."
 const COMMENT_DELETE_ERROR = "Couldn't delete that comment. Check your connection and try again."
+const RATE_LIMITED = "You're doing that too fast. Wait a few minutes and try again."
 const FLAGGED = "That text can't be posted because it may break our community rules. Edit it and try again."
 
 let backend
@@ -585,5 +586,41 @@ describe('links to the discussion from the profile', () => {
     await open('#/u/bob')
     await goTo('#/u/bob')
     expect(screen.queryByRole('link', { name: /comment/i })).toBeNull()
+  })
+})
+
+describe('rate limits', () => {
+  let review
+  beforeEach(() => {
+    review = backend.addReview(bob, DUNE.id, { body: 'Review text.' })
+  })
+
+  it('shows the message on the 11th comment in a minute and keeps what you typed, then lets it through later', async () => {
+    backend.useUpRateLimit(alice, 'comment') // ten comments in the last minute
+    const { user } = await openReview(review)
+    const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+    await user.type(box, 'My eleventh.')
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+
+    expect((await screen.findByRole('alert')).textContent).toBe(RATE_LIMITED)
+    expect(screen.getByRole('textbox', { name: 'Add a comment' }).value).toBe('My eleventh.')
+    expect(backend.review_comments).toEqual([])
+
+    backend.advanceTime(2 * 60 * 1000)
+    await user.click(screen.getByRole('button', { name: 'Comment' }))
+    expect(await screen.findByText('My eleventh.')).toBeTruthy()
+    expect(backend.review_comments).toHaveLength(1)
+  })
+
+  it('shows the message when sending a report, and keeps the reason', async () => {
+    backend.useUpRateLimit(alice, 'report')
+    const { user } = await openReview(review)
+    await user.click(screen.getByRole('button', { name: 'Report review' }))
+    await user.type(screen.getByRole('textbox', { name: 'Why are you reporting this review?' }), 'It is spam.')
+    await user.click(screen.getByRole('button', { name: 'Send report' }))
+
+    expect((await screen.findByRole('alert')).textContent).toBe(RATE_LIMITED)
+    expect(screen.getByRole('textbox', { name: 'Why are you reporting this review?' }).value).toBe('It is spam.')
+    expect(backend.reports).toEqual([])
   })
 })

@@ -28,6 +28,7 @@ export const COMMENT_DELETE_ERROR = "Couldn't delete that comment. Check your co
 export const REPORT_ERROR = "Couldn't send your report. Check your connection and try again."
 export const ALREADY_REPORTED = "You've already reported that."
 export const CANNOT_REPORT_SELF = "You can't report your own post."
+export const RATE_LIMITED = "You're doing that too fast. Wait a few minutes and try again."
 export const REPORT_COOLDOWN = 'You reported this recently. You can report it again a day after it was reviewed.'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -128,6 +129,14 @@ function throwIfFlagged(error) {
   if (error?.message?.includes('content_flagged')) throw new Error(FLAGGED_MESSAGE)
 }
 
+// The database refuses a new report, comment or review when the person has made
+// too many lately (a trigger raises 'rate_limited'). Edits and deletes are never
+// limited, so only the create paths call this. The forms keep the person's text
+// when a save fails, so nothing is lost.
+function throwIfRateLimited(error) {
+  if (error?.message?.includes('rate_limited')) throw new Error(RATE_LIMITED)
+}
+
 // ------------------------------------------------------------------ reviews
 
 // Creates or replaces the signed-in user's review of a movie (one per movie).
@@ -160,6 +169,7 @@ export async function saveReview(movieId, { body, isSpoiler = false }) {
     .select(REVIEW_COLUMNS)
     .single()
   throwIfFlagged(inserted.error)
+  throwIfRateLimited(inserted.error)
   if (inserted.error) {
     console.error('saveReview failed', inserted.error)
     throw new Error(REVIEW_SAVE_ERROR)
@@ -316,6 +326,7 @@ export async function addComment(reviewId, body, parentId = null) {
     .select(COMMENT_COLUMNS)
     .single()
   throwIfFlagged(error)
+  throwIfRateLimited(error)
   if (error) {
     console.error('addComment failed', error)
     throw new Error(COMMENT_SAVE_ERROR)
@@ -368,6 +379,7 @@ export async function reportContent(type, targetId, reason) {
   const { error } = await supabase
     .from('reports')
     .insert({ reporter_id: userId, target_type: type, target_id: targetId, reason: text })
+  throwIfRateLimited(error)
   if (error?.message?.includes('report_cooldown')) throw new Error(REPORT_COOLDOWN)
   if (error?.code === '23505') throw new Error(ALREADY_REPORTED) // unique violation (one open report per person)
   if (error?.message?.includes('cannot_report_self')) throw new Error(CANNOT_REPORT_SELF)
