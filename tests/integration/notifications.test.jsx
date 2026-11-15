@@ -5,6 +5,7 @@ import { FakeBackend, launch, ready, screen, waitFor, within } from './helpers/h
 const DUNE = MOVIES.find((m) => m.id === 'dune-part-two-2024')
 
 const GONE_COMMENT = 'This comment is no longer available.'
+const GONE_REVIEW = 'This review is no longer available.'
 const GONE_REQUEST = 'This request is no longer pending.'
 const OPEN_ERROR = "Couldn't open that notification. Check your connection and try again."
 
@@ -301,6 +302,86 @@ describe('clicking a comment notification', () => {
     expect(window.location.hash).toBe('#/home')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(unread(row(panel, /bob commented/))).toBe(true)
+  })
+})
+
+describe('when a moderator hides your post', () => {
+  let mod
+  beforeEach(() => {
+    mod = backend.addUser({ username: 'mod', is_moderator: true })
+  })
+
+  it('tells you about a hidden review, with the reason, and opens it with the banner', async () => {
+    backend.moderateContent(mod.id, 'review', review.id, 'hide', 'Off topic')
+    const { user } = await open()
+    await waitFor(() => expect(badgeText()).toBe('1'))
+    const panel = await openPanel(user)
+
+    const notice = row(panel, /was hidden by a moderator/)
+    expect(notice.textContent).toMatch(/^Unread\. Your review of Dune: Part Two was hidden by a moderator\. · /)
+    expect(notice.textContent).toContain('Off topic') // the reason, on the second line
+    expect(notice.textContent).not.toContain('mod ') // no moderator is named
+    await user.click(notice)
+
+    await waitFor(() => expect(window.location.hash).toBe(`#/u/Alice_99/review/${review.id}`))
+    expect((await screen.findByRole('status')).textContent).toBe('Hidden by a moderator. Only you can see this. Reason: Off topic')
+  })
+
+  it('tells you about a hidden comment, and opens it with its "Hidden by a moderator" label', async () => {
+    const mine = backend.addComment(alice, review, { body: 'Something rude.' })
+    backend.moderateContent(mod.id, 'comment', mine.id, 'hide')
+    const { user } = await open()
+    const panel = await openPanel(user)
+
+    const notice = row(panel, /was hidden by a moderator/)
+    expect(notice.textContent).toMatch(/^Unread\. Your comment on a review of Dune: Part Two was hidden by a moderator\./)
+    await user.click(notice)
+
+    await waitFor(() => expect(window.location.hash).toBe(`#/u/Alice_99/review/${review.id}/c/${mine.id}`))
+    expect(await screen.findByText('Hidden by a moderator')).toBeTruthy()
+    expect(screen.getByText('Something rude.')).toBeTruthy()
+  })
+
+  it('is gone from the panel once the post is restored', async () => {
+    backend.moderateContent(mod.id, 'review', review.id, 'hide')
+    const { user } = await open()
+    let panel = await openPanel(user)
+    expect(row(panel, /was hidden by a moderator/)).toBeTruthy()
+    await user.keyboard('{Escape}')
+
+    backend.moderateContent(mod.id, 'review', review.id, 'restore')
+    panel = await openPanel(user)
+    await waitFor(() => expect(panel.queryByRole('button', { name: /was hidden by a moderator/ })).toBeNull())
+    expect(panel.getByText('No notifications yet.')).toBeTruthy()
+  })
+
+  it('says the comment is gone when you deleted it after it was hidden', async () => {
+    const mine = backend.addComment(alice, review, { body: 'Something rude.' })
+    backend.moderateContent(mod.id, 'comment', mine.id, 'hide', 'Rude')
+    const { user } = await open()
+    await waitFor(() => expect(badgeText()).toBe('1'))
+    backend.review_comments = backend.review_comments.filter((c) => c.id !== mine.id)
+    const panel = await openPanel(user)
+    const notice = await panel.findByRole('button', { name: /was hidden by a moderator/ })
+    expect(notice.textContent).not.toContain('Rude') // no reason for something that is gone
+
+    await user.click(notice)
+
+    expect(within(await screen.findByRole('dialog')).getByText(GONE_COMMENT)).toBeTruthy()
+    expect(window.location.hash).toBe('#/home')
+  })
+
+  it('says the review is gone when you deleted it after it was hidden', async () => {
+    backend.moderateContent(mod.id, 'review', review.id, 'hide')
+    const { user } = await open()
+    await waitFor(() => expect(badgeText()).toBe('1'))
+    backend.reviews = backend.reviews.filter((r) => r.id !== review.id)
+    const panel = await openPanel(user)
+
+    await user.click(await panel.findByRole('button', { name: /was hidden by a moderator/ }))
+
+    expect(within(await screen.findByRole('dialog')).getByText(GONE_REVIEW)).toBeTruthy()
+    expect(window.location.hash).toBe('#/home')
   })
 })
 

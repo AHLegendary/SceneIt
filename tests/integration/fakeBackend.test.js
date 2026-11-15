@@ -3,7 +3,7 @@
 // a SQL function or policy, change the fake and these tests with it.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
+import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, REPORT_COOLDOWN_MS, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './helpers/fakeBackend.js'
 
 let b
 let alice
@@ -1036,10 +1036,12 @@ describe('moderation: hidden content (20261119000000_moderation_hidden.sql)', ()
     it('says so when the review is hidden, for everyone including its author', async () => {
       await hide('review', review.id)
       expect((await replyNotice()).available).toBe(false)
-      expect((await panel(alice))[0].available).toBe(false)
+      // (alice also gets a 'content_hidden' notice now, which stays available; look at the comment one)
+      const aliceComment = async () => (await panel(alice)).find((n) => n.type === 'comment')
+      expect((await aliceComment()).available).toBe(false)
       await moderate(await asMod(), 'review', review.id, 'restore')
       expect((await replyNotice()).available).toBe(true)
-      expect((await panel(alice))[0].available).toBe(true)
+      expect((await aliceComment()).available).toBe(true)
     })
 
     it('keeps the row but drops the review author and movie title for a hidden review, and restore brings them back', async () => {
@@ -1758,5 +1760,218 @@ describe('OMDb, external ids and the ratings cache', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toMatch(/s-maxage=86400/)
+  })
+})
+
+describe('moderation v2: report cooldown, totals, hidden-content notifications (20261120000000_moderation_v2_reports.sql)', () => {
+  const DUNE = 'dune-part-two-2024'
+  let dan
+  let mod
+  let review // alice's review of Dune
+  let comment // cara's comment on it
+
+  beforeEach(() => {
+    dan = b.addUser({ username: 'dan' })
+    mod = b.addUser({ username: 'mod', is_moderator: true })
+    b.profileOf(cara).is_public = true
+    b.seedList(alice, [DUNE])
+    review = b.addReview(alice, DUNE, { body: 'Original review' })
+    comment = b.addComment(cara, review, { body: 'A comment' })
+  })
+
+  const asMod = () => clientFor(mod)
+  const act = async (action, type, id, reason = null) =>
+    (await asMod()).rpc('moderate_content', { p_target_type: type, p_target_id: id, p_action: action, p_reason: reason })
+  const report = async (user, type = 'review', id = review.id, reason = 'Rude') =>
+    (await clientFor(user)).from('reports').insert({ reporter_id: user.id, target_type: type, target_id: id, reason })
+  const notices = async (user) => (await (await clientFor(user)).rpc('get_notifications')).data
+  const hiddenNotices = async (user) => (await notices(user)).filter((n) => n.type === 'content_hidden')
+
+  describe('report cooldown', () => {
+    it('refuses a new report for a day after a dismissal, then allows it', async () => {
+      expect((await report(bob)).error).toBeNull()
+      await act('dismiss', 'review', review.id)
+      expect((await report(bob)).error).toMatchObject({ message: 'report_cooldown', code: 'P0001' })
+      b.advanceTime(REPORT_COOLDOWN_MS - 60 * 1000)
+      expect((await report(bob)).error?.message).toBe('report_cooldown')
+      b.advanceTime(2 * 60 * 1000)
+      expect((await report(bob)).error).toBeNull()
+      expect(b.reports.map((r) => r.status)).toEqual(['dismissed', 'open'])
+    })
+
+    it('counts from when the report was resolved, not from when it was filed', async () => {
+      await report(bob)
+      b.advanceTime(3 * REPORT_COOLDOWN_MS) // sat in the queue for three days
+      await act('dismiss', 'review', review.id)
+      expect((await report(bob)).error?.message).toBe('report_cooldown')
+    })
+
+    it('also applies after a hide that was restored', async () => {
+      await report(bob)
+      await act('hide', 'review', review.id)
+      await act('restore', 'review', review.id)
+      expect((await report(bob)).error?.message).toBe('report_cooldown')
+      b.advanceTime(REPORT_COOLDOWN_MS + 1000)
+      expect((await report(bob)).error).toBeNull()
+    })
+
+    it('still refuses a second OPEN report from the same person, as a unique violation', async () => {
+      expect((await report(bob)).error).toBeNull()
+      expect((await report(bob, 'review', review.id, 'Again')).error?.code).toBe('23505')
+      expect(b.reports).toHaveLength(1)
+    })
+
+    it('is per person and per post', async () => {
+      await report(bob)
+      await act('dismiss', 'review', review.id)
+      expect((await report(dan)).error).toBeNull() // someone else
+      expect((await report(bob, 'comment', comment.id)).error).toBeNull() // another post
+    })
+
+    it('does not let you find out about somebody else being on cooldown', async () => {
+      await report(dan)
+      await act('dismiss', 'review', review.id)
+      const probe = await (await clientFor(bob)).from('reports').insert({ reporter_id: dan.id, target_type: 'review', target_id: review.id, reason: 'x' })
+      expect(probe.error?.code).toBe('42501') // the usual "not as yourself" refusal, not report_cooldown
+    })
+
+    it('still refuses your own post before anything else', async () => {
+      expect((await report(alice)).error?.message).toBe('cannot_report_self')
+    })
+  })
+
+  describe('get_reports totals', () => {
+    it('counts every report ever filed and the distinct people, after report, dismiss, re-report', async () => {
+      await report(bob)
+      await report(dan)
+      await act('dismiss', 'review', review.id)
+      b.advanceTime(REPORT_COOLDOWN_MS + 1000)
+      await report(bob, 'review', review.id, 'Still bad')
+      const client = await asMod()
+
+      const open = (await client.rpc('get_reports', { p_status: 'open' })).data
+      expect(open).toHaveLength(1)
+      expect(open[0]).toMatchObject({ report_count: 1, total_report_count: 3, total_reporter_count: 2 })
+      const resolved = (await client.rpc('get_reports', { p_status: 'resolved' })).data
+      expect(resolved[0]).toMatchObject({ report_count: 2, total_report_count: 3, total_reporter_count: 2 })
+    })
+
+    it('equal the card counts when nothing was reported again', async () => {
+      await report(bob, 'comment', comment.id)
+      await report(dan, 'comment', comment.id)
+      const [row] = (await (await asMod()).rpc('get_reports')).data
+      expect(row).toMatchObject({ report_count: 2, total_report_count: 2, total_reporter_count: 2 })
+    })
+
+    it('has fewer reporters than reports when one person reported twice', async () => {
+      await report(bob)
+      await act('dismiss', 'review', review.id)
+      b.advanceTime(REPORT_COOLDOWN_MS + 1000)
+      await report(bob)
+      await act('dismiss', 'review', review.id)
+      const [row] = (await (await asMod()).rpc('get_reports', { p_status: 'dismissed' })).data
+      expect(row).toMatchObject({ report_count: 2, total_report_count: 2, total_reporter_count: 1 })
+    })
+
+    it('does not mix up different targets', async () => {
+      await report(bob)
+      await report(bob, 'comment', comment.id)
+      const rows = (await (await asMod()).rpc('get_reports')).data
+      expect(rows.map((r) => r.total_report_count)).toEqual([1, 1])
+    })
+  })
+
+  describe('content_hidden notifications', () => {
+    it('hiding a review tells its author once, with no actor, and shows the reason', async () => {
+      await act('hide', 'review', review.id, 'Off topic')
+      const list = await hiddenNotices(alice)
+      expect(list).toHaveLength(1)
+      expect(list[0]).toMatchObject({
+        type: 'content_hidden',
+        actor_username: null,
+        review_id: review.id,
+        comment_id: null,
+        preview: 'Off topic',
+        available: true, // hidden, but its author can open it
+        review_author_username: 'alice',
+        movie_title: b.catalog(DUNE).title,
+      })
+      expect(b.notifications.find((n) => n.type === 'content_hidden').actor_id).toBeNull()
+      // Nobody else hears about it, and the moderator is not named anywhere.
+      expect(await hiddenNotices(bob)).toEqual([])
+      expect(JSON.stringify(list)).not.toContain(mod.id)
+      expect(JSON.stringify(list)).not.toContain('mod"')
+    })
+
+    it('hiding a comment tells the comment author, pointing at the comment', async () => {
+      await act('hide', 'comment', comment.id)
+      const [notice] = await hiddenNotices(cara)
+      expect(notice).toMatchObject({ review_id: review.id, comment_id: comment.id, preview: null, available: true, review_author_username: 'alice' })
+      expect(await hiddenNotices(alice)).toEqual([]) // the review's author isn't told about someone else's comment
+    })
+
+    it('tells nobody when the moderator hides their own post', async () => {
+      b.seedList(mod, [DUNE])
+      const own = b.addReview(mod, DUNE, { body: 'Mine' })
+      const ownComment = b.addComment(mod, review, { body: 'Mine too' })
+      await act('hide', 'review', own.id)
+      await act('hide', 'comment', ownComment.id)
+      expect(b.notifications.filter((n) => n.type === 'content_hidden')).toEqual([])
+    })
+
+    it('does not notify again when something already hidden is hidden again, and shows the new reason', async () => {
+      await act('hide', 'review', review.id, 'First')
+      await act('hide', 'review', review.id, 'Second')
+      const list = await hiddenNotices(alice)
+      expect(list).toHaveLength(1)
+      expect(list[0].preview).toBe('Second')
+    })
+
+    it('restoring deletes it, and only for that post', async () => {
+      await act('hide', 'review', review.id)
+      await act('hide', 'comment', comment.id)
+      await act('restore', 'review', review.id)
+      expect(await hiddenNotices(alice)).toEqual([])
+      expect(await hiddenNotices(cara)).toHaveLength(1)
+      await act('restore', 'comment', comment.id)
+      expect(await hiddenNotices(cara)).toEqual([])
+      // Hiding it again tells them again.
+      await act('hide', 'review', review.id)
+      expect(await hiddenNotices(alice)).toHaveLength(1)
+    })
+
+    it('stays available while the post exists, hidden or not, and is gone once the author deletes it', async () => {
+      await act('hide', 'review', review.id)
+      const [before] = await hiddenNotices(alice)
+      expect(before.available).toBe(true)
+      const opened = (await (await clientFor(alice)).rpc('open_notification', { p_id: before.id })).data[0]
+      expect(opened).toMatchObject({ available: true, type: 'content_hidden', review_id: review.id, comment_id: null, review_author_username: 'alice' })
+
+      expect((await (await clientFor(alice)).from('reviews').delete().eq('id', review.id)).error).toBeNull()
+      const [after] = await hiddenNotices(alice)
+      expect(after).toMatchObject({ available: false, preview: null })
+      expect((await (await clientFor(alice)).rpc('open_notification', { p_id: after.id })).data[0].available).toBe(false)
+    })
+
+    it('for a comment, is gone once the comment is deleted', async () => {
+      await act('hide', 'comment', comment.id, 'Rude')
+      expect((await (await clientFor(cara)).from('review_comments').delete().eq('id', comment.id)).error).toBeNull()
+      expect((await hiddenNotices(cara))[0]).toMatchObject({ available: false, preview: null })
+    })
+
+    it('does not break the older notification types (the actor join is a left join)', async () => {
+      b.addComment(bob, review, { body: 'Nice' })
+      await act('hide', 'review', review.id)
+      const list = await notices(alice)
+      expect(list.map((n) => [n.type, n.actor_username])).toEqual(expect.arrayContaining([['comment', 'bob'], ['content_hidden', null]]))
+      expect(list.find((n) => n.type === 'comment')).toMatchObject({ available: false }) // the review is hidden now
+    })
+
+    it('is not something a user can create or change through the API', async () => {
+      await act('hide', 'review', review.id)
+      const asAlice = await clientFor(alice)
+      expect((await asAlice.from('notifications').update({ type: 'comment' }).eq('type', 'content_hidden')).error?.code).toBe('42501')
+      expect((await asAlice.from('notifications').insert({ recipient_id: alice.id, type: 'content_hidden', review_id: review.id })).error).toBeTruthy()
+    })
   })
 })

@@ -22,6 +22,8 @@ describe('rowsToReports', () => {
         is_deleted: false,
         is_hidden: true,
         report_count: 2,
+        total_report_count: 5,
+        total_reporter_count: 4,
         reports: [{ reason: 'Rude', reporter: 'carol', created_at: '2026-11-01T00:00:00Z' }],
         status: 'open',
         resolved_by_username: null,
@@ -41,6 +43,8 @@ describe('rowsToReports', () => {
       isDeleted: false,
       isHidden: true,
       reportCount: 2,
+      totalReportCount: 5,
+      totalReporterCount: 4,
       reports: [{ reason: 'Rude', reporter: 'carol', createdAt: '2026-11-01T00:00:00Z' }],
       status: 'open',
       resolvedByUsername: null,
@@ -53,6 +57,11 @@ describe('rowsToReports', () => {
     expect(rowsToReports(null)).toEqual([])
     const [entry] = rowsToReports([{ target_type: 'review', target_id: 'r1', target_user_id: null, report_count: 1, reports: [], is_deleted: true }])
     expect(entry).toMatchObject({ targetAuthorUsername: null, reviewAuthorUsername: null, isDeleted: true, currentBody: null })
+  })
+
+  it('falls back to the card count when the database sends no totals', () => {
+    const [entry] = rowsToReports([{ target_type: 'review', target_id: 'r1', report_count: 3, reports: [] }])
+    expect(entry).toMatchObject({ reportCount: 3, totalReportCount: 3, totalReporterCount: 3 })
   })
 
   it('keys a report by what it is about', () => {

@@ -27,6 +27,8 @@ export const OMDB_KEY = 'omdb-test-key'
 
 const CATEGORY_ORDER = { loved: 0, okay: 1, meh: 2 }
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/
+// public.report_cooldown() in 20261120000000_moderation_v2_reports.sql.
+export const REPORT_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
 // ------------------------------------------------------------------ helpers
 
@@ -82,6 +84,7 @@ export class FakeBackend {
   constructor() {
     this.seq = 0
     this.tick = 0
+    this.skew = 0 // added by advanceTime(), so tests can move the database clock forward
     this.users = [] // { id, email, password, username, confirmed }
     this.profiles = [] // { id, username, bio, pronouns, is_public, created_at }
     this.movies = [] // the `movies` table
@@ -125,9 +128,22 @@ export class FakeBackend {
   // ---------------------------------------------------------------- time
 
   // Strictly increasing timestamps, so "newest first" is deterministic.
+  // This is the fake's now(): every timestamp the "database" writes or compares
+  // (created_at, resolved_at, the report cooldown, invite expiry) goes through it.
   now() {
     this.tick += 1
-    return new Date(this.clockBase + this.tick).toISOString()
+    return new Date(this.clockBase + this.tick + this.skew).toISOString()
+  }
+
+  // The same clock, in milliseconds, without ticking.
+  nowMs() {
+    return this.clockBase + this.tick + this.skew
+  }
+
+  // Moves the database clock forward, e.g. backend.advanceTime(24 * 60 * 60 * 1000)
+  // for "a day later". Rows already written keep their old timestamps.
+  advanceTime(ms) {
+    this.skew += ms
   }
 
   // ISO timestamp `days` ago, for ranking old rows into the leaderboard windows.
@@ -556,6 +572,9 @@ export class FakeBackend {
         is_deleted: !target,
         is_hidden: Boolean(target?.hidden_at),
         report_count: list.length,
+        // Every report on this target, any status (20261120000000).
+        total_report_count: this.reports.filter((r) => r.target_type === first.target_type && r.target_id === first.target_id).length,
+        total_reporter_count: new Set(this.reports.filter((r) => r.target_type === first.target_type && r.target_id === first.target_id).map((r) => r.reporter_id)).size,
         reports: byDate.map((r) => ({ reason: r.reason, reporter: name(r.reporter_id), created_at: r.created_at })),
         status: first.status,
         resolved_by_username: resolved[0] ? name(resolved[0].resolved_by) : null,
@@ -586,13 +605,26 @@ export class FakeBackend {
 
     // Hiding or restoring never touches updated_at (touch_updated_at skips it).
     const target = (type === 'review' ? this.reviews : this.review_comments).find((row) => row.id === id)
+    // The notification's targets: review_id always, comment_id only for a comment.
+    const reviewId = type === 'review' ? id : target?.review_id
+    const commentId = type === 'comment' ? id : null
+    const isHiddenNotice = (n) => n.type === 'content_hidden' && n.review_id === reviewId && n.comment_id === commentId
     if (action === 'hide') {
       if (!target) throw pgError('target_not_found', 'P0002')
       Object.assign(target, { hidden_at: stamp, hidden_by: uid, hidden_reason: text })
-      return resolveOpen('hidden')
+      resolveOpen('hidden')
+      // Tell the author (no actor: we don't say which moderator), unless it's
+      // their own post or they were already told about this hide.
+      if (target.user_id !== uid && !this.notifications.some((n) => n.recipient_id === target.user_id && isHiddenNotice(n))) {
+        this.addNotification(target.user_id, null, 'content_hidden', { review_id: reviewId, comment_id: commentId })
+      }
+      return undefined
     }
     if (!target) throw pgError('target_not_found', 'P0002')
     Object.assign(target, { hidden_at: null, hidden_by: null, hidden_reason: null })
+    // Restoring undoes the hide completely, the notification included.
+    const kept = this.notifications.filter((n) => !isHiddenNotice(n))
+    this.notifications.splice(0, this.notifications.length, ...kept)
     return undefined
   }
 
@@ -735,12 +767,17 @@ export class FakeBackend {
       const review = comment && this.reviews.find((r) => r.id === comment.review_id)
       return Boolean(review) && this.canView(uid, review.user_id) && !comment.hidden_at && !review.hidden_at
     }
+    if (n.type === 'content_hidden') {
+      // Available while the post exists, hidden or not: its author can always see it.
+      if (n.comment_id !== null) return this.review_comments.some((c) => c.id === n.comment_id && c.review_id === n.review_id)
+      return this.reviews.some((r) => r.id === n.review_id)
+    }
     if (n.type === 'friend_request') {
       return this.friendships.some((f) => f.requester_id === n.actor_id && f.addressee_id === n.recipient_id && f.status === 'pending')
     }
     if (n.type === 'blend_invite') {
       const invite = this.blend_invites.find((i) => i.id === n.blend_invite_id)
-      return Boolean(invite) && invite.status === 'pending' && new Date(invite.expires_at).getTime() > Date.now()
+      return Boolean(invite) && invite.status === 'pending' && new Date(invite.expires_at).getTime() > this.nowMs()
     }
     return false
   }
@@ -768,7 +805,12 @@ export class FakeBackend {
           comment_id: n.comment_id,
           review_author_username: visible ? this.profiles.find((p) => p.id === review.user_id)?.username ?? null : null,
           movie_title: visible ? this.movies.find((m) => m.tmdb_id === review.movie_id)?.title ?? null : null,
-          preview: available && comment ? [...comment.body].slice(0, 120).join('') : null,
+          // content_hidden shows the moderator's reason; everything else the comment text.
+          preview: !available
+            ? null
+            : n.type === 'content_hidden'
+              ? (comment ?? review)?.hidden_reason ?? null
+              : comment ? [...comment.body].slice(0, 120).join('') : null,
           available,
         }
       })
@@ -1673,10 +1715,17 @@ class Query {
     }
 
     if (this.op === 'insert' && this.table === 'reports') {
-      // Policy: as yourself, about a review or comment you can see. One per reporter and target.
+      // Policy: as yourself, about a review or comment you can see.
       const row = clone(this.row)
-      // Trigger fill_report_snapshot (BEFORE INSERT): copies what was reported from
-      // the real row and ignores what the client sent for those columns.
+      // Trigger fill_report_snapshot (BEFORE INSERT). First the cooldown: the
+      // caller's own earlier report on this target, resolved less than a day ago
+      // (it counts from when it was resolved; an open one has no resolved_at).
+      if (ctx.uid !== null && b.reports.some((r) => r.reporter_id === ctx.uid && r.target_type === row.target_type && r.target_id === row.target_id
+        && r.resolved_at && new Date(r.resolved_at).getTime() > b.nowMs() - REPORT_COOLDOWN_MS)) {
+        throw pgError('report_cooldown', 'P0001')
+      }
+      // Then it copies what was reported from the real row and ignores what the
+      // client sent for those columns.
       const target = row.target_type === 'review'
         ? b.reviews.find((r) => r.id === row.target_id)
         : b.review_comments.find((c) => c.id === row.target_id)
@@ -1699,8 +1748,9 @@ class Query {
       const length = [...(row.reason ?? '')].length
       if (length < 1 || length > 500) throw pgError('new row for relation "reports" violates check constraint "reports_reason_check"', '23514')
       if (isBlank(row.reason)) throw pgError('new row for relation "reports" violates check constraint "reports_reason_not_blank"', '23514')
-      if (b.reports.some((r) => r.reporter_id === row.reporter_id && r.target_type === row.target_type && r.target_id === row.target_id)) {
-        throw pgError('duplicate key value violates unique constraint "reports_reporter_id_target_type_target_id_key"', '23505')
+      // The partial unique index: one OPEN report per person per post.
+      if (b.reports.some((r) => r.status === 'open' && r.reporter_id === row.reporter_id && r.target_type === row.target_type && r.target_id === row.target_id)) {
+        throw pgError('duplicate key value violates unique constraint "reports_one_open_per_reporter_idx"', '23505')
       }
       const saved = { id: b.id(), reporter_id: row.reporter_id, target_type: row.target_type, target_id: row.target_id, reason: row.reason, created_at: b.now(), ...snapshot }
       b.reports.push(saved)

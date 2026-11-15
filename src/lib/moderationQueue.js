@@ -16,10 +16,15 @@
 //
 // Each entry is { key, targetType, targetId, reviewId, reviewAuthorUsername,
 // targetAuthorUsername, reportedBody, currentBody, isDeleted, isHidden,
-// reportCount, reports: [{ reason, reporter, createdAt }], status,
+// reportCount, totalReportCount, totalReporterCount,
+// reports: [{ reason, reporter, createdAt }], status,
 // resolvedByUsername, resolvedAt, lastReportedAt }.
 //   reportedBody  what it said when it was first reported
 //   currentBody   what it says now, null once it is deleted
+//   reportCount   reports in this card's state; totalReportCount and
+//                 totalReporterCount are all-time for the post, any status
+//                 (people can report again after a cooldown, so there can be
+//                 fewer reporters than reports)
 
 import { supabase } from './supabase.js'
 import { getState as getAccount } from './supabaseStore.js'
@@ -78,6 +83,9 @@ export function rowsToReports(rows) {
     isDeleted: Boolean(row.is_deleted),
     isHidden: Boolean(row.is_hidden),
     reportCount: row.report_count,
+    // Older databases don't send the totals; then the card shows no extra line.
+    totalReportCount: row.total_report_count ?? row.report_count,
+    totalReporterCount: row.total_reporter_count ?? row.report_count,
     reports: (row.reports ?? []).map((r) => ({ reason: r.reason, reporter: r.reporter ?? null, createdAt: r.created_at })),
     status: row.status,
     resolvedByUsername: row.resolved_by_username ?? null,
