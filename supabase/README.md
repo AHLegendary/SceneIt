@@ -15,6 +15,7 @@
 - `migrations/20261118000000_moderation_checks.sql`: `text_is_allowed` and triggers that refuse flagged text (`content_flagged`), no blank review/comment/report text, and report snapshots (`target_user_id`, `review_id`, `target_body`, `status`, ...). Run it before deploying the frontend
 - `migrations/20261119000000_moderation_hidden.sql`: `profiles.is_moderator`, `hidden_*` columns on reviews and comments, hidden content hidden by RLS and by every function that reads reviews, and the moderator functions `get_reports` and `moderate_content`. Run it before deploying the frontend
 - `migrations/20261120000000_moderation_v2_reports.sql`: report cooldown (`report_cooldown()`, one *open* report per person per post, `report_cooldown` error), all-time totals in `get_reports`, and `content_hidden` notifications (no actor) when a moderator hides a post. Run it before deploying the frontend
+- `migrations/20261121000000_rate_limits.sql`: rate limits on new reports, comments and reviews (`rate_limited`). All the numbers are in `rate_limit_config()`; `rate_limit_events` (no policies, no grants) records what was posted so deleting doesn't reset the count. Run it before deploying the frontend
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
