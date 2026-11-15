@@ -73,6 +73,14 @@ function Queue() {
   )
 }
 
+// "3 reports", or, when people reported it again after a cooldown (so the card
+// doesn't hold every report ever filed): "2 reports · 5 all-time from 4 people".
+function reportsLabel({ reportCount, totalReportCount, totalReporterCount }) {
+  const count = reportCount === 1 ? '1 report' : `${reportCount} reports`
+  if (totalReportCount === reportCount) return count
+  return `${count} · ${totalReportCount} all-time from ${totalReporterCount === 1 ? '1 person' : `${totalReporterCount} people`}`
+}
+
 function ReportCard({ report, tab, error, busy }) {
   const [hiding, setHiding] = useState(false)
   const [reason, setReason] = useState('')
@@ -115,7 +123,7 @@ function ReportCard({ report, tab, error, busy }) {
       </div>
 
       <div className="modq__reports">
-        <span className="modq__label">{report.reportCount === 1 ? '1 report' : `${report.reportCount} reports`}</span>
+        <span className="modq__label">{reportsLabel(report)}</span>
         <ul>
           {report.reports.map((r, i) => (
             <li key={i}>

@@ -28,6 +28,7 @@ export const COMMENT_DELETE_ERROR = "Couldn't delete that comment. Check your co
 export const REPORT_ERROR = "Couldn't send your report. Check your connection and try again."
 export const ALREADY_REPORTED = "You've already reported that."
 export const CANNOT_REPORT_SELF = "You can't report your own post."
+export const REPORT_COOLDOWN = 'You reported this recently. You can report it again a day after it was reviewed.'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -354,8 +355,10 @@ export async function deleteComment(commentId) {
 
 // ------------------------------------------------------------------ reports
 
-// Reports a review or a comment. type is 'review' or 'comment'. Reporting the
-// same thing twice throws ALREADY_REPORTED, and your own post CANNOT_REPORT_SELF.
+// Reports a review or a comment. type is 'review' or 'comment'. Reporting
+// something you already have an open report on throws ALREADY_REPORTED, doing it
+// again within a day of a moderator dealing with your last report REPORT_COOLDOWN,
+// and your own post CANNOT_REPORT_SELF.
 // The database fills in the copy of the text that moderators see.
 export async function reportContent(type, targetId, reason) {
   const userId = requireUserId()
@@ -365,7 +368,8 @@ export async function reportContent(type, targetId, reason) {
   const { error } = await supabase
     .from('reports')
     .insert({ reporter_id: userId, target_type: type, target_id: targetId, reason: text })
-  if (error?.code === '23505') throw new Error(ALREADY_REPORTED) // unique violation
+  if (error?.message?.includes('report_cooldown')) throw new Error(REPORT_COOLDOWN)
+  if (error?.code === '23505') throw new Error(ALREADY_REPORTED) // unique violation (one open report per person)
   if (error?.message?.includes('cannot_report_self')) throw new Error(CANNOT_REPORT_SELF)
   if (error) {
     console.error('reportContent failed', error)

@@ -450,7 +450,7 @@ describe('reporting', () => {
   })
 
   it('says so when you already reported it', async () => {
-    backend.reports.push({ id: 'x', reporter_id: alice.id, target_type: 'review', target_id: review.id, reason: 'Before', created_at: backend.now() })
+    backend.reports.push({ id: 'x', reporter_id: alice.id, target_type: 'review', target_id: review.id, reason: 'Before', created_at: backend.now(), status: 'open', resolved_at: null })
     const { user } = await openReview(review)
     await user.click(screen.getByRole('button', { name: 'Report review' }))
     await user.type(screen.getByRole('textbox', { name: 'Why are you reporting this review?' }), 'Again.')

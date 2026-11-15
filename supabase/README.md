@@ -14,6 +14,7 @@
 - `migrations/20261116000000_blend_recs_server.sql`: drops `get_blend_recommendations`; blend recommendations now come from `/api/blends/recommendations`. Deploy the frontend that calls that route before running it
 - `migrations/20261118000000_moderation_checks.sql`: `text_is_allowed` and triggers that refuse flagged text (`content_flagged`), no blank review/comment/report text, and report snapshots (`target_user_id`, `review_id`, `target_body`, `status`, ...). Run it before deploying the frontend
 - `migrations/20261119000000_moderation_hidden.sql`: `profiles.is_moderator`, `hidden_*` columns on reviews and comments, hidden content hidden by RLS and by every function that reads reviews, and the moderator functions `get_reports` and `moderate_content`. Run it before deploying the frontend
+- `migrations/20261120000000_moderation_v2_reports.sql`: report cooldown (`report_cooldown()`, one *open* report per person per post, `report_cooldown` error), all-time totals in `get_reports`, and `content_hidden` notifications (no actor) when a moderator hides a post. Run it before deploying the frontend
 - `seed.sql`: the 60-movie demo catalog from `src/data/movies.json`
 
 ## Apply to the hosted project (no Docker needed)
@@ -45,8 +46,8 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `blend_invites` | `inviter_id → invitee_id`, `pending`, `accepted`, `declined` or `expired`, with `expires_at` | the inviter and invitee | through the blend functions only |
 | `reviews` | `(id, user_id, movie_id, body, is_spoiler, created_at, updated_at, hidden_at, hidden_by, hidden_reason)`, one per user and movie, `body` 1 to 2000 characters, not blank, and refused if it breaks the text rules (`content_flagged`). Only for movies the user has ranked; un-ranking deletes it | same as the author's profile (signed-out visitors too, for public profiles), except a hidden review, which only its author and moderators see | the author; edits can change only `body` and `is_spoiler` |
 | `review_comments` | `(id, review_id, user_id, parent_id, body, ...)`. `parent_id` is null for a top-level comment, or a top-level comment's id for a reply (a trigger refuses replies to replies) | anyone who can see the review, except hidden comments (only their author and moderators). Use `get_review_comments` to also get usernames and placeholder rows | the commenter inserts, edits (only `body`) and deletes; the review's author can also delete any comment on their review |
-| `notifications` | `(id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at)`. `type` is `comment`, `reply`, `friend_request` or `blend_invite`. The targets have no foreign keys, so a notification outlives a deleted comment, review or invite. Friend requests are identified by `(actor_id, recipient_id)` | the recipient | the recipient may set `seen_at` and `read_at` (nothing else); rows are created only by triggers |
-| `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one per reporter and target, plus a snapshot a trigger fills in (`target_user_id`, `review_id`, `target_body`, `status` open/dismissed/hidden, `resolved_by`, `resolved_at`); you can't report your own post (`cannot_report_self`) | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
+| `notifications` | `(id, recipient_id, actor_id, type, review_id, comment_id, blend_invite_id, created_at, seen_at, read_at)`. `type` is `comment`, `reply`, `friend_request`, `blend_invite` or `content_hidden` (a moderator hid your review or comment: `actor_id` is null, we don't say which moderator; `comment_id` is null for a review). The targets have no foreign keys, so a notification outlives a deleted comment, review or invite. Friend requests are identified by `(actor_id, recipient_id)` | the recipient | the recipient may set `seen_at` and `read_at` (nothing else); rows are created only by triggers |
+| `reports` | `(reporter_id, target_type 'review' or 'comment', target_id, reason)`, one *open* report per reporter and target (a partial unique index; you can report again once the earlier one was resolved and `report_cooldown()`, 1 day, has passed, else `report_cooldown`), plus a snapshot a trigger fills in (`target_user_id`, `review_id`, `target_body`, `status` open/dismissed/hidden, `resolved_by`, `resolved_at`); you can't report your own post (`cannot_report_self`) | nobody through the app (read them in the dashboard) | any signed-in user, as themselves, about a review or comment they can see |
 
 RLS is on for every table. Passwords are stored only in Supabase Auth.
 
@@ -107,7 +108,9 @@ await supabase.rpc('get_review_feed', { p_scope: 'everyone', p_sort: 'recent', p
 // get_notifications: newest first, p_limit 1 to 100 (default 30). Each row:
 //   { id, type, created_at, seen_at, read_at, actor_username, review_id, comment_id,
 //     review_author_username, movie_title, preview, available }
-// preview (first 120 characters of the comment) is null once it isn't available.
+// preview (first 120 characters of the comment; for `content_hidden` the moderator's reason) is null
+// once it isn't available. actor_username is null for `content_hidden`. A `content_hidden` one stays
+// available while the post exists, hidden or not (its author can always see it).
 await supabase.rpc('get_notifications', { p_limit: 30 })
 // A click: marks it read and seen, and checks availability right now. Returns no row if
 // it isn't yours: [{ available, type, review_id, comment_id, review_author_username }]
@@ -137,11 +140,14 @@ Scores and leaderboards are calculated when you ask for them, not stored. In SQL
 // p_status: 'open' | 'dismissed' | 'hidden' | 'resolved' (= dismissed + hidden). Each row:
 //   { target_type, target_id, review_id, review_author_username, target_author_username,
 //     target_body (as first reported), current_body (null if deleted), is_deleted, is_hidden,
-//     report_count, reports: [{ reason, reporter, created_at }], status,
+//     report_count (in this card's state), total_report_count and total_reporter_count (all-time,
+//     any status; fewer reporters than reports when someone reported again),
+//     reports: [{ reason, reporter, created_at }], status,
 //     resolved_by_username, resolved_at, last_reported_at }
 await supabase.rpc('get_reports', { p_status: 'open', p_limit: 50, p_offset: 0 })
 // hide (resolves all open reports on it), restore (reports stay), dismiss (content stays;
 // also works on deleted content). Reason is optional, 500 characters at most.
+// hide also notifies the author ('content_hidden', not when you hide your own post); restore deletes it.
 await supabase.rpc('moderate_content', { p_target_type: 'comment', p_target_id: id, p_action: 'hide', p_reason: null })
 ```
 

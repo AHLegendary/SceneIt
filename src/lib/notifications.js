@@ -14,11 +14,14 @@
 //
 // Each entry is { id, type, createdAt, seenAt, readAt, actorUsername,
 // reviewId, commentId, reviewAuthorUsername, movieTitle, preview, available }.
-// `type` is 'comment', 'reply', 'friend_request' or 'blend_invite'. `preview`
-// is read live from the comment, and is null once it isn't available.
+// `type` is 'comment', 'reply', 'friend_request', 'blend_invite' or
+// 'content_hidden' (a moderator hid your review or comment; actorUsername is
+// null because we don't say which moderator). `preview` is read live from the
+// comment (for content_hidden: the moderator's reason), and is null once it
+// isn't available.
 
 import { supabase } from './supabase.js'
-import { reviewCommentHref } from './route.js'
+import { reviewCommentHref, reviewHref } from './route.js'
 import { getState as getAccount, subscribe as subscribeAccount } from './supabaseStore.js'
 
 export const LOAD_ERROR = "Couldn't load your notifications. Check your connection and try again."
@@ -84,6 +87,13 @@ export function rowsToNotifications(rows) {
 export function notificationHref(type, row) {
   if (type === 'friend_request') return '#/friends'
   if (type === 'blend_invite') return '#/blends'
+  // Your hidden post: the comment when it was a comment, else the review itself.
+  if (type === 'content_hidden') {
+    if (!row?.reviewAuthorUsername || !row.reviewId) return null
+    return row.commentId
+      ? reviewCommentHref(row.reviewAuthorUsername, row.reviewId, row.commentId)
+      : reviewHref(row.reviewAuthorUsername, row.reviewId)
+  }
   if (row?.reviewAuthorUsername && row.reviewId && row.commentId) {
     return reviewCommentHref(row.reviewAuthorUsername, row.reviewId, row.commentId)
   }

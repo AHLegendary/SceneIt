@@ -13,7 +13,15 @@ import { useNotifications } from '../lib/useNotifications.js'
 
 // What the "no longer available" popup says, by kind of notification.
 const GONE_COMMENT = 'This comment is no longer available.'
+const GONE_REVIEW = 'This review is no longer available.'
 const GONE_REQUEST = 'This request is no longer pending.'
+
+// The popup text for a notification whose target is gone.
+function goneMessage(n) {
+  if (n.type === 'comment' || n.type === 'reply') return GONE_COMMENT
+  if (n.type === 'content_hidden') return n.commentId ? GONE_COMMENT : GONE_REVIEW
+  return GONE_REQUEST
+}
 
 // What a click on an available notification does: go to its page.
 function goTo(href) {
@@ -88,7 +96,7 @@ export default function NotificationBell({ current }) {
       if (result.available) {
         goTo(result.href)
       } else {
-        setGone(notification.type === 'comment' || notification.type === 'reply' ? GONE_COMMENT : GONE_REQUEST)
+        setGone(goneMessage(notification))
         loadNotifications() // so the row shows it is gone the next time the panel opens
       }
     } catch (e) {
@@ -189,6 +197,11 @@ function Sentence({ n }) {
       return <>{who} sent you a friend request</>
     case 'blend_invite':
       return <>{who} invited you to a Movie Blend</>
+    // No actor: we don't say which moderator did it.
+    case 'content_hidden':
+      return n.commentId
+        ? <>Your comment on a review{movie && <> of {movie}</>} was hidden by a moderator.</>
+        : <>Your review{movie && <> of {movie}</>} was hidden by a moderator.</>
     default:
       return <>{who} did something</>
   }

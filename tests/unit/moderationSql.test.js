@@ -26,3 +26,15 @@ describe('text_is_allowed matches moderation.js', () => {
     for (const phrase of BLOCKED_PHRASES) expect(phrase).toMatch(/^[a-z0-9 ]+$/)
   })
 })
+
+// The report cooldown exists in SQL (report_cooldown()) and in the fake backend
+// the integration tests run against. This fails if only one is changed.
+describe('report_cooldown matches the fake backend', () => {
+  it('is the same length', async () => {
+    const { REPORT_COOLDOWN_MS } = await import('../integration/helpers/fakeBackend.js')
+    const migration = readFileSync(new URL('../../supabase/migrations/20261120000000_moderation_v2_reports.sql', import.meta.url), 'utf8')
+    const match = /create function public\.report_cooldown\(\)[\s\S]*?select interval '(\d+) day'/.exec(migration)
+    expect(match, 'report_cooldown() not found in the migration').not.toBeNull()
+    expect(Number(match[1]) * 24 * 60 * 60 * 1000).toBe(REPORT_COOLDOWN_MS)
+  })
+})

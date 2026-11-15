@@ -418,6 +418,64 @@ describe('the moderation page', () => {
     })
   })
 
+  describe('reporting again after a cooldown', () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const COOLDOWN = 'You reported this recently. You can report it again a day after it was reviewed.'
+
+    // carol reports alice's comment from the review page, the way a person would.
+    async function reportFromPage(app, text) {
+      await app.user.click(await screen.findByRole('button', { name: 'Report comment by Alice_99' }))
+      type(screen.getByRole('textbox', { name: 'Why are you reporting this comment?' }), text)
+      await app.user.click(screen.getByRole('button', { name: 'Send report' }))
+    }
+
+    it('shows the cooldown message after a dismissal, lets the report through a day later, and the card shows the totals', async () => {
+      let app = await openReview(review, { as: carol })
+      await reportFromPage(app, 'First time.')
+      expect(await screen.findByText("Reported. Thanks, we'll take a look.")).toBeTruthy()
+
+      backend.moderateContent(mod.id, 'comment', comment.id, 'dismiss')
+
+      app = await relaunch(app, { as: carol, hash: `#/u/bob/review/${review.id}` })
+      await ready({ loggedIn: true })
+      await reportFromPage(app, 'Still bad.')
+      expect((await screen.findByRole('alert')).textContent).toBe(COOLDOWN)
+      expect(backend.reports).toHaveLength(1)
+
+      backend.advanceTime(DAY + 60 * 1000)
+      type(screen.getByRole('textbox', { name: 'Why are you reporting this comment?' }), 'Still bad.')
+      await app.user.click(screen.getByRole('button', { name: 'Send report' }))
+      expect(await screen.findByText("Reported. Thanks, we'll take a look.")).toBeTruthy()
+      expect(backend.reports.map((r) => r.status)).toEqual(['dismissed', 'open'])
+
+      app = await relaunch(app, { as: mod, hash: '#/moderation' })
+      await ready({ loggedIn: true })
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(commentCard().getByText('1 report · 2 all-time from 1 person')).toBeTruthy()
+    })
+
+    it('shows the plain count when nothing was reported before', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      await report(carol, 'comment', comment.id, 'Hateful')
+      await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(commentCard().getByText('2 reports')).toBeTruthy()
+    })
+
+    it('words the totals for several people', async () => {
+      await report(bob, 'comment', comment.id, 'Rude')
+      await report(carol, 'comment', comment.id, 'Hateful')
+      backend.moderateContent(mod.id, 'comment', comment.id, 'dismiss')
+      backend.advanceTime(DAY + 60 * 1000)
+      await report(bob, 'comment', comment.id, 'Again')
+      await report(carol, 'comment', comment.id, 'Again too')
+      await report(backend.addUser({ username: 'dina' }), 'comment', comment.id, 'New')
+      await openQueue()
+      await screen.findByRole('article', { name: 'Comment by Alice_99' })
+      expect(commentCard().getByText('3 reports · 5 all-time from 3 people')).toBeTruthy()
+    })
+  })
+
   describe('what was reported vs what it says now', () => {
     it('shows both when the author edited it after the report', async () => {
       await report(bob, 'comment', comment.id, 'Rude')
