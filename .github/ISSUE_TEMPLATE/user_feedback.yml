@@ -1,0 +1,50 @@
+name: User Feedback
+description: Share your experience using SceneIt (what worked, what didn't)
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying SceneIt! Honest feedback (good or bad) helps us improve.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app is this about?
+      multiple: true
+      options:
+        - Ranking / head-to-head comparisons
+        - Profiles
+        - Lists
+        - Search / discovery
+        - Sign up / login
+        - Overall experience
+        - Documentation / user manual
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: rating
+    attributes:
+      label: Overall, how was your experience?
+      options:
+        - 5 - Great
+        - 4 - Good
+        - 3 - Okay
+        - 2 - Frustrating
+        - 1 - Very frustrating
+  - type: textarea
+    id: liked
+    attributes:
+      label: What worked well?
+  - type: textarea
+    id: improve
+    attributes:
+      label: What was confusing or could be better?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, device/browser, or other details.
