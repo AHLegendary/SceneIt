@@ -514,3 +514,20 @@ describe('closing', () => {
     expect(screen.getByRole('dialog', { name: DUNE.title })).toBeTruthy()
   })
 })
+
+describe('keyboard focus', () => {
+  it('wraps Tab and Shift+Tab inside the popup instead of reaching the page behind', async () => {
+    const { user } = await open()
+    const dialog = await dune(user)
+    const items = [...dialog.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    const first = items[0]
+    const last = items[items.length - 1]
+    expect(document.activeElement).toBe(first) // Close button
+
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(last)
+
+    await user.tab()
+    expect(document.activeElement).toBe(first)
+  })
+})

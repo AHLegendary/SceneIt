@@ -10,6 +10,7 @@ import { getMovie as fetchMovie, getRatings } from '../lib/movies.js'
 import { useMyTiers } from '../lib/useMyList.js'
 import { useMyWatchlist } from '../lib/useWatchlist.js'
 import { addToWatchlist, removeFromWatchlist } from '../lib/watchlist.js'
+import useFocusTrap from '../lib/useFocusTrap.js'
 
 // Details panel for one movie, as a glass card over its blurred backdrop:
 // poster on the left; title, facts, your rank, community rank, outside
@@ -22,6 +23,7 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
   const [watchBusy, setWatchBusy] = useState(false)
   const [watchError, setWatchError] = useState(null)
   const titleId = useId()
+  const trapRef = useFocusTrap()
   const closeButton = useRef(null)
   const downOnBackdrop = useRef(false)
   // Bumps when details arrive for a non-catalog movie (the movie object is
@@ -138,7 +140,7 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
       onPointerDown={(e) => { downOnBackdrop.current = e.target === e.currentTarget }}
       onClick={(e) => { if (downOnBackdrop.current && e.target === e.currentTarget) onClose() }}
     >
-      <article className="glass" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <article ref={trapRef} className="glass" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <button ref={closeButton} type="button" className="dialog__close glass__close" onClick={onClose} aria-label="Close">
           <Icon name="close" size={18} strokeWidth={2.2} />
         </button>
