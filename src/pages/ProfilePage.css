@@ -348,7 +348,19 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   font-size: 15px;
 }
 .recent__search input:focus-visible { outline: none; box-shadow: none; }
-.rlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+/* One row that scrolls sideways (ArrowScroller supplies the arrows). */
+.rlist {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 2px 2px 14px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.rlist::-webkit-scrollbar { display: none; }
+.rlist__item { flex: 0 0 min(360px, 86%); min-width: 0; scroll-snap-align: start; }
 
 /* One ranked movie: poster, title, genres, score, and the review (components/ReviewCard.jsx) */
 .rcard {
@@ -510,6 +522,17 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
 /* ---------------------------------------------------------- watchlist */
 .watchlist { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
 .wlist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 14px; }
+.wlist--row {
+  display: flex;
+  gap: 14px;
+  padding: 2px 2px 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.wlist--row::-webkit-scrollbar { display: none; }
+.wlist--row .wlist__item { flex: 0 0 120px; scroll-snap-align: start; }
 .wlist__item { position: relative; }
 .wlist__open { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; color: var(--ink); }
 .wlist__open .poster { width: 100%; }

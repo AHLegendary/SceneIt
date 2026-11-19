@@ -141,7 +141,7 @@ export default function UserProfilePage({ username, account, onOpen }) {
       ) : (
         <>
           <ProfileHighlights tiers={list.tiers} onOpen={onOpen} />
-          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={watchlist.retry} onOpen={onOpen} limit={WATCHLIST_PREVIEW} fullHref={userWatchlistHref(profile.username)} />
+          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={watchlist.retry} onOpen={onOpen} limit={WATCHLIST_PREVIEW} fullHref={userWatchlistHref(profile.username)} row />
           <RecentlyRanked
             key={profile.id}
             userId={profile.id}

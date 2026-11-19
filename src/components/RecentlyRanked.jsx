@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ArrowScroller from './ArrowScroller.jsx'
 import Icon from './Icon.jsx'
 import ReviewCard from './ReviewCard.jsx'
 import { scoreTiers } from '../features/ranking/scores.js'
@@ -13,7 +14,8 @@ export const SHOWN = 5
 const ORDER_ERROR = "Couldn't load this list. Check your connection and try again."
 const REVIEWS_ERROR = "Couldn't load some of the reviews. Check your connection and try again."
 
-// A user's five most recently ranked movies, as ReviewCards. A search box
+// A user's five most recently ranked movies, as ReviewCards in a row that
+// scrolls sideways when they don't fit. A search box
 // narrows it by title (still five at most). Only ranked movies appear.
 //
 // Everything about the movies (titles, genres, scores) is already in `tiers`,
@@ -139,9 +141,9 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
     body = <p className="uprofile__muted">No ranked movies match “{query.trim()}”.</p>
   } else {
     body = (
-      <ul className="rlist">
+      <ArrowScroller label="recently ranked" className="rlist">
         {visible.map((movie) => (
-          <li key={movie.id}>
+          <div key={movie.id} className="rlist__item" role="group" aria-label={movie.title}>
             <ReviewCard
               movie={movie}
               score={scores?.get(movie.id) ?? null}
@@ -152,9 +154,9 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
               onDeleteReview={removeReview}
               commentsHref={reviews.has(movie.id) && username ? reviewHref(username, reviews.get(movie.id).id) : undefined}
             />
-          </li>
+          </div>
         ))}
-      </ul>
+      </ArrowScroller>
     )
   }
 

@@ -288,7 +288,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
       {!editing && (
         <>
           <ProfileHighlights tiers={tiers} onOpen={onOpen} onStartRanking={() => onNavigate?.('my-list')} />
-          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} limit={WATCHLIST_PREVIEW} fullHref="#/watchlist" />
+          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} limit={WATCHLIST_PREVIEW} fullHref="#/watchlist" row />
           <RecentlyRanked key={userId} userId={userId} username={username} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
         </>
       )}

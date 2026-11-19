@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ArrowScroller from './ArrowScroller.jsx'
 import Icon from './Icon.jsx'
 import Poster from './Poster.jsx'
 import { posterUrl } from '../lib/localStore.js'
@@ -6,17 +7,23 @@ import { posterUrl } from '../lib/localStore.js'
 // How many posters a profile shows before "View all".
 export const WATCHLIST_PREVIEW = 6
 
+// A list item, or a plain group inside the scroller (a <li> needs a <ul> parent).
+function Item({ row, children, ...props }) {
+  return row ? <div role="group" {...props}>{children}</div> : <li {...props}>{children}</li>
+}
+
 // A profile's watchlist: posters of movies they want to watch. Movies already
 // ranked are hidden (you've seen them), so `rankedIds` is the profile's ranked
 // list. Pass `onRemove` only for your own watchlist; it adds a remove button.
 // On a profile it's a preview: `limit` caps the posters and `fullHref` links
-// to the whole watchlist page.
+// to the whole watchlist page; `row` lays the posters out as one row that
+// scrolls sideways (the full pages use a wrapping grid instead).
 //
 //   status     'loading' | 'ready' | 'error'
 //   movies     movie objects, newest added first
 //   onOpen     opens a movie's details (movie id)
 //   onRemove   (movie) => Promise, rejects with a user-facing message
-export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, onRemove, limit = Infinity, fullHref, heading = true }) {
+export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, onRemove, limit = Infinity, fullHref, heading = true, row = false }) {
   const [error, setError] = useState(null)
   const unranked = movies.filter((movie) => !rankedIds.has(movie.id))
   const visible = unranked.slice(0, limit)
@@ -47,10 +54,11 @@ export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, 
       </p>
     )
   } else {
+    const Wrap = row ? ArrowScroller : 'ul'
     body = (
-      <ul className="wlist">
+      <Wrap {...(row ? { label: 'watchlist', className: 'wlist wlist--row' } : { className: 'wlist' })}>
         {visible.map((movie) => (
-          <li key={movie.id} className="wlist__item">
+          <Item key={movie.id} className="wlist__item" row={row}>
             <button type="button" className="wlist__open" onClick={() => onOpen(movie.id)} aria-label={`Open ${movie.title}`}>
               <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="md" />
               <span className="wlist__title">{movie.title}</span>
@@ -60,9 +68,9 @@ export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, 
                 <Icon name="close" size={14} strokeWidth={2.4} />
               </button>
             )}
-          </li>
+          </Item>
         ))}
-      </ul>
+      </Wrap>
     )
   }
 
