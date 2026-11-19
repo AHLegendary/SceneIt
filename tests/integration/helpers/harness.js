@@ -35,7 +35,7 @@ export async function launch({ hash = '', as = null, backend = new FakeBackend()
   window.location.hash = hash
   sessionStorage.clear()
 
-  // What src/main.jsx does at startup.
+  // What src/start.jsx does at startup.
   const store = await import('../../../src/lib/supabaseStore.js')
   const friends = await import('../../../src/lib/friends.js')
   store.startAuth()

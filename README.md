@@ -115,7 +115,7 @@ Found something broken? Report it on [GitHub Issues](https://github.com/AHLegend
    - **Actual:** what happened instead, including any error message.
    - **Where:** live site or local, and your browser.
    - **Screenshot**, if it helps.
-4. Add a label (see below).
+4. Choose the **Bug Report** template. It adds the `bug` label for you and prompts for the details in step 3.
 
 # Developer Guidelines
 
@@ -162,7 +162,8 @@ SceneIt/
 │   ├── App.jsx                    # Main React application
 │   ├── App.css                    # Application-specific styles
 │   ├── index.css                  # Global styles
-│   └── main.jsx                   # React entry point
+│   ├── main.jsx                   # Entry point: checks env vars, then loads start.jsx
+│   └── start.jsx                  # React entry point
 │
 ├── supabase/                      # Database migrations, seed data, and database docs
 │
@@ -248,7 +249,7 @@ npm run build      # builds the app for production into dist/
 
 If the tests pass and the build succeeds, the project is set up correctly. Together with `npm run lint`, these are the checks CI runs on every pull request.
 
-**Reading the test summary.** A healthy run ends with a line like `Tests  1321 passed`. A test marked `todo` is **not a failure**: it is an `it.todo(...)` placeholder for behavior we know is missing (see `tests/integration/README.md`). A real failure shows as `failed` in red with the assertion that broke. If `npm ci` complains that `package.json` and `package-lock.json` are out of sync, run `npm install` once and try again.
+**Reading the test summary.** A healthy run ends with every test file and every test passed (`Tests  N passed (N)`) and none failed. A test marked `todo` is **not a failure**: it is an `it.todo(...)` placeholder for behavior we know is missing (see `tests/integration/README.md`). A real failure shows as `failed` in red with the assertion that broke. If `npm ci` complains that `package.json` and `package-lock.json` are out of sync, run `npm install` once and try again.
 
 ## 4. Configure Environment Variables
 
@@ -292,7 +293,7 @@ The service role key bypasses database security, so keep it secret. It is only u
 
 | Missing | What happens |
 |---|---|
-| `VITE_SUPABASE_URL` or `VITE_SUPABASE_PUBLISHABLE_KEY` | The app shows a blank page (the Supabase client can't start). |
+| `VITE_SUPABASE_URL` or `VITE_SUPABASE_PUBLISHABLE_KEY` | The app shows an error page naming the missing or invalid variable instead of loading. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Logging in with a username fails (logging in with an email still works), movies found through search can't be saved (so they can't be ranked), profile pictures and banners can't be uploaded, and Movie Blend recommendations fail to load. |
 | `TMDB_READ_TOKEN` | Search and the Trending Now row fall back to the built-in 60-movie catalog, movies outside that catalog can't be ranked, For You only uses the catalog, and blend recommendations only come from the members' own lists. |
 | `OMDB_API_KEY` | Movies outside the built-in catalog show no IMDb or Rotten Tomatoes scores, and `npm run ratings` fails. Everything else works. |
