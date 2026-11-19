@@ -8,6 +8,8 @@ import { isCatalogMovie, posterUrl } from '../lib/localStore.js'
 import { formatRuntime, formatVotes } from '../lib/movieDetails.js'
 import { getMovie as fetchMovie, getRatings } from '../lib/movies.js'
 import { useMyTiers } from '../lib/useMyList.js'
+import { useMyWatchlist } from '../lib/useWatchlist.js'
+import { addToWatchlist, removeFromWatchlist } from '../lib/watchlist.js'
 
 // Details panel for one movie, as a glass card over its blurred backdrop:
 // poster on the left; title, facts, your rank, community rank, outside
@@ -16,6 +18,9 @@ import { useMyTiers } from '../lib/useMyList.js'
 // trending, friends' picks) is filled in from the API the first time it opens.
 export default function MovieDetails({ movie, signedIn = true, onClose, onRank, onRerank }) {
   const tiers = useMyTiers()
+  const watchlist = useMyWatchlist()
+  const [watchBusy, setWatchBusy] = useState(false)
+  const [watchError, setWatchError] = useState(null)
   const titleId = useId()
   const closeButton = useRef(null)
   const downOnBackdrop = useRef(false)
@@ -113,6 +118,19 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
   }, [onClose])
 
   const best = community.weekly || community.monthly
+  const onWatchlist = watchlist.movies.some((m) => m.id === movie.id)
+
+  async function toggleWatchlist() {
+    setWatchBusy(true)
+    setWatchError(null)
+    try {
+      await (onWatchlist ? removeFromWatchlist(movie) : addToWatchlist(movie))
+    } catch (e) {
+      setWatchError(e.message)
+    } finally {
+      setWatchBusy(false)
+    }
+  }
 
   return (
     <div
@@ -219,6 +237,7 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
             )}
           </div>
 
+          {watchError && <p className="glass__error" role="alert">{watchError}</p>}
           <footer className="glass__actions">
             {ranked ? (
               <>
@@ -237,6 +256,12 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
               <button type="button" className="btn btn--accent" onClick={() => onRank(movie)}>
                 <Icon name="swords" size={16} />
                 {signedIn ? 'Rank it' : 'Log in to rank'}
+              </button>
+            )}
+            {signedIn && !ranked && movie.tmdb_id && (
+              <button type="button" className="btn btn--light" onClick={toggleWatchlist} disabled={watchBusy} aria-pressed={onWatchlist}>
+                <Icon name={onWatchlist ? 'check' : 'bookmark'} size={16} />
+                {onWatchlist ? 'On your watchlist' : 'Save to watchlist'}
               </button>
             )}
             <span className="glass__links">

@@ -55,6 +55,10 @@ Type in the search bar at the top of every page (*Search movies, shows, actors, 
 
 Your score for each movie (1–10) comes from its place in your list and shows up after you've ranked **10 movies**.
 
+### Watchlist
+
+Not ready to rank a movie? Open it and click **Save to watchlist** (the button is hidden for movies you've already ranked). Click **On your watchlist** to take it off again. Your **Profile** shows the six most recent; click **View all** for the whole watchlist, where each poster has an **✕** to remove it. Other people see it on your profile too (and the full page at `#/u/<username>/watchlist`), under the same Public / Private rules as your list. Ranking a movie takes it off the watchlist display.
+
 ### My List
 
 Open **My List** from the Profile menu. It shows your movies best first, grouped as Loved it / It was okay / Not a fan, with a **Tier list** view too. **Rerank** a movie to place it again, or **Remove** it (which also deletes your review of it).
@@ -98,10 +102,11 @@ These use cases work end to end on the live site and on a local setup with all e
 4. **Browse the Leaderboard** for this week or this month, by highest ranked or most watched (no login needed).
 5. **Get recommendations** on the For You page, based on your rankings and your friends' rankings.
 6. **Add friends:** search by username, send a request, accept incoming requests.
-7. **Edit your profile** (bio, pronouns, public/private) and **view other users' profiles and lists**.
-8. **Make a Movie Blend:** once you've ranked 15+ movies, invite up to four friends, then see the group's recommendations on the blend's page (`GET /api/blends/recommendations`).
-9. **Review and discuss:** write a review of a ranked movie, comment or reply on reviews, report one, and browse the Community reviews feed.
-10. **Browse the Home page:** Trending Now, Top Ranked, Most Watched, and (when logged in) Because You Loved…, More <genre> for You and Recently Ranked by Friends.
+7. **Save movies to a watchlist** from the movie details, and see it on your profile.
+8. **Edit your profile** (bio, pronouns, public/private) and **view other users' profiles and lists**.
+9. **Make a Movie Blend:** once you've ranked 15+ movies, invite up to four friends, then see the group's recommendations on the blend's page (`GET /api/blends/recommendations`).
+10. **Review and discuss:** write a review of a ranked movie, comment or reply on reviews, report one, and browse the Community reviews feed.
+11. **Browse the Home page:** Trending Now, Top Ranked, Most Watched, and (when logged in) Because You Loved…, More <genre> for You and Recently Ranked by Friends.
 
 ## Reporting a Bug
 

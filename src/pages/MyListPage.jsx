@@ -59,7 +59,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
     <section className="page">
       <header className="page__head">
         <div>
-          <h1 className="page__title"><Icon name="bookmark" size={30} />My List</h1>
+          <h1 className="page__title"><Icon name="list" size={30} />My List</h1>
           <p className="page__sub">
             {count
               ? `${count} ranked ${count === 1 ? 'movie' : 'movies'}`

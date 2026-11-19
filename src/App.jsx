@@ -27,6 +27,7 @@ import MyListPage from './pages/MyListPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import ReviewPage from './pages/ReviewPage.jsx'
 import UserListPage from './pages/UserListPage.jsx'
+import WatchlistPage from './pages/WatchlistPage.jsx'
 import UserProfilePage from './pages/UserProfilePage.jsx'
 
 // Pages live in the URL hash (#/my-list, #/u/name) so refresh and
@@ -169,6 +170,10 @@ function App() {
           <ReviewPage key={route.reviewId} reviewId={route.reviewId} commentId={route.commentId ?? null} account={account} onOpen={openDetails} />
         ) : page === 'user-list' ? (
           <UserListPage username={route.username} account={account} onOpen={openDetails} />
+        ) : page === 'user-watchlist' ? (
+          <UserListPage username={route.username} account={account} onOpen={openDetails} watchlist />
+        ) : page === 'watchlist' ? (
+          <WatchlistPage onOpen={openDetails} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openRankSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (

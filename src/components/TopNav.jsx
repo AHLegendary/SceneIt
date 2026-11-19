@@ -120,7 +120,7 @@ function ForYouLink({ active, onNavigate }) {
   )
 }
 
-const SHORTCUT_ICONS = { friends: 'friends', 'my-list': 'bookmark', rank: 'swords', profile: 'card' }
+const SHORTCUT_ICONS = { friends: 'friends', 'my-list': 'list', watchlist: 'bookmark', rank: 'swords', profile: 'card' }
 
 // Profile button + the semicircle beneath it. Clicking Profile toggles it;
 // while open the page behind is dimmed and blurred, and Escape or a click
@@ -175,7 +175,7 @@ function ProfileMenu({ current, username, isModerator, requests, onNavigate, onR
     }
   }
 
-  const active = current === 'profile' || current === 'friends' || current === 'my-list' || current === 'moderation'
+  const active = current === 'profile' || current === 'friends' || current === 'my-list' || current === 'watchlist' || current === 'moderation'
 
   return (
     <div className="pmenu" ref={wrap}>
@@ -200,14 +200,21 @@ function ProfileMenu({ current, username, isModerator, requests, onNavigate, onR
 
       <div id={menuId} className={`wheel${open ? ' is-open' : ''}`} role="menu" aria-label="Profile menu" hidden={!open}>
         <svg className="wheel__lines" viewBox="0 0 360 190" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M180 0 L180 190" />
-          <path d="M180 0 L45.6 134.4" />
-          <path d="M180 0 L314.4 134.4" />
+          <path d="M180 0 L26.3 111.7" />
+          <path d="M180 0 L121.3 180.7" />
+          <path d="M180 0 L238.7 180.7" />
+          <path d="M180 0 L333.7 111.7" />
         </svg>
         <span className="wheel__avatar" aria-hidden="true">
           <Icon name="user" size={30} strokeWidth={2.2} />
         </span>
         <span className="wheel__name" title={username ?? undefined}>{username ?? 'You'}</span>
+        {isModerator && (
+          <button type="button" role="menuitem" className="wheel__mod" onClick={() => go('moderation')}>
+            <Icon name="card" size={14} />
+            Moderation
+          </button>
+        )}
         {PROFILE_SHORTCUTS.map((item) => (
           <button
             key={item.id}
@@ -223,12 +230,6 @@ function ProfileMenu({ current, username, isModerator, requests, onNavigate, onR
             <span className="wheel__label">{item.label}</span>
           </button>
         ))}
-        {isModerator && (
-          <button type="button" role="menuitem" className="wheel__mod" onClick={() => go('moderation')}>
-            <Icon name="card" size={14} />
-            Moderation
-          </button>
-        )}
         <button type="button" role="menuitem" className="wheel__logout" onClick={logOut} disabled={busy}>
           <Icon name="logout" size={14} />
           {busy ? 'Logging out…' : 'Log out'}
