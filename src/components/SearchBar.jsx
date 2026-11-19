@@ -97,7 +97,7 @@ export default function SearchBar({ onOpen }) {
         ref={input}
         className="nav__search-input"
         type="search"
-        placeholder="Search movies, shows, actors, or genres..."
+        placeholder="Search movie titles..."
         aria-label="Search movies"
         aria-expanded={Boolean(showPanel)}
         aria-controls={listId}

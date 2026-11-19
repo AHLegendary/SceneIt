@@ -44,7 +44,7 @@ You can browse the Home page, the Community page, and movie details without an a
 
 ### Find a movie
 
-Type in the search bar at the top of every page (*Search movies, shows, actors, or genres...*). Results come from all of TMDb. Click a movie to open its details: poster, overview, cast, director, IMDb and Rotten Tomatoes scores, the SceneIt community score, and your own rank and score once you've ranked it.
+Type in the search bar at the top of every page (*Search movie titles...*). Results come from TMDb's movie catalog. The genre chips in the dropdown filter those results (and browse the built-in catalog by genre when the box is empty), so typing a genre name won't filter by genre. Click a movie to open its details: poster, overview, cast, director, IMDb and Rotten Tomatoes scores, the SceneIt community score, and your own rank and score once you've ranked it.
 
 ### Rank a movie
 
