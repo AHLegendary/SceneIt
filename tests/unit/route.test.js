@@ -11,6 +11,8 @@ describe('parseHash', () => {
   })
   it("reads another user's full list", () => {
     expect(parseHash('#/u/reil_99/my-list')).toEqual({ page: 'user-list', username: 'reil_99' })
+    expect(parseHash('#/u/reil_99/watchlist')).toEqual({ page: 'user-watchlist', username: 'reil_99' })
+    expect(parseHash('#/watchlist')).toEqual({ page: 'watchlist', username: null })
   })
   it('decodes the username', () => {
     expect(parseHash('#/u/a%5Fb')).toEqual({ page: 'user', username: 'a_b' })
@@ -24,6 +26,8 @@ describe('parseHash', () => {
   it('does not treat "user", "user-list", or malformed paths as pages', () => {
     expect(parseHash('#/user').page).toBe(DEFAULT_PAGE)
     expect(parseHash('#/user-list').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/user-watchlist').page).toBe(DEFAULT_PAGE)
+    expect(parseHash('#/u//watchlist').page).toBe(DEFAULT_PAGE)
     expect(parseHash('#/u/').page).toBe(DEFAULT_PAGE)
     expect(parseHash('#/u/a/b').page).toBe(DEFAULT_PAGE)
     expect(parseHash('#/u/reil_99/other').page).toBe(DEFAULT_PAGE)

@@ -33,15 +33,6 @@ const cardTitles = () => [...document.querySelectorAll('.rcard__title')].map((n)
 const cardFor = (id) => within(cards().find((card) => card.querySelector('.rcard__title').firstChild.textContent === title(id)))
 const search = () => screen.findByRole('searchbox', { name: 'Search ranked movies' })
 
-// Scrolls to the bottom until the list has `count` cards. Retries because a
-// page only asks for the next one after its own reviews have loaded.
-async function scrollUntil(count) {
-  await waitFor(async () => {
-    await scrollToEnd()
-    expect(cards()).toHaveLength(count)
-  })
-}
-
 describe('searching your ranked movies', () => {
   it('filters by title as you type, and shows everything again when cleared', async () => {
     backend.seedList(alice, ids(4))
@@ -81,38 +72,33 @@ describe('searching your ranked movies', () => {
   })
 })
 
-describe('loading more as you scroll', () => {
-  it('shows about 20 at first, then 20 more each time you reach the bottom', async () => {
-    backend.seedList(alice, ids(45))
+describe('only the most recent five', () => {
+  it('shows the five most recently ranked movies, with a link to the full list', async () => {
+    backend.seedList(alice, ids(12))
     await open()
 
-    await waitFor(() => expect(cards()).toHaveLength(20))
-    await scrollUntil(40)
-    await scrollUntil(45)
-
-    await scrollToEnd() // nothing left: no more cards
-    expect(cards()).toHaveLength(45)
+    await waitFor(() => expect(cards()).toHaveLength(5))
+    await scrollToEnd() // no infinite scroll
+    expect(cards()).toHaveLength(5)
+    expect(screen.getByRole('link', { name: 'View full list' })).toBeTruthy()
   })
 
-  it('asks for reviews a page at a time, not all at once', async () => {
-    backend.seedList(alice, ids(45))
+  it('asks for reviews of those five only', async () => {
+    backend.seedList(alice, ids(12))
     await open()
-    await waitFor(() => expect(cards()).toHaveLength(20))
+    await waitFor(() => expect(cards()).toHaveLength(5))
     await waitFor(() => expect(backend.callsTo('from:reviews:select')).toHaveLength(1))
-
-    await scrollUntil(40)
-    await waitFor(() => expect(backend.callsTo('from:reviews:select')).toHaveLength(2))
   })
 
-  it('starts over at 20 when you search', async () => {
+  it('searches the whole list but still shows five at most', async () => {
     backend.seedList(alice, ids(45))
     const { user } = await open()
-    await waitFor(() => expect(cards()).toHaveLength(20))
-    await scrollUntil(40)
+    await waitFor(() => expect(cards()).toHaveLength(5))
 
-    await user.type(await search(), 'a')
-    const matches = MOVIES.slice(0, 45).filter((m) => m.title.toLowerCase().includes('a')).length
-    await waitFor(() => expect(cards()).toHaveLength(Math.min(20, matches)))
+    const needle = title(ids(45)[44]) // the oldest ranking, not in the first five
+    await user.type(await search(), needle)
+    await waitFor(() => expect(cardTitles()).toContain(needle))
+    expect(cards().length).toBeLessThanOrEqual(5)
   })
 })
 

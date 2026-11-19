@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, scrollToEnd, screen, waitFor } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, screen, waitFor } from './helpers/harness.js'
 
 // jsdom has no layout, so scrolling is simulated: scrollTo moves a fake
 // window.scrollY (and fires a scroll event, like a browser), and the page's
@@ -51,24 +51,15 @@ beforeEach(() => {
 const cards = () => document.querySelectorAll('.rcard')
 const searchBox = () => screen.getByRole('searchbox', { name: 'Search ranked movies' })
 
-async function scrollUntil(count) {
-  await waitFor(async () => {
-    await scrollToEnd()
-    expect(cards()).toHaveLength(count)
-  })
-}
-
 async function open(hash) {
   const app = await launch({ backend, as: alice, hash })
   await ready({ loggedIn: true })
   return app
 }
 
-// From bob's profile: load a second page of cards, scroll down, and open the
-// discussion of his newest review.
+// From bob's profile: scroll down, and open the discussion of his newest review.
 async function scrollThenOpenReview(user) {
-  await waitFor(() => expect(cards()).toHaveLength(20))
-  await scrollUntil(40)
+  await waitFor(() => expect(cards()).toHaveLength(5))
   scrollBy(1234)
   await user.click(await screen.findByRole('link', { name: 'Comment' }))
   await screen.findByRole('heading', { level: 1, name: `Review of ${NEWEST.title}` })
@@ -89,12 +80,12 @@ describe('opening a page by a link', () => {
     await goTo('#/u/bob') // a new visit, not Back
 
     expect(scrollY).toBe(0)
-    await waitFor(() => expect(cards()).toHaveLength(20))
+    await waitFor(() => expect(cards()).toHaveLength(5))
   })
 })
 
 describe('going back', () => {
-  it('restores the scroll position and the cards that were loaded', async () => {
+  it('restores the scroll position and the cards', async () => {
     const { user } = await open('#/u/bob')
     await scrollThenOpenReview(user)
     expect(scrollY).toBe(0) // the discussion page opened at the top
@@ -102,13 +93,12 @@ describe('going back', () => {
     await user.click(screen.getByRole('button', { name: 'Back' }))
 
     await waitFor(() => expect(scrollY).toBe(1234))
-    await waitFor(() => expect(cards()).toHaveLength(40))
+    await waitFor(() => expect(cards()).toHaveLength(5))
   })
 
   it('works with the browser\'s back button too', async () => {
     const { user } = await open('#/u/bob')
-    await waitFor(() => expect(cards()).toHaveLength(20))
-    await scrollUntil(40)
+    await waitFor(() => expect(cards()).toHaveLength(5))
     scrollBy(900)
     await user.click(await screen.findByRole('link', { name: 'Comment' }))
     await screen.findByRole('heading', { level: 1, name: `Review of ${NEWEST.title}` })
@@ -116,21 +106,21 @@ describe('going back', () => {
     window.history.back()
 
     await waitFor(() => expect(scrollY).toBe(900))
-    await waitFor(() => expect(cards()).toHaveLength(40))
+    await waitFor(() => expect(cards()).toHaveLength(5))
   })
 
   it('restores the search text and what it found', async () => {
     const { user } = await open('#/u/bob')
-    await waitFor(() => expect(cards()).toHaveLength(20))
+    await waitFor(() => expect(cards()).toHaveLength(5))
     await user.type(searchBox(), NEWEST.title)
-    await waitFor(() => expect(cards().length).toBeLessThan(20))
+    await waitFor(() => expect(cards().length).toBeLessThan(5))
     await user.click(await screen.findByRole('link', { name: 'Comment' }))
     await screen.findByRole('heading', { level: 1, name: `Review of ${NEWEST.title}` })
 
     await user.click(screen.getByRole('button', { name: 'Back' }))
 
     await waitFor(() => expect(searchBox().value).toBe(NEWEST.title))
-    expect(cards().length).toBeLessThan(20)
+    expect(cards().length).toBeLessThan(5)
     expect(document.querySelector('.rcard__title').firstChild.textContent).toBe(NEWEST.title)
   })
 

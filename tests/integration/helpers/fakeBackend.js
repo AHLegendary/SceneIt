@@ -101,6 +101,7 @@ export class FakeBackend {
     this.profiles = [] // { id, username, bio, pronouns, is_public, created_at }
     this.movies = [] // the `movies` table
     this.rankings = [] // { user_id, movie_id, position, category, created_at, updated_at }
+    this.watchlist = [] // { user_id, movie_id, added_at }
     this.movie_ratings = [] // cache of OMDb scores: { tmdb_id, imdb_id, imdb, imdb_votes, rt, checked_at }
     this.omdbUsage = new Map() // OMDb lookups taken from the daily budget, by UTC day (omdb_usage)
     this.friendships = [] // { requester_id, addressee_id, status, created_at }
@@ -1473,6 +1474,7 @@ const PROFILE_UPDATE_COLUMNS = ['username', 'bio', 'pronouns', 'is_public', 'top
 // `count: true` is PostgREST's `table(count)`: [{ count: n }] of the rows pointing back at this one.
 const EMBEDS = {
   rankings: { movies: { local: 'movie_id', foreign: 'tmdb_id', table: 'movies' } },
+  watchlist: { movies: { local: 'movie_id', foreign: 'tmdb_id', table: 'movies' } },
   reviews: { review_comments: { local: 'id', foreign: 'review_id', table: 'review_comments', count: true } },
 }
 
@@ -1553,6 +1555,7 @@ class Query {
     switch (this.table) {
       case 'profiles': return b.canView(ctx.uid, row.id)
       case 'rankings': return b.canView(ctx.uid, row.user_id)
+      case 'watchlist': return b.canView(ctx.uid, row.user_id)
       case 'friendships': return ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid)
       case 'reviews': return b.reviewVisible(ctx.uid, row)
       case 'review_comments': return b.commentVisible(ctx.uid, row)
@@ -1719,6 +1722,7 @@ class Query {
         ctx.service
         || (this.table === 'friendships' && ctx.uid !== null && (row.requester_id === ctx.uid || row.addressee_id === ctx.uid))
         || (this.table === 'reviews' && ctx.uid !== null && row.user_id === ctx.uid)
+        || (this.table === 'watchlist' && ctx.uid !== null && row.user_id === ctx.uid)
         // the commenter, or the author of the review it is on
         || (this.table === 'review_comments' && ctx.uid !== null
           && (row.user_id === ctx.uid || b.reviews.find((r) => r.id === row.review_id)?.user_id === ctx.uid))
@@ -1773,6 +1777,17 @@ class Query {
       saved.created_at = saved.updated_at = b.now()
       b.review_comments.push(saved)
       b.onCommentInserted(saved)
+      return out([saved])
+    }
+
+    if (this.op === 'insert' && this.table === 'watchlist') {
+      // Policy: only your own row; movie_id has a foreign key to movies; (user_id, movie_id) is the primary key.
+      const row = clone(this.row)
+      if (ctx.uid === null || row.user_id !== ctx.uid) throw pgError('new row violates row-level security policy for table "watchlist"', '42501')
+      if (!b.movies.some((m) => m.tmdb_id === row.movie_id)) throw pgError('insert or update on table "watchlist" violates foreign key constraint "watchlist_movie_id_fkey"', '23503')
+      if (b.watchlist.some((r) => r.user_id === row.user_id && r.movie_id === row.movie_id)) throw pgError('duplicate key value violates unique constraint "watchlist_pkey"', '23505')
+      const saved = { user_id: row.user_id, movie_id: row.movie_id, added_at: b.now() }
+      b.watchlist.push(saved)
       return out([saved])
     }
 

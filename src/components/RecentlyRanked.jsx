@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import ReviewCard from './ReviewCard.jsx'
 import { scoreTiers } from '../features/ranking/scores.js'
@@ -6,27 +6,24 @@ import { useNavMemory } from '../lib/navMemory.js'
 import { fetchRankingOrder } from '../lib/rankingsQueries.js'
 import { reviewHref } from '../lib/route.js'
 import { deleteReview, fetchReviewsForMovies, updateReview } from '../lib/reviews.js'
-import { useNearBottom } from '../lib/useNearBottom.js'
 
-// How many cards each "page" adds.
-export const PAGE_SIZE = 20
+// How many of the most recent movies to show; the full list is one link away.
+export const SHOWN = 5
 
 const ORDER_ERROR = "Couldn't load this list. Check your connection and try again."
 const REVIEWS_ERROR = "Couldn't load some of the reviews. Check your connection and try again."
 
-// A user's ranked movies, most recently ranked first, as ReviewCards. It
-// grows as you scroll (about 20 at a time, no inner scroll box) and a search
-// box narrows it by title. Only ranked movies appear.
+// A user's five most recently ranked movies, as ReviewCards. A search box
+// narrows it by title (still five at most). Only ranked movies appear.
 //
 // Everything about the movies (titles, genres, scores) is already in `tiers`,
-// so the search and the paging happen here. What this component loads is the
-// ranking order, and, for the cards currently shown, their reviews.
+// so the search happens here. What this component loads is the
+// ranking order, and, for the cards shown, their reviews.
 //
 // Give it `key={userId}`: all of its state belongs to one user's list.
 //
 // After Back (see lib/navMemory.js) it comes back as you left it: the search
-// text, how many cards were loaded, and the reviews already fetched, so the
-// scroll position still points at the same card. The reviews are asked for
+// text and the reviews already fetched. The reviews are asked for
 // again in the background, so comment counts are fresh.
 //
 //   userId        whose list this is
@@ -38,17 +35,14 @@ const REVIEWS_ERROR = "Couldn't load some of the reviews. Check your connection 
 export default function RecentlyRanked({ userId, username, tiers, isOwner = false, fullListHref, onOpen }) {
   const { recalled, save } = useNavMemory(`recent:${userId}`)
   const [query, setQuery] = useState(recalled?.query ?? '')
-  const [limit, setLimit] = useState(recalled?.limit ?? PAGE_SIZE)
   // TMDb ids, newest first. null until the first load finishes; after that a
   // failed reload keeps the old order and just reports the error.
   const [order, setOrder] = useState(recalled?.order ?? null)
   const [orderError, setOrderError] = useState(false)
   const [orderAttempt, setOrderAttempt] = useState(0)
-  // Reviews by movie id, and the movies whose review lookup has finished
-  // (found or not). `asked` remembers which movies a request was sent for, so
-  // each page is requested once.
+  // Reviews by movie id. `asked` remembers which movies a request was sent
+  // for, so each movie is requested once.
   const [reviews, setReviews] = useState(() => recalled?.reviews ?? new Map())
-  const [settled, setSettled] = useState(() => recalled?.settled ?? new Set())
   const [reviewsError, setReviewsError] = useState(false)
   const asked = useRef(new Set())
 
@@ -71,8 +65,8 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
 
   // Hold the state for Back.
   useEffect(() => {
-    save({ query, limit, order, reviews, settled })
-  }, [save, query, limit, order, reviews, settled])
+    save({ query, order, reviews })
+  }, [save, query, order, reviews])
 
   const total = useMemo(() => tiers.reduce((n, tier) => n + tier.length, 0), [tiers])
 
@@ -91,12 +85,12 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
     () => (needle ? items.filter((movie) => movie.title.toLowerCase().includes(needle)) : items),
     [items, needle],
   )
-  const visible = filtered.slice(0, limit)
+  const visible = filtered.slice(0, SHOWN)
   const scores = useMemo(() => scoreTiers(tiers), [tiers])
 
   // Fetch the reviews for the cards that are showing and haven't been asked
-  // about. Results are keyed by movie, so a response is useful even if more
-  // cards appeared while it was on its way. A failure stops further loading
+  // about. Results are keyed by movie, so a response is useful even if the
+  // search changed while it was on its way. A failure stops further loading
   // until Try again, which clears the error and so runs this again.
   const visibleKey = visible.map((movie) => movie.id).join(',')
   useEffect(() => {
@@ -105,22 +99,13 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
     if (!ids.length) return
     ids.forEach((id) => asked.current.add(id))
     fetchReviewsForMovies(userId, ids).then(
-      (found) => {
-        setReviews((previous) => new Map([...previous, ...found]))
-        setSettled((previous) => new Set([...previous, ...ids]))
-      },
+      (found) => setReviews((previous) => new Map([...previous, ...found])),
       () => {
         ids.forEach((id) => asked.current.delete(id))
         setReviewsError(true)
       },
     )
   }, [visibleKey, userId, reviewsError])
-
-  // Only ask for the next page once the cards on screen have their reviews.
-  const loadingReviews = visible.some((movie) => !settled.has(movie.id))
-  const hasMore = visible.length < filtered.length
-  const loadMore = useCallback(() => setLimit((n) => n + PAGE_SIZE), [])
-  const sentinel = useNearBottom(loadMore, hasMore && !loadingReviews && !reviewsError, limit)
 
   async function saveReview(review, { body, isSpoiler }) {
     const saved = await updateReview(review.id, { body, isSpoiler })
@@ -188,10 +173,7 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
           <input
             type="search"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setLimit(PAGE_SIZE)
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Search ranked movies"
             aria-label="Search ranked movies"
           />
@@ -212,7 +194,6 @@ export default function RecentlyRanked({ userId, username, tiers, isOwner = fals
       )}
 
       {body}
-      {hasMore && <div ref={sentinel} className="recent__more" aria-hidden="true" />}
     </section>
   )
 }

@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import FriendAction from '../components/FriendAction.jsx'
 import ProfileHighlights from '../components/ProfileHighlights.jsx'
 import RecentlyRanked from '../components/RecentlyRanked.jsx'
-import { userListHref } from '../lib/route.js'
+import Watchlist, { WATCHLIST_PREVIEW } from '../components/Watchlist.jsx'
+import { userListHref, userWatchlistHref } from '../lib/route.js'
 import { profileImageUrl } from '../lib/profileMedia.js'
 import { useProfileLookup } from '../lib/useProfileLookup.js'
 import { useUserTiers } from '../lib/useUserTiers.js'
+import { useUserWatchlist } from '../lib/useWatchlist.js'
 import './ProfilePage.css'
 
 const LOAD_ERROR = "Couldn't load this profile. Check your connection and try again."
@@ -17,6 +19,8 @@ const LOAD_ERROR = "Couldn't load this profile. Check your connection and try ag
 export default function UserProfilePage({ username, account, onOpen }) {
   const { view, relation, friendsReady, signedIn, retry } = useProfileLookup(username, account, '/profile')
   const list = useUserTiers(view.kind === 'profile' ? view.profile.id : null)
+  const watchlist = useUserWatchlist(view.kind === 'profile' ? view.profile.id : null)
+  const rankedIds = useMemo(() => new Set(list.tiers.flat().map((m) => m.id)), [list.tiers])
   const known = view.profile ?? view.user
   // Profile pictures live in storage keyed by user id; fall back to the
   // initial when there isn't one (the image fails to load).
@@ -137,6 +141,7 @@ export default function UserProfilePage({ username, account, onOpen }) {
       ) : (
         <>
           <ProfileHighlights tiers={list.tiers} onOpen={onOpen} />
+          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={watchlist.retry} onOpen={onOpen} limit={WATCHLIST_PREVIEW} fullHref={userWatchlistHref(profile.username)} />
           <RecentlyRanked
             key={profile.id}
             userId={profile.id}

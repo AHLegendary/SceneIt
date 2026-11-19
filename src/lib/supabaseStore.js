@@ -162,7 +162,7 @@ function requireMovie(id) {
 
 // Movies found through live search aren't in the database yet. Ask the API
 // to add it (rankings.movie_id has to point at a row in `movies`).
-async function ensureSaved(movie) {
+export async function ensureSaved(movie) {
   if (isCatalogMovie(movie) || savedMovies.has(movie.tmdb_id)) return
   const { data } = await supabase.auth.getSession()
   let token = data?.session?.access_token
@@ -196,7 +196,7 @@ async function ensureSaved(movie) {
 // Makes sure the access token is still valid before a write. Supabase refreshes
 // it in the background, but a tab that has been open for hours can miss that;
 // getSession() refreshes an expired token, and returns null if it can't.
-async function requireFreshSession() {
+export async function requireFreshSession() {
   const { data } = await supabase.auth.getSession()
   const session = data?.session
   if (!session) throw new Error(SESSION_ERROR)

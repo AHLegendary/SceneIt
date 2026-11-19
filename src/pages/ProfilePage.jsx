@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import ProfileHighlights from '../components/ProfileHighlights.jsx'
 import RecentlyRanked from '../components/RecentlyRanked.jsx'
+import Watchlist, { WATCHLIST_PREVIEW } from '../components/Watchlist.jsx'
 import { imageUrl } from '../lib/localStore.js'
 import { profileImageUrl, removeProfileImage, uploadProfileImage } from '../lib/profileMedia.js'
 import { fetchProfile, saveProfile } from '../lib/profileQueries.js'
@@ -14,6 +15,8 @@ import {
   validateProfile,
 } from '../lib/profileValidation.js'
 import { useMyTiers } from '../lib/useMyList.js'
+import { retryMyWatchlist, useMyWatchlist } from '../lib/useWatchlist.js'
+import { removeFromWatchlist } from '../lib/watchlist.js'
 import './ProfilePage.css'
 
 const LOAD_ERROR = "Couldn't load your profile. Check your connection and try again."
@@ -42,6 +45,8 @@ function sameForm(a, b) {
 export default function ProfilePage({ account, onOpen, onNavigate }) {
   const userId = account.user.id
   const tiers = useMyTiers()
+  const watchlist = useMyWatchlist()
+  const rankedIds = useMemo(() => new Set(tiers.flat().map((m) => m.id)), [tiers])
   const { friends, incoming } = useFriendGroups()
   const [editing, setEditing] = useState(false)
   const [media, setMedia] = useState(null) // { kind, status: 'busy' | 'error', message }
@@ -283,6 +288,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
       {!editing && (
         <>
           <ProfileHighlights tiers={tiers} onOpen={onOpen} onStartRanking={() => onNavigate?.('my-list')} />
+          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} limit={WATCHLIST_PREVIEW} fullHref="#/watchlist" />
           <RecentlyRanked key={userId} userId={userId} username={username} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
         </>
       )}

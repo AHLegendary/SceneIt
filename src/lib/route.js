@@ -14,6 +14,7 @@ function decode(part) {
 //   #/my-list                -> { page: 'my-list', username: null }
 //   #/u/reil_99              -> { page: 'user', username: 'reil_99' }
 //   #/u/reil_99/my-list      -> { page: 'user-list', username: 'reil_99' }
+//   #/u/reil_99/watchlist    -> { page: 'user-watchlist', username: 'reil_99' }
 //   #/u/reil_99/review/<id>  -> { page: 'review', username: 'reil_99', reviewId: '<id>' }
 //   #/u/reil_99/review/<id>/c/<commentId>
 //                            -> { page: 'review', username: 'reil_99', reviewId: '<id>', commentId: '<commentId>' }
@@ -55,13 +56,12 @@ export function parseHash(hash) {
     return { page: 'review', username, reviewId }
   }
 
-  const listMatch = raw.match(/^u\/([^/?#]+)\/my-list$/)
-  const userMatch = raw.match(/^u\/([^/?#]+)$/)
-  const match = listMatch ?? userMatch
-  if (match) {
-    const username = decode(match[1])
+  const userMatch = raw.match(/^u\/([^/?#]+)(?:\/(my-list|watchlist))?$/)
+  if (userMatch) {
+    const username = decode(userMatch[1])
     if (username === null) return { page: DEFAULT_PAGE, username: null }
-    return { page: listMatch ? 'user-list' : 'user', username }
+    const page = { 'my-list': 'user-list', watchlist: 'user-watchlist' }[userMatch[2]] ?? 'user'
+    return { page, username }
   }
 
   return { page: PAGES.some((p) => p.id === raw) ? raw : DEFAULT_PAGE, username: null }
@@ -80,6 +80,11 @@ export function userHref(username) {
 // Link to another user's full ranked list.
 export function userListHref(username) {
   return `#/u/${encodeURIComponent(username)}/my-list`
+}
+
+// Link to another user's full watchlist.
+export function userWatchlistHref(username) {
+  return `#/u/${encodeURIComponent(username)}/watchlist`
 }
 
 // Link to the discussion page of a review: the review, then its comments.

@@ -40,7 +40,7 @@ npx supabase db reset   # reruns all migrations and seed.sql
 | `profiles` | username, bio, pronouns, `is_public`, `top_movies` (max 3) | everyone if public; otherwise the owner and friends | the owner (`update` only; rows are created by the signup trigger) |
 | `movies` | TMDb cache keyed by `tmdb_id` | everyone | server only (service role key) and the seed file |
 | `rankings` | `(user_id, movie_id, position, category)`. `position` is the tier index, 0 = best, and ties share a position. `category` is `loved`, `okay` or `meh`, and the list is always ordered loved → okay → meh | same as the owner's profile | the owner, through `save_ranking` / `remove_ranking` |
-| `watchlist` | `(user_id, movie_id, added_at)` | same as the owner's profile | the owner |
+| `watchlist` | `(user_id, movie_id, added_at)` | same as the owner's profile | the owner (`insert` and `delete` only) |
 | `friendships` | `requester_id → addressee_id`, `pending` or `accepted` | the two people involved | requester inserts, addressee accepts, either one deletes |
 | `blends` | `owner_id` of a Movie Blend | its members | through the blend functions only |
 | `blend_members` | `(blend_id, user_id, joined_at)`, 5 at most per blend (enforced by a trigger) | the blend's members | through the blend functions only |

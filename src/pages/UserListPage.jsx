@@ -1,18 +1,25 @@
+import { useMemo } from 'react'
 import FriendAction from '../components/FriendAction.jsx'
 import MovieRows from '../components/MovieRows.jsx'
+import Watchlist from '../components/Watchlist.jsx'
 import { listRows } from '../features/ranking/listRows.js'
 import { scoreTiers } from '../features/ranking/scores.js'
 import { userHref } from '../lib/route.js'
 import { useProfileLookup } from '../lib/useProfileLookup.js'
 import { useUserTiers } from '../lib/useUserTiers.js'
+import { useUserWatchlist } from '../lib/useWatchlist.js'
 import './ProfilePage.css'
 
-// Someone else's full ranked list, read-only, at #/u/<username>/my-list.
+// Someone else's full ranked list, read-only, at #/u/<username>/my-list, or
+// with `watchlist` their full watchlist at #/u/<username>/watchlist.
 // Uses the same visibility rules as their profile: you only see the list if
 // you can see the profile (public, or you're friends).
-export default function UserListPage({ username, account, onOpen }) {
-  const { view, relation, friendsReady, retry } = useProfileLookup(username, account, '/my-list')
-  const list = useUserTiers(view.kind === 'profile' ? view.profile.id : null)
+export default function UserListPage({ username, account, onOpen, watchlist = false }) {
+  const { view, relation, friendsReady, retry } = useProfileLookup(username, account, watchlist ? '/watchlist' : '/my-list')
+  const userId = view.kind === 'profile' ? view.profile.id : null
+  const list = useUserTiers(userId)
+  const saved = useUserWatchlist(watchlist ? userId : null)
+  const rankedIds = useMemo(() => new Set(list.tiers.flat().map((m) => m.id)), [list.tiers])
   const name = view.profile?.username ?? view.user?.username ?? username
   const count = list.tiers.reduce((n, tier) => n + tier.length, 0)
 
@@ -22,8 +29,8 @@ export default function UserListPage({ username, account, onOpen }) {
         <a className="profile__link uprofile__back" href={userHref(name)}>
           ← Back to {name}'s profile
         </a>
-        <h1 className="page__title profile__name">{name}'s list</h1>
-        {view.kind === 'profile' && list.status === 'ready' && (
+        <h1 className="page__title profile__name">{name}'s {watchlist ? 'watchlist' : 'list'}</h1>
+        {!watchlist && view.kind === 'profile' && list.status === 'ready' && (
           <p className="page__sub">
             {count ? `${count} ranked ${count === 1 ? 'movie' : 'movies'}` : 'No ranked movies yet.'}
           </p>
@@ -119,7 +126,11 @@ export default function UserListPage({ username, account, onOpen }) {
   return (
     <section className="page">
       {heading}
-      {count > 0 && <MovieRows rows={listRows(list.tiers)} scores={scoreTiers(list.tiers)} onOpen={onOpen} />}
+      {watchlist ? (
+        <Watchlist status={saved.status} movies={saved.movies} rankedIds={rankedIds} onRetry={saved.retry} onOpen={onOpen} heading={false} />
+      ) : (
+        count > 0 && <MovieRows rows={listRows(list.tiers)} scores={scoreTiers(list.tiers)} onOpen={onOpen} />
+      )}
     </section>
   )
 }

@@ -171,17 +171,19 @@ describe('their ranked movies', () => {
     backend.seedList(bob, ids(12))
     await open('#/u/bob')
 
-    await waitFor(() => expect(cardTitles()).toHaveLength(12))
+    await waitFor(() => expect(cardTitles()).toHaveLength(5)) // the five most recent
     const scores = [...document.querySelectorAll('.rcard__score')].map((n) => n.textContent)
-    expect(scores).toHaveLength(12)
-    expect(scores).toContain('10.0') // their #1
+    expect(scores).toHaveLength(5)
+    // Scored against all 12: the five shown aren't stretched to fill 1-10 on their own.
+    expect(scores.every((x) => /^\d+\.\d$/.test(x))).toBe(true)
+    expect(scores).not.toContain('10.0') // their #1 was ranked first, so it isn't among the five
   })
 
   it('shows no scores below ten movies', async () => {
     backend.seedList(bob, ids(9))
     await open('#/u/bob')
 
-    await waitFor(() => expect(cardTitles()).toHaveLength(9))
+    await waitFor(() => expect(cardTitles()).toHaveLength(5))
     expect(document.querySelector('.rcard__score')).toBeNull()
   })
 
@@ -265,7 +267,7 @@ describe('friend status on their profile', () => {
     backend.addFriendship(alice, bob, 'accepted')
     backend.seedList(bob, ids(6))
     await open('#/u/bob')
-    await waitFor(() => expect(cardTitles()).toHaveLength(6))
+    await waitFor(() => expect(cardTitles()).toHaveLength(5))
 
     // A reload loop keeps asking forever, so the number of reads must stop growing.
     const reads = () => backend.calls.filter((c) => c.key === 'from:profiles:select').length
@@ -275,7 +277,7 @@ describe('friend status on their profile', () => {
 
     expect(reads()).toBe(before)
     expect(before).toBeLessThan(8)
-    expect(cardTitles()).toHaveLength(6)
+    expect(cardTitles()).toHaveLength(5)
     expect(screen.queryByText('Loading profile…')).toBeNull()
   })
 })
@@ -324,7 +326,7 @@ describe('a private profile', () => {
 
     expect(await screen.findByText('Secret bio')).toBeTruthy()
     expect(screen.getByText('Private profile, shared with friends')).toBeTruthy()
-    await waitFor(() => expect(cardTitles()).toHaveLength(7))
+    await waitFor(() => expect(cardTitles()).toHaveLength(5))
     expect(screen.getByRole('link', { name: 'View full list' })).toBeTruthy()
   })
 
