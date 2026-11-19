@@ -154,7 +154,6 @@ SceneIt/
 ├── scripts/                       # Data and dev scripts (movie data, ratings, demo users, dev API)
 │
 ├── src/
-│   ├── assets/                    # Imported images, logos, and icons
 │   ├── components/                # Reusable UI components
 │   ├── data/                      # Built-in 60-movie catalog (movies.json)
 │   ├── features/                  # Feature-specific code (ranking, recommendations, blends, profile)
