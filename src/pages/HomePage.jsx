@@ -89,7 +89,7 @@ function Hero({ onRank }) {
           Welcome to <em>SceneIt</em>
         </h1>
         <p className="hero__text">
-          A social movie platform to watch, review,
+          A social movie platform to watch, review,{' '}
           <br />
           and rank your favorite movies.
         </p>

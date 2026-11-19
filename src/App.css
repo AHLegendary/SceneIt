@@ -1987,6 +1987,8 @@ a.comment__name:hover { color: var(--accent); }
   top: calc(100% + 8px);
   left: 0;
   right: 0;
+  /* stays readable when the header search input shrinks (~760-1000px) */
+  min-width: min(360px, calc(100vw - 32px));
   z-index: 60;
   padding: 10px;
   border-radius: 18px;

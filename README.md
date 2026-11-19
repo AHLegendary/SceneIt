@@ -249,7 +249,7 @@ npm run build      # builds the app for production into dist/
 
 If the tests pass and the build succeeds, the project is set up correctly. Together with `npm run lint`, these are the checks CI runs on every pull request.
 
-**Reading the test summary.** A healthy run ends with every test file and every test passed (`Tests  N passed (N)`) and none failed. A test marked `todo` is **not a failure**: it is an `it.todo(...)` placeholder for behavior we know is missing (see `tests/integration/README.md`). A real failure shows as `failed` in red with the assertion that broke. If `npm ci` complains that `package.json` and `package-lock.json` are out of sync, run `npm install` once and try again.
+**Reading the test summary.** A healthy run ends with every test file and every test passed (`Tests  N passed (N)`) and none failed. A test marked `todo` is **not a failure**: it is an `it.todo(...)` placeholder for behavior we know is missing (see `tests/integration/README.md`). A real failure shows as `failed` in red with the assertion that broke. If `npm ci` complains that `package.json` and `package-lock.json` are out of sync, run `npm install` once and try again. `npm ci` should report `found 0 vulnerabilities`; if it doesn't, run `npm audit` and tell the team. The Vercel CLI is not a dependency (Vercel deploys from GitHub); if you need it, run it with `npx vercel`.
 
 ## 4. Configure Environment Variables
 
