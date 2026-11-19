@@ -10,6 +10,7 @@ import {
 } from '../lib/notifications.js'
 import { timeAgo } from '../lib/timeAgo.js'
 import { useNotifications } from '../lib/useNotifications.js'
+import useFocusTrap from '../lib/useFocusTrap.js'
 
 // What the "no longer available" popup says, by kind of notification.
 const GONE_COMMENT = 'This comment is no longer available.'
@@ -211,6 +212,7 @@ function Sentence({ n }) {
 // RecsUnlockedDialog. Escape and a click on the backdrop close it.
 function GoneDialog({ message, onClose }) {
   const titleId = useId()
+  const trapRef = useFocusTrap()
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
@@ -220,7 +222,7 @@ function GoneDialog({ message, onClose }) {
 
   return (
     <div className="overlay overlay--top overlay--center" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog notif__gone" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={trapRef} className="dialog notif__gone" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <p id={titleId} className="notif__gonetext">{message}</p>
         <div className="unlocked__actions">
           <button type="button" className="btn btn--accent" onClick={onClose} autoFocus>OK</button>

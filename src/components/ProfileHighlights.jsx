@@ -5,6 +5,7 @@ import TopTen, { TOP_TEN } from './TopTen.jsx'
 import { topGenre } from '../features/profile/topGenre.js'
 import { scoreTiers } from '../features/ranking/scores.js'
 import { posterUrl } from '../lib/localStore.js'
+import useFocusTrap from '../lib/useFocusTrap.js'
 
 // The two compact cards at the top of a profile: Top Movie (the #1, with a
 // button that opens their top 10) and Top Genre (the genre they've ranked the
@@ -82,6 +83,7 @@ export default function ProfileHighlights({ tiers, onOpen, onStartRanking }) {
 // and a click outside all close it.
 function TopTenDialog({ tiers, onClose, onOpen }) {
   const titleId = useId()
+  const trapRef = useFocusTrap()
   const ranked = tiers.flat()
 
   useEffect(() => {
@@ -92,7 +94,7 @@ function TopTenDialog({ tiers, onClose, onOpen }) {
 
   return (
     <div className="overlay overlay--top overlay--center" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog topten" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={trapRef} className="dialog topten" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="dialog__head">
           <h2 className="dialog__title" id={titleId}>
             <Icon name="star" size={22} />

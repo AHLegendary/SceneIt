@@ -4,6 +4,7 @@ import Poster from './Poster.jsx'
 import { getSuggestions, movieFromDb, posterUrl, searchMovies as searchCatalog } from '../lib/localStore.js'
 import { searchMovies as searchTmdb } from '../lib/movies.js'
 import { useMyList } from '../lib/useMyList.js'
+import useFocusTrap from '../lib/useFocusTrap.js'
 
 const DEBOUNCE_MS = 300
 const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
@@ -18,6 +19,7 @@ export default function SearchDialog({ initialQuery = '', signedIn = true, onClo
   const list = useMyList()
   const input = useRef(null)
   const titleId = useId()
+  const trapRef = useFocusTrap()
   // { query, results, error } for the latest finished search
   const [live, setLive] = useState(null)
 
@@ -68,7 +70,7 @@ export default function SearchDialog({ initialQuery = '', signedIn = true, onClo
 
   return (
     <div className="overlay" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={trapRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="dialog__head">
           <h2 className="dialog__title" id={titleId}>
             <Icon name="swords" size={22} />

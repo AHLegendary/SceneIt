@@ -7,6 +7,7 @@ import BlueFire from './BlueFire.jsx'
 import { posterUrl } from '../../lib/localStore.js'
 import { moderateText } from '../../lib/moderation.js'
 import { fetchMyReview, saveReview } from '../../lib/reviews.js'
+import useFocusTrap from '../../lib/useFocusTrap.js'
 import { getMyTiers, placeMovie } from '../../lib/supabaseStore.js'
 import {
   answer,
@@ -68,6 +69,7 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
   // True once the review step has been finished or skipped.
   const [reviewed, setReviewed] = useState(false)
   const titleId = useId()
+  const trapRef = useFocusTrap()
 
   const state = history[history.length - 1] ?? null
   const done = state !== null && isDone(state)
@@ -238,7 +240,7 @@ export default function CompareView({ movie, rerank = false, onClose, onRankAnot
 
   return (
     <div className="overlay overlay--solid">
-      <div className="compare" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={trapRef} className="compare" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <button
           type="button"
           className="dialog__close compare__close"
