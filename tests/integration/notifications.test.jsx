@@ -186,6 +186,20 @@ describe('clicking a comment notification', () => {
     expect(backend.notifications[0].read_at).not.toBeNull()
   })
 
+  it('shows a comment that arrived after the review page was already open', async () => {
+    const first = backend.addComment(bob, review, { body: 'Early comment.' })
+    const { user } = await open({ hash: `#/u/Alice_99/review/${review.id}` })
+    await screen.findByText('Early comment.', { selector: '.comment__body' })
+
+    const late = backend.addComment(cara, review, { body: 'Late comment.' })
+    const panel = await openPanel(user)
+    await user.click(row(panel, /cara commented/))
+
+    await screen.findByText('Late comment.', { selector: '.comment__body' })
+    await waitFor(() => expect(document.getElementById(`comment-${late.id}`).classList.contains('is-flash')).toBe(true))
+    expect(document.getElementById(`comment-${first.id}`)).not.toBeNull()
+  })
+
   it('does the same for a reply', async () => {
     const top = backend.addComment(alice, review, { body: 'Mine.' })
     const reply = backend.addComment(bob, review, { body: 'A reply.', parentId: top.id })
