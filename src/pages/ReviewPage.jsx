@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Avatar from '../components/Avatar.jsx'
 import Comments from '../components/Comments.jsx'
 import Icon from '../components/Icon.jsx'
@@ -78,6 +78,30 @@ export default function ReviewPage({ reviewId, commentId = null, account, onOpen
     }
   }, [reviewId, viewerId, accountLoading, attempt])
 
+  // This page stays open when a notification takes you to another comment on
+  // the same review, and that comment may have arrived after the page loaded.
+  // So when the linked comment changes, load the comments again. `refreshed`
+  // lets the scroll below run once they are in.
+  const linkedComment = useRef(commentId)
+  const [refreshed, setRefreshed] = useState(0)
+  useEffect(() => {
+    if (linkedComment.current === commentId) return undefined
+    linkedComment.current = commentId
+    if (!commentId) return undefined
+    let current = true
+    fetchComments(reviewId).then(
+      (list) => {
+        if (!current) return
+        setThread({ status: 'ready', list })
+        setRefreshed((n) => n + 1)
+      },
+      () => {}, // keep the comments already shown
+    )
+    return () => {
+      current = false
+    }
+  }, [commentId, reviewId])
+
   // Opened from a comment link (a notification): once the comments are on the
   // page, scroll to that comment and flash it for a moment. This is a
   // deliberate scroll, so it first cancels any saved-position restore that is
@@ -92,7 +116,7 @@ export default function ReviewPage({ reviewId, commentId = null, account, onOpen
     element.scrollIntoView({ block: 'center' })
     const timer = setTimeout(() => setFlashedId(commentId), 2000)
     return () => clearTimeout(timer)
-  }, [commentId, thread.status])
+  }, [commentId, thread.status, refreshed])
   // Highlighted from when the comments show until the timer above fires.
   const flashId = commentId && thread.status === 'ready' && flashedId !== commentId ? commentId : null
 
