@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import MOVIES from '../../src/data/movies.json'
-import { FakeBackend, goTo, launch, ready, relaunch, screen, skipReview, useMenu, waitFor, within } from './helpers/harness.js'
+import { FakeBackend, goTo, launch, ready, relaunch, screen, skipReview, useMenu as openMenuItem, waitFor, within } from './helpers/harness.js'
 
 const LIVE_ERROR = "Live search isn't working right now, so these are only SceneIt's built-in movies."
 const byId = (id) => MOVIES.find((m) => m.id === id)
@@ -261,7 +261,7 @@ describe('header search when live search is down', () => {
 
 describe('the Rank a movie dialog', () => {
   const openDialog = async (user) => {
-    await user.click(await screen.findByRole('button', { name: /Play Head-to-Head/ }))
+    await openMenuItem(user, 'Rank Movies')
     return screen.findByRole('dialog', { name: 'Rank a movie' })
   }
 
@@ -476,7 +476,7 @@ describe('the Rank a movie dialog when logged out', () => {
 describe('from the Profile menu', () => {
   it('opens the same dialog from "Rank Movies"', async () => {
     const { user } = await open()
-    await useMenu(user, 'Rank Movies')
+    await openMenuItem(user, 'Rank Movies')
     expect(await screen.findByRole('dialog', { name: 'Rank a movie' })).toBeTruthy()
   })
 })
