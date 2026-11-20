@@ -550,3 +550,19 @@ button.pstat:hover { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: var
   color: #fff;
 }
 .wlist__remove:hover { background: rgb(0 0 0 / 0.9); }
+
+.wlist__rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--ink);
+}
+.wlist__rank:hover { background: rgb(255 255 255 / 0.14); }

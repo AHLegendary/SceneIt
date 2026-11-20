@@ -789,6 +789,52 @@ describe('GET /api/movies/ratings?id=', () => {
   })
 })
 
+describe('GET /api/movies/providers?id=', () => {
+  const watch = (id) => call('GET', `/api/movies/providers?id=${id}`)
+  const US = {
+    link: 'https://www.themoviedb.org/movie/980010/watch?locale=US',
+    flatrate: [
+      { provider_id: 8, provider_name: 'Netflix', logo_path: '/n.jpg', display_priority: 2 },
+      { provider_id: 9, provider_name: 'Prime Video', logo_path: '/p.jpg', display_priority: 1 },
+    ],
+    rent: [{ provider_id: 2, provider_name: 'Apple TV', logo_path: '/a.jpg', display_priority: 0 }],
+    buy: [],
+  }
+
+  it('returns the US streaming, rent and buy options in TMDb order, with logos and the TMDb link', async () => {
+    backend.setWatchProviders(980010, US)
+    const { status, body } = await watch(980010)
+
+    expect(status).toBe(200)
+    expect(body).toEqual({
+      link: US.link,
+      stream: [
+        { id: 9, name: 'Prime Video', logo_path: '/p.jpg' },
+        { id: 8, name: 'Netflix', logo_path: '/n.jpg' },
+      ],
+      rent: [{ id: 2, name: 'Apple TV', logo_path: '/a.jpg' }],
+      buy: [],
+    })
+    expect(backend.callsTo('tmdb:/3/movie/980010/watch/providers')).toHaveLength(1)
+  })
+
+  it('gives empty lists when no US option exists', async () => {
+    expect((await watch(980011)).body).toEqual({ link: null, stream: [], rent: [], buy: [] })
+  })
+
+  it('rejects a bad id and other methods', async () => {
+    expect((await call('GET', '/api/movies/providers?id=abc')).status).toBe(400)
+    expect((await call('POST', '/api/movies/providers?id=980010')).status).toBe(405)
+  })
+
+  it('reports 502 when TMDb fails', async () => {
+    backend.tmdb.failing.add(980012)
+    expect((await watch(980012)).status).toBe(502)
+    backend.tmdbDown()
+    expect((await watch(980013)).status).toBe(502)
+  })
+})
+
 describe('unknown routes', () => {
   it('answers 404', async () => {
     expect((await call('GET', '/api/nope')).status).toBe(404)

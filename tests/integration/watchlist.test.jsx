@@ -151,3 +151,14 @@ describe('the full watchlist pages', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Your watchlist' })).toBeTruthy()
   })
 })
+
+describe('ranking from your watchlist', () => {
+  it('starts ranking a movie you have watched', async () => {
+    backend.watchlist.push({ user_id: alice.id, movie_id: DUNE.tmdb_id, added_at: backend.now() })
+    const { user } = await open('#/watchlist')
+
+    await user.click(await screen.findByRole('button', { name: `Rank ${DUNE.title}` }))
+
+    await waitFor(() => expect(document.querySelector('.compare')).not.toBeNull())
+  })
+})

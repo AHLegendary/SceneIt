@@ -42,7 +42,7 @@ function sameForm(a, b) {
 // The signed-in user's profile: who they are on SceneIt (username, pronouns,
 // bio, visibility), what their list says about them (counts, top movies),
 // and the form to edit the parts stored in `profiles`.
-export default function ProfilePage({ account, onOpen, onNavigate }) {
+export default function ProfilePage({ account, onOpen, onNavigate, onRank }) {
   const userId = account.user.id
   const tiers = useMyTiers()
   const watchlist = useMyWatchlist()
@@ -288,7 +288,7 @@ export default function ProfilePage({ account, onOpen, onNavigate }) {
       {!editing && (
         <>
           <ProfileHighlights tiers={tiers} onOpen={onOpen} onStartRanking={() => onNavigate?.('my-list')} />
-          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} limit={WATCHLIST_PREVIEW} fullHref="#/watchlist" row />
+          <Watchlist status={watchlist.status} movies={watchlist.movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} onRank={onRank} limit={WATCHLIST_PREVIEW} fullHref="#/watchlist" row />
           <RecentlyRanked key={userId} userId={userId} username={username} tiers={tiers} isOwner fullListHref="#/my-list" onOpen={onOpen} />
         </>
       )}

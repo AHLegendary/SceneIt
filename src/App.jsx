@@ -163,7 +163,7 @@ function App() {
         ) : loginPage ? (
           <LoginPage key={page} initialMode={page === 'signup' ? 'signup' : 'login'} />
         ) : page === 'profile' ? (
-          <ProfilePage account={account} onOpen={openDetails} onNavigate={navigate} />
+          <ProfilePage account={account} onOpen={openDetails} onNavigate={navigate} onRank={startRanking} />
         ) : page === 'user' ? (
           <UserProfilePage username={route.username} account={account} onOpen={openDetails} />
         ) : page === 'review' ? (
@@ -173,7 +173,7 @@ function App() {
         ) : page === 'user-watchlist' ? (
           <UserListPage username={route.username} account={account} onOpen={openDetails} watchlist />
         ) : page === 'watchlist' ? (
-          <WatchlistPage onOpen={openDetails} />
+          <WatchlistPage onOpen={openDetails} onRank={startRanking} />
         ) : page === 'my-list' ? (
           <MyListPage onAdd={openRankSearch} onRerank={startRerank} onOpen={openDetails} highlightId={justRanked} />
         ) : page === 'for-you' ? (
