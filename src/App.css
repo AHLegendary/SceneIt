@@ -2162,3 +2162,14 @@ a.comment__name:hover { color: var(--accent); }
   color: var(--ink-2);
 }
 .glass__error { margin: 8px 0 0; font-size: 13px; color: #ff8a8a; }
+
+/* Where to watch (movie details): service logos, grouped by stream / rent / buy */
+.watchwhere { display: flex; flex-direction: column; gap: 8px; }
+.watchwhere__title { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.watchwhere__group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.watchwhere__label { min-width: 52px; font-size: 13px; color: var(--ink-2); }
+.watchwhere__logos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.watchwhere__logos a { display: block; border-radius: 8px; overflow: hidden; }
+.watchwhere__logos img { display: block; width: 36px; height: 36px; }
+.watchwhere__logos a > span { display: block; padding: 6px 10px; font-size: 13px; background: rgb(255 255 255 / 0.08); border-radius: 8px; }
+.watchwhere__credit { margin: 0; font-size: 11.5px; color: var(--ink-3); }

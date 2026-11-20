@@ -6,7 +6,8 @@ import { removeFromWatchlist } from '../lib/watchlist.js'
 import './ProfilePage.css'
 
 // Your whole watchlist, at #/watchlist. The profile shows the first few.
-export default function WatchlistPage({ onOpen }) {
+// `onRank` starts ranking a movie you've watched.
+export default function WatchlistPage({ onOpen, onRank }) {
   const tiers = useMyTiers()
   const { status, movies } = useMyWatchlist()
   const rankedIds = useMemo(() => new Set(tiers.flat().map((m) => m.id)), [tiers])
@@ -19,7 +20,7 @@ export default function WatchlistPage({ onOpen }) {
           <h1 className="page__title">Your watchlist</h1>
         </div>
       </header>
-      <Watchlist status={status} movies={movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} heading={false} />
+      <Watchlist status={status} movies={movies} rankedIds={rankedIds} onRetry={retryMyWatchlist} onOpen={onOpen} onRemove={removeFromWatchlist} onRank={onRank} heading={false} />
     </section>
   )
 }

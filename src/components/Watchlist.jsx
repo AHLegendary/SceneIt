@@ -23,7 +23,8 @@ function Item({ row, children, ...props }) {
 //   movies     movie objects, newest added first
 //   onOpen     opens a movie's details (movie id)
 //   onRemove   (movie) => Promise, rejects with a user-facing message
-export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, onRemove, limit = Infinity, fullHref, heading = true, row = false }) {
+//   onRank     (movie) => void; adds a Rank it button (for movies you have now watched)
+export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, onRemove, onRank, limit = Infinity, fullHref, heading = true, row = false }) {
   const [error, setError] = useState(null)
   const unranked = movies.filter((movie) => !rankedIds.has(movie.id))
   const visible = unranked.slice(0, limit)
@@ -63,6 +64,12 @@ export default function Watchlist({ status, movies, rankedIds, onRetry, onOpen, 
               <Poster title={movie.title} src={posterUrl(movie, 'w342')} size="md" />
               <span className="wlist__title">{movie.title}</span>
             </button>
+            {onRank && (
+              <button type="button" className="wlist__rank" onClick={() => onRank(movie)} aria-label={`Rank ${movie.title}`}>
+                <Icon name="swords" size={14} />
+                Rank it
+              </button>
+            )}
             {onRemove && (
               <button type="button" className="wlist__remove" onClick={() => remove(movie)} aria-label={`Remove ${movie.title} from watchlist`}>
                 <Icon name="close" size={14} strokeWidth={2.4} />

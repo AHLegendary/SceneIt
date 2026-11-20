@@ -531,3 +531,43 @@ describe('keyboard focus', () => {
     expect(document.activeElement).toBe(first)
   })
 })
+
+describe('where to watch', () => {
+  const US = {
+    link: 'https://www.themoviedb.org/movie/x/watch?locale=US',
+    flatrate: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/netflix.jpg', display_priority: 1 }],
+    rent: [{ provider_id: 2, provider_name: 'Apple TV', logo_path: null, display_priority: 2 }],
+    buy: [],
+  }
+
+  it('lists the streaming, rent and buy services, with logos that link to TMDb', async () => {
+    backend.setWatchProviders(DUNE.tmdb_id, US)
+    const { user } = await open()
+    const dialog = await dune(user)
+
+    const section = await within(dialog).findByRole('region', { name: 'Where to watch' })
+    expect(within(section).getByText('Stream')).toBeTruthy()
+    expect(within(section).getByText('Rent')).toBeTruthy()
+    expect(within(section).queryByText('Buy')).toBeNull()
+    const netflix = within(section).getByRole('link', { name: 'Netflix, stream, opens TMDb' })
+    expect(netflix.getAttribute('href')).toBe(US.link)
+    expect(netflix.querySelector('img').getAttribute('src')).toContain('/netflix.jpg')
+    expect(within(section).getByRole('link', { name: 'Apple TV, rent, opens TMDb' }).textContent).toBe('Apple TV')
+  })
+
+  it('stays hidden when no service has the movie', async () => {
+    const { user } = await open()
+    const dialog = await dune(user)
+    await within(dialog).findByRole('button', { name: /Rank/ })
+    expect(within(dialog).queryByRole('region', { name: 'Where to watch' })).toBeNull()
+  })
+
+  it('stays hidden when the lookup fails, and the panel still works', async () => {
+    backend.tmdb.failing.add(DUNE.tmdb_id)
+    const { user } = await open()
+    const dialog = await dune(user)
+    await within(dialog).findByRole('button', { name: /Rank/ })
+    expect(within(dialog).queryByRole('region', { name: 'Where to watch' })).toBeNull()
+    expect(within(dialog).getByText(DUNE.overview)).toBeTruthy()
+  })
+})

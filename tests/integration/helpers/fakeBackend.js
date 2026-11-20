@@ -131,7 +131,7 @@ export class FakeBackend {
     this.clockBase = Date.now()
     this.closed = false // set after a test ends: late requests never answer
 
-    this.tmdb = { movies: [], trending: [], recommendations: new Map(), down: false, failing: new Set() }
+    this.tmdb = { movies: [], trending: [], recommendations: new Map(), providers: new Map(), down: false, failing: new Set() }
     // OMDb: payloads by IMDb id, plus switches for a dead service and a used-up daily limit.
     this.omdb = { ratings: new Map(), down: false, limitReached: false }
     this.seedCatalogMovies()
@@ -243,6 +243,11 @@ export class FakeBackend {
   // or, for catalog movies, raw objects built from the catalog).
   setTmdbRecommendations(seedTmdbId, rawMovies) {
     this.tmdb.recommendations.set(seedTmdbId, rawMovies)
+  }
+
+  // Where TMDb says a movie can be watched in the US: { flatrate, rent, buy, link } as TMDb sends them.
+  setWatchProviders(tmdbId, us) {
+    this.tmdb.providers.set(tmdbId, us)
   }
 
   rawFromCatalog(id, extra = {}) {
@@ -1183,6 +1188,13 @@ export class FakeBackend {
       if (known) return jsonResponse(200, { id, imdb_id: known.imdb_id ?? catalog?.imdb_id ?? null })
       if (catalog) return jsonResponse(200, { id, imdb_id: catalog.imdb_id ?? null })
       return jsonResponse(404, { status_message: 'The resource you requested could not be found.' })
+    }
+
+    const providers = /^\/movie\/(\d+)\/watch\/providers$/.exec(path)
+    if (providers) {
+      const id = Number(providers[1])
+      if (t.failing.has(id)) return jsonResponse(500, { status_message: 'Boom' })
+      return jsonResponse(200, { id, results: t.providers.has(id) ? { US: t.providers.get(id) } : {} })
     }
 
     const details = /^\/movie\/(\d+)$/.exec(path)

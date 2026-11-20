@@ -42,6 +42,19 @@ export async function getRatings(tmdbId) {
   return result;
 }
 
+// Where a movie can be watched in the US (streaming, rent, buy), from TMDb.
+// Returns { link, stream, rent, buy }; see api/movies/providers.js. Cached for the
+// session, like the ratings above; a failed request throws and isn't remembered.
+const providersCache = new Map();
+
+export async function getProviders(tmdbId) {
+  if (providersCache.has(tmdbId)) return providersCache.get(tmdbId);
+  const body = await getJson(`/api/movies/providers?id=${encodeURIComponent(tmdbId)}`);
+  const result = { link: body.link ?? null, stream: body.stream ?? [], rent: body.rent ?? [], buy: body.buy ?? [] };
+  providersCache.set(tmdbId, result);
+  return result;
+}
+
 export class UnauthorizedError extends Error {}
 
 // TMDb's recommendations for each seed movie (TMDb ids). Ids are sorted so

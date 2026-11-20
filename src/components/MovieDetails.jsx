@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import Poster from './Poster.jsx'
+import WhereToWatch from './WhereToWatch.jsx'
 import { tierRanks } from '../features/ranking/binaryInsertion.js'
 import { scoreTiers } from '../features/ranking/scores.js'
 import { fetchCommunityStats } from '../lib/leaderboard.js'
@@ -237,6 +238,8 @@ export default function MovieDetails({ movie, signedIn = true, onClose, onRank, 
                 )}
               </dl>
             )}
+
+            {movie.tmdb_id && <WhereToWatch tmdbId={movie.tmdb_id} />}
           </div>
 
           {watchError && <p className="glass__error" role="alert">{watchError}</p>}
