@@ -1875,6 +1875,8 @@ a.comment__name:hover { color: var(--accent); }
   position: relative;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
+  /* the row can't outgrow the card, so .glass__scroll scrolls instead of spilling out */
+  grid-template-rows: minmax(0, 1fr);
   gap: 28px;
   width: min(980px, 100%);
   max-height: calc(100vh - 48px);
@@ -1962,7 +1964,7 @@ a.comment__name:hover { color: var(--accent); }
 
 @media (max-width: 760px) {
   .overlay--glass { align-items: flex-start; padding: 12px; }
-  .glass { grid-template-columns: 1fr; gap: 16px; padding: 18px; max-height: calc(100vh - 24px); overflow-y: auto; }
+  .glass { grid-template-columns: 1fr; grid-template-rows: none; gap: 16px; padding: 18px; max-height: calc(100vh - 24px); overflow-y: auto; }
   .glass__poster { display: flex; justify-content: center; }
   .glass__poster .poster { width: 150px; height: 225px; }
   .glass__title { font-size: 24px; }
