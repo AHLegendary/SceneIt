@@ -2,8 +2,9 @@
 //
 // Runs on the server (api/blends/recommendations.js), because it reads every
 // member's rankings and members don't have to be friends with each other.
-// Only group-level facts leave it: a score, how many members loved a movie,
-// and which group favorite a discovery is like. Never who ranked what.
+// What leaves it: a score, which members loved a movie, and which group
+// favorite a discovery is like. Blend members chose to share a blend, so who
+// loved a movie is shown to them; nothing else about anyone's list is.
 //
 // Every member gets an opinion of every candidate, -1 to 1:
 //   * ranked it: their rank weight (rankWeights, as on the For You page), so
@@ -32,13 +33,37 @@ import {
 // A guessed opinion counts this much of a real one.
 const PREDICTED_WEIGHT = 0.8
 // Group scores at or below this aren't worth suggesting.
-const MIN_BLEND_SCORE = 0.1
-export const BLEND_REC_LIMIT = 20
+const MIN_BLEND_SCORE = 0.05
+export const BLEND_REC_LIMIT = 40
+
+// Catalog movies listed as similar to a group favorite become candidates too,
+// linked at full strength. They cost no TMDb request. Adds the links to `links`
+// (the map from mergeTmdbRecs) and returns the candidates.
+export function addCatalogLinks(seeds, catalog, links) {
+  const byId = new Map(catalog.map((m) => [m.id, m]))
+  const candidates = new Map()
+  const link = (a, b) => {
+    if (!links.has(a)) links.set(a, new Map())
+    links.get(a).set(b, 1)
+  }
+  for (const seed of seeds) {
+    const source = catalog.find((m) => m.tmdb_id === seed.tmdb_id)
+    for (const id of source?.similar ?? []) {
+      const m = byId.get(id)
+      if (!m || !Number.isInteger(m.tmdb_id)) continue
+      const movie = { ...m, id: m.tmdb_id }
+      candidates.set(movie.id, movie)
+      link(seed.id, movie.id)
+      link(movie.id, seed.id)
+    }
+  }
+  return [...candidates.values()]
+}
 
 // The group's favorites to ask TMDb about, best first: movies members loved,
 // ordered by their summed weight, so a movie two people loved beats one only
 // one person loved. Only movies with a TMDb id count.
-export function pickBlendSeeds(memberTiers, max = 10) {
+export function pickBlendSeeds(memberTiers, max = 15) {
   const totals = new Map()
   const movies = new Map()
   for (const tiers of memberTiers) {
@@ -60,8 +85,9 @@ export function pickBlendSeeds(memberTiers, max = 10) {
 //   memberTiers  one ranked list (tiers) per member
 //   candidates   extra movies to consider (TMDb's, from mergeTmdbRecs)
 //   links        link map from mergeTmdbRecs
-// Returns [{ movie, score, lovedCount, memberCount, because }], best first:
+// Returns [{ movie, score, lovedCount, lovedBy, memberCount, because }], best first:
 //   lovedCount  members who put it in "Loved it"
+//   lovedBy     their positions in memberTiers
 //   because     the group favorite with the strongest link to it, or null
 export function scoreBlend(memberTiers, candidates = [], { links } = {}) {
   const members = memberTiers.map((tiers) => ({ ranked: tiers.flat(), weights: rankWeights(tiers) }))
@@ -76,11 +102,11 @@ export function scoreBlend(memberTiers, candidates = [], { links } = {}) {
   for (const movie of pool.values()) {
     let total = 0
     let rankedBy = 0
-    let lovedCount = 0
+    const lovedBy = []
     let vetoed = false
     let because = null
     let best = 0
-    for (const m of members) {
+    for (const [i, m] of members.entries()) {
       const w = m.weights.get(movie.id)
       if (w !== undefined) {
         rankedBy++
@@ -88,7 +114,7 @@ export function scoreBlend(memberTiers, candidates = [], { links } = {}) {
           vetoed = true
           break
         }
-        if (w >= FAVORITE_WEIGHT) lovedCount++
+        if (w >= FAVORITE_WEIGHT) lovedBy.push(i)
         total += w
         continue
       }
@@ -108,7 +134,7 @@ export function scoreBlend(memberTiers, candidates = [], { links } = {}) {
     if (vetoed || rankedBy === n) continue
     const score = total / n
     if (score <= MIN_BLEND_SCORE) continue
-    results.push({ movie, score, lovedCount, memberCount: n, because })
+    results.push({ movie, score, lovedCount: lovedBy.length, lovedBy, memberCount: n, because })
   }
 
   // Ties: better rated first, then title so the order is stable.
@@ -118,9 +144,25 @@ export function scoreBlend(memberTiers, candidates = [], { links } = {}) {
   )
 }
 
-// The small line under a blend recommendation. Group-level only.
-export function blendRecLabel({ lovedCount, memberCount, because }) {
+// The small line under a blend recommendation. members: [{ id, username }]
+// turns lovedBy ids into names, like the For You page's "Loved by Ana and Ben".
+export function blendRecLabel({ lovedCount, lovedBy = [], memberCount, because }, members = []) {
+  const names = lovedBy.map((id) => members.find((m) => m.id === id)?.username).filter(Boolean)
+  if (names.length === 1) return `Loved by ${names[0]}`
+  if (names.length === 2) return `Loved by ${names[0]} and ${names[1]}`
+  if (names.length > 2) return `Loved by ${names[0]} +${names.length - 1}`
   if (lovedCount > 0) return `Loved by ${lovedCount} of ${memberCount}`
   if (because) return `Like ${because}, a group favorite`
   return 'Your group should like this'
+}
+
+// Splits recommendations (scoreBlend order kept inside each section) into
+// titled sections by how many members loved the movie: several, one, or
+// nobody (discoveries). Empty sections are left out.
+export function groupRecs(recs) {
+  return [
+    { id: 'several', title: 'Loved by several of you', items: recs.filter((r) => r.lovedCount >= 2) },
+    { id: 'one', title: 'Loved by one of you', items: recs.filter((r) => r.lovedCount === 1) },
+    { id: 'new', title: 'Discoveries for your group', items: recs.filter((r) => r.lovedCount === 0) },
+  ].filter((s) => s.items.length)
 }

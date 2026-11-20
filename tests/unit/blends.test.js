@@ -98,9 +98,9 @@ describe('row mapping', () => {
   it('makes recommendations for movies outside the catalog openable by id', async () => {
     const { getMovie } = await import('../../src/lib/localStore.js')
     const [rec] = blends.rowsToRecommendations([
-      { movie: { tmdb_id: 987654321, title: 'Not In Catalog', year: 2020 }, lovedCount: 2, memberCount: 3, because: null },
+      { movie: { tmdb_id: 987654321, title: 'Not In Catalog', year: 2020 }, lovedCount: 2, lovedBy: ['u1', 'u2'], memberCount: 3, because: null },
     ])
-    expect(rec).toMatchObject({ lovedCount: 2, memberCount: 3, because: null })
+    expect(rec).toMatchObject({ lovedCount: 2, lovedBy: ['u1', 'u2'], memberCount: 3, because: null })
     expect(getMovie(rec.movie.id)).toBe(rec.movie)
   })
   it('skips recommendation rows it cannot build a movie for', () => {

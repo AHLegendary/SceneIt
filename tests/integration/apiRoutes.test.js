@@ -868,13 +868,16 @@ describe('GET /api/blends/recommendations', () => {
     expect((await recs(tokenFor(alice), '00000000-0000-4000-8000-999999999999')).status).toBe(404)
   })
 
-  it('returns only group-level facts: no user ids, usernames or per-member rankings', async () => {
+  it('returns only who loved a movie: ids in lovedBy, no usernames or per-member rankings', async () => {
     const { status, body } = await recs(tokenFor(bob))
     expect(status).toBe(200)
     expect(body.results.length).toBeGreaterThan(0)
     const text = JSON.stringify(body)
-    for (const secret of [alice.id, bob.id, 'Alice_99', '"bob"', 'category', 'position']) expect(text).not.toContain(secret)
-    for (const r of body.results) expect(Object.keys(r).sort()).toEqual(['because', 'lovedCount', 'memberCount', 'movie'])
+    for (const secret of ['Alice_99', '"bob"', 'category', 'position']) expect(text).not.toContain(secret)
+    for (const r of body.results) {
+      expect(Object.keys(r).sort()).toEqual(['because', 'lovedBy', 'lovedCount', 'memberCount', 'movie'])
+      for (const id of r.lovedBy) expect([alice.id, bob.id]).toContain(id)
+    }
   })
 
   it("fails cleanly when members' rankings can't be read", async () => {
