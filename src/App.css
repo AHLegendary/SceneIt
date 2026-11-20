@@ -1518,6 +1518,8 @@ a.comment__name:hover { color: var(--accent); }
 /* ------------------------------------------------------------------ recommendations grid */
 .recs { display: flex; flex-direction: column; gap: 12px; }
 .recs__title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.recs__section { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.recs__subtitle { margin: 0; font-size: 15px; font-weight: 700; color: var(--ink-2); }
 .recs__grid {
   list-style: none;
   margin: 0;
@@ -1526,6 +1528,17 @@ a.comment__name:hover { color: var(--accent); }
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 14px;
 }
+.recs__strip {
+  display: flex;
+  gap: 14px;
+  padding: 6px 0 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.recs__strip::-webkit-scrollbar { display: none; }
+.recs__strip .rec { flex: 0 0 140px; width: 140px; scroll-snap-align: start; }
 .rec {
   display: flex;
   flex-direction: column;

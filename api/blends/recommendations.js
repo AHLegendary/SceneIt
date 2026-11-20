@@ -1,7 +1,8 @@
 import { getAdminClient, getUserFromRequest } from '../_lib/supabaseAdmin.js';
 import { fetchTmdbRecommendations } from '../_lib/tmdb.js';
 import { mergeTmdbRecs } from '../../src/features/recommendations/recommend.js';
-import { BLEND_REC_LIMIT, pickBlendSeeds, scoreBlend } from '../../src/features/blends/blendRecs.js';
+import { addCatalogLinks, BLEND_REC_LIMIT, pickBlendSeeds, scoreBlend } from '../../src/features/blends/blendRecs.js';
+import { getCatalog } from '../../src/lib/localStore.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,10 +23,12 @@ function toTiers(rows) {
 // Authorization: Bearer <access token>
 //
 // Recommendations for a blend the caller is in (see src/features/blends/blendRecs.js):
-//   { results: [{ movie: { tmdb_id, title, ... }, lovedCount, memberCount, because }] }
-// `because` is a group favorite's title or null. Reads every member's rankings
-// with the admin client, so only group-level facts go out: members don't have
-// to be friends, and their profiles can be private.
+//   { results: [{ movie: { tmdb_id, title, ... }, lovedCount, lovedBy, memberCount, because }] }
+// `lovedBy` is the ids of the members who put it in "Loved it"; `because` is a
+// group favorite's title or null. Reads every member's rankings with the admin
+// client, but only the caller (a member) gets the answer, and nothing beyond
+// who loved a movie goes out. Members don't have to be friends, and their
+// profiles can be private.
 // 404 { error: 'blend_not_found' } when the blend is gone or the caller isn't in it.
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -82,11 +85,13 @@ export default async function handler(req, res) {
     else console.warn('TMDb recommendations failed for a blend seed:', outcome.reason?.message);
   });
   const seedsByTmdb = new Map(seeds.map((m) => [m.tmdb_id, m]));
-  const { candidates, links } = mergeTmdbRecs(tmdbResults, seedsByTmdb, (row) => ({ ...row, id: row.tmdb_id }));
+  const merged = mergeTmdbRecs(tmdbResults, seedsByTmdb, (row) => ({ ...row, id: row.tmdb_id }));
+  const links = merged.links;
+  const candidates = [...merged.candidates, ...addCatalogLinks(seeds, getCatalog(), links)];
 
   const results = scoreBlend(memberTiers, candidates, { links })
     .slice(0, BLEND_REC_LIMIT)
-    .map(({ movie, lovedCount, memberCount, because }) => ({
+    .map(({ movie, lovedCount, lovedBy, memberCount, because }) => ({
       movie: {
         tmdb_id: movie.tmdb_id,
         title: movie.title,
@@ -96,6 +101,7 @@ export default async function handler(req, res) {
         overview: movie.overview ?? '',
       },
       lovedCount,
+      lovedBy: lovedBy.map((i) => memberIds[i]),
       memberCount,
       because: because?.title ?? null,
     }));

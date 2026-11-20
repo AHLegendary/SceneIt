@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import ArrowScroller from '../../components/ArrowScroller.jsx'
 import Poster from '../../components/Poster.jsx'
 import { loadFriends } from '../../lib/friends.js'
 import { posterUrl } from '../../lib/localStore.js'
@@ -14,7 +15,7 @@ import {
   loadBlends,
   setBlendNotice,
 } from './blends.js'
-import { blendRecLabel } from './blendRecs.js'
+import { blendRecLabel, groupRecs } from './blendRecs.js'
 import CreateBlendForm from './CreateBlendForm.jsx'
 
 const INVITE_LABELS = { pending: 'Invited', declined: 'Declined', expired: 'Expired' }
@@ -25,6 +26,29 @@ function returnToBlends() {
   setBlendNotice(BLEND_GONE)
   loadBlends()
   window.location.hash = '/blends'
+}
+
+// The recommendation grids, sectioned by how much the group agrees.
+function BlendRecs({ recommendations, members, onOpen }) {
+  const sections = useMemo(() => groupRecs(recommendations), [recommendations])
+  return (
+    <>
+      {sections.map((section) => (
+        <div className="recs__section" key={section.id} role="group" aria-label={section.title}>
+          <h3 className="recs__subtitle">{section.title}</h3>
+          <ArrowScroller label={section.title} className="recs__strip">
+            {section.items.map((rec) => (
+              <button key={rec.movie.id} type="button" className="rec" onClick={() => onOpen(rec.movie.id)}>
+                <Poster title={rec.movie.title} src={posterUrl(rec.movie)} size="md" />
+                <span className="rec__title">{rec.movie.title}</span>
+                <span className="rec__meta">{blendRecLabel(rec, members)}</span>
+              </button>
+            ))}
+          </ArrowScroller>
+        </div>
+      ))}
+    </>
+  )
 }
 
 // One blend: who's in it, inviting (owner only), leaving, and recommendations.
@@ -161,17 +185,7 @@ export default function BlendDetailPage({ blendId, onOpen }) {
       <section className="recs" aria-label="Recommendations">
         <h2 className="recs__title">Recommended for your group</h2>
         {recommendations.length > 0 ? (
-          <ul className="recs__grid">
-            {recommendations.map((rec) => (
-              <li key={rec.movie.id}>
-                <button type="button" className="rec" onClick={() => onOpen(rec.movie.id)}>
-                  <Poster title={rec.movie.title} src={posterUrl(rec.movie)} size="md" />
-                  <span className="rec__title">{rec.movie.title}</span>
-                  <span className="rec__meta">{blendRecLabel(rec)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <BlendRecs recommendations={recommendations} members={members} onOpen={onOpen} />
         ) : members.length < 2 ? (
           <div className="notice" role="status">
             <span>Recommendations appear once a friend joins this blend.</span>

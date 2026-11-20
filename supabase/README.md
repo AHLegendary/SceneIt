@@ -127,7 +127,7 @@ await supabase.rpc('get_my_blends')
 await supabase.rpc('get_my_blend_invites')
 await supabase.rpc('get_blend_members', { p_blend_id: blendId })
 await supabase.rpc('get_blend_sent_invites', { p_blend_id: blendId })
-// Blend recommendations come from GET /api/blends/recommendations?id=<blendId> (server-side, group-level facts only)
+// Blend recommendations come from GET /api/blends/recommendations?id=<blendId> (server-side; returns scores plus which members loved each movie)
 ```
 
 Accepted friends can read each other's `rankings` even when a profile is private. That's what friend-based recommendations build on.

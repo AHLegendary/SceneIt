@@ -86,16 +86,16 @@ describe('GET /api/blends/recommendations', () => {
     expect((await call()).body).toEqual({ results: [] });
   });
 
-  it('mixes TMDb discoveries with members\' movies and sends only group-level facts', async () => {
+  it('mixes TMDb discoveries with members\' movies and sends only who loved what', async () => {
     const res = await call();
     expect(res.statusCode).toBe(200);
     const byId = new Map(res.body.results.map((r) => [r.movie.tmdb_id, r]));
-    expect(byId.get(500)).toMatchObject({ movie: { title: 'Found 500' }, lovedCount: 0, memberCount: 2, because: 'Movie 1' });
-    expect(byId.get(3)).toMatchObject({ lovedCount: 1, memberCount: 2 });
+    expect(byId.get(500)).toMatchObject({ movie: { title: 'Found 500' }, lovedCount: 0, lovedBy: [], memberCount: 2, because: 'Movie 1' });
+    expect(byId.get(3)).toMatchObject({ lovedCount: 1, lovedBy: ['ben'], memberCount: 2 });
     expect(byId.has(1)).toBe(false); // both ranked it
     expect(byId.has(4)).toBe(false); // Ben's "Not a fan"
     for (const r of res.body.results) {
-      expect(Object.keys(r).sort()).toEqual(['because', 'lovedCount', 'memberCount', 'movie']);
+      expect(Object.keys(r).sort()).toEqual(['because', 'lovedBy', 'lovedCount', 'memberCount', 'movie']);
       expect(Object.keys(r.movie).sort()).toEqual(['genres', 'overview', 'poster_path', 'title', 'tmdb_id', 'year']);
     }
   });

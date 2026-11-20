@@ -36,19 +36,29 @@ const recs = () => within(screen.getByRole('region', { name: 'Recommendations' }
 const cards = () =>
   recs()
     .queryAllByRole('button')
+    .filter((b) => b.classList.contains('rec'))
     .map((b) => ({ title: b.querySelector('.rec__title').textContent, meta: b.querySelector('.rec__meta').textContent }))
 
 describe('blend recommendations', () => {
-  it("suggests movies someone loved that someone else hasn't ranked, with group-level labels", async () => {
+  it("suggests movies someone loved that someone else hasn't ranked, naming who loved them", async () => {
     await openBlend()
 
-    await waitFor(() => expect(cards().length).toBe(2))
+    await waitFor(() => expect(cards().length).toBe(3))
     expect(cards()).toEqual(
       expect.arrayContaining([
-        { title: title(C), meta: 'Loved by 1 of 2' },
-        { title: title(D), meta: 'Loved by 1 of 2' },
+        { title: title(C), meta: 'Loved by Alice_99' },
+        { title: title(D), meta: 'Loved by bob' },
+        { title: title('spider-man-into-the-spider-verse-2018'), meta: `Like ${title(C)}, a group favorite` },
       ]),
     )
+  })
+
+  it('sections the picks by how many members loved them', async () => {
+    await openBlend()
+    await waitFor(() => expect(cards().length).toBe(3))
+
+    const one = recs().getByRole('group', { name: 'Loved by one of you' })
+    expect(within(one).getAllByRole('button').filter((b) => b.classList.contains('rec'))).toHaveLength(2)
   })
 
   it('leaves out movies everyone already ranked', async () => {
@@ -79,21 +89,20 @@ describe('blend recommendations', () => {
     expect(cards().find((c) => c.title === 'Gnu Gone Wild').meta).toBe(`Like ${title(A)}, a group favorite`)
   })
 
-  it('never names a member on a recommendation', async () => {
+  it('names nobody on a discovery nobody has ranked', async () => {
     const pick = backend.addTmdbMovie({ id: 960001, title: 'Gnu Gone Wild', year: 2023, vote_count: 9000 })
     backend.setTmdbRecommendations(tmdbId(A), [pick])
     await openBlend()
-    await waitFor(() => expect(cards().length).toBe(3))
+    await waitFor(() => expect(cards().length).toBe(4))
 
-    for (const { meta } of cards()) {
-      expect(meta).not.toMatch(/Alice_99|bob/)
-    }
+    const found = cards().find((c) => c.title === 'Gnu Gone Wild')
+    expect(found.meta).not.toMatch(/Alice_99|bob|Loved by/)
   })
 
   it("still suggests from members' lists when TMDb is down", async () => {
     backend.tmdb.down = true
     await openBlend()
-    await waitFor(() => expect(cards().map((c) => c.title).sort()).toEqual([title(C), title(D)].sort()))
+    await waitFor(() => expect(cards().map((c) => c.title).sort()).toEqual([title(C), title(D), title('spider-man-into-the-spider-verse-2018')].sort()))
   })
 
   it('waits for a second member before suggesting anything', async () => {
@@ -121,7 +130,7 @@ describe('blend recommendations', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain("Couldn't load this blend.")
     await user.click(within(alert).getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(cards().length).toBe(2))
+    await waitFor(() => expect(cards().length).toBe(3))
   })
 
   it("sends someone who isn't in the blend back to Movie Blend", async () => {

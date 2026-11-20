@@ -140,6 +140,7 @@ export function rowsToRecommendations(rows) {
     out.push({
       movie,
       lovedCount: Number(row.lovedCount),
+      lovedBy: Array.isArray(row.lovedBy) ? row.lovedBy : [],
       memberCount: Number(row.memberCount),
       because: row.because ?? null,
     })
