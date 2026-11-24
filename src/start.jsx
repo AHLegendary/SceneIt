@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { startBlends } from './features/blends/blends.js'
 import { startFriends } from './lib/friends.js'
 import { startNotifications } from './lib/notifications.js'
@@ -16,6 +17,8 @@ startNotifications()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )

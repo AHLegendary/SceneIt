@@ -26,7 +26,7 @@ export const PROFILE_SHORTCUTS = [
   { id: 'my-list', label: 'My List' },
   { id: 'watchlist', label: 'Watchlist' },
   { id: 'rank', label: 'Rank Movies' },
-  { id: 'profile', label: 'Bio' },
+  { id: 'profile', label: 'Profile' },
 ]
 
 // 'moderation' is the reports queue (#/moderation). It needs an account, and the page itself says "no access" unless you are a moderator.

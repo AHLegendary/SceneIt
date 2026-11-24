@@ -283,7 +283,7 @@ function ReviewStep({ titleId, movie, onDone }) {
   const touched = useRef(false)
 
   // Fill in an existing review, unless they've already started typing. If it
-  // can't be loaded the box just starts empty.
+  // can't be loaded the box starts empty and says so, since saving would replace it.
   useEffect(() => {
     let alive = true
     fetchMyReview(movie.id)
@@ -292,7 +292,9 @@ function ReviewStep({ titleId, movie, onDone }) {
         setText(existing.body)
         setIsSpoiler(existing.isSpoiler)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (alive && !touched.current) setError('Couldn’t load your existing review. If you write a new one, it will replace it.')
+      })
     return () => { alive = false }
   }, [movie.id])
 

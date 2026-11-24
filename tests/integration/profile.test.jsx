@@ -93,10 +93,10 @@ describe('your profile', () => {
     expect(await screen.findByText('I love slow-burn thrillers.')).toBeTruthy()
   })
 
-  it('opens from the "Bio" shortcut in the Profile menu', async () => {
+  it('opens from the "Profile" shortcut in the Profile menu', async () => {
     const { user } = await launch({ backend, as: alice, hash: '#/home' })
     await ready({ loggedIn: true })
-    await useMenu(user, 'Bio')
+    await useMenu(user, 'Profile')
     expect(await screen.findByRole('heading', { level: 1, name: 'Alice_99' })).toBeTruthy()
     expect(window.location.hash).toBe('#/profile')
   })

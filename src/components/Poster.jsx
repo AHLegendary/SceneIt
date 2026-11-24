@@ -21,6 +21,7 @@ export default function Poster({ title, src, size = 'md' }) {
         src={src}
         alt={`${title} poster`}
         loading="lazy"
+        decoding="async"
         onError={() => setFailed(true)}
       />
     )
