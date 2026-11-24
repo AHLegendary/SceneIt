@@ -131,7 +131,7 @@ export class FakeBackend {
     this.clockBase = Date.now()
     this.closed = false // set after a test ends: late requests never answer
 
-    this.tmdb = { movies: [], trending: [], recommendations: new Map(), providers: new Map(), down: false, failing: new Set() }
+    this.tmdb = { movies: [], people: [], trending: [], recommendations: new Map(), providers: new Map(), down: false, failing: new Set() }
     // OMDb: payloads by IMDb id, plus switches for a dead service and a used-up daily limit.
     this.omdb = { ratings: new Map(), down: false, limitReached: false }
     this.seedCatalogMovies()
@@ -248,6 +248,11 @@ export class FakeBackend {
   // Where TMDb says a movie can be watched in the US: { flatrate, rent, buy, link } as TMDb sends them.
   setWatchProviders(tmdbId, us) {
     this.tmdb.providers.set(tmdbId, us)
+  }
+
+  // An actor TMDb knows, with the movies (from addTmdbMovie) they appear in.
+  addTmdbPerson({ id, name, department = 'Acting', movies = [], profile_path = `/person${id}.jpg` }) {
+    this.tmdb.people.push({ id, name, known_for_department: department, profile_path, adult: false, credits: movies })
   }
 
   rawFromCatalog(id, extra = {}) {
@@ -1169,6 +1174,16 @@ export class FakeBackend {
     if (path === '/search/movie') {
       const q = (url.searchParams.get('query') ?? '').toLowerCase()
       return jsonResponse(200, { results: t.movies.filter((m) => m.title.toLowerCase().includes(q)) })
+    }
+    if (path === '/search/person') {
+      const q = (url.searchParams.get('query') ?? '').toLowerCase()
+      return jsonResponse(200, { results: t.people.filter((p) => p.name.toLowerCase().includes(q)).map(({ credits: _credits, ...person }) => person) })
+    }
+    const personCredits = /^\/person\/(\d+)\/movie_credits$/.exec(path)
+    if (personCredits) {
+      const person = t.people.find((p) => p.id === Number(personCredits[1]))
+      if (!person) return jsonResponse(404, { status_message: 'The resource you requested could not be found.' })
+      return jsonResponse(200, { id: person.id, cast: person.credits })
     }
     if (path === '/trending/movie/week') return jsonResponse(200, { results: t.trending })
 

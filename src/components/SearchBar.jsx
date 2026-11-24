@@ -1,17 +1,20 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import Poster from './Poster.jsx'
-import { getCatalog, movieFromDb, posterUrl, searchMovies as searchCatalog } from '../lib/localStore.js'
-import { searchMovies as searchTmdb } from '../lib/movies.js'
+import { getCatalog, imageUrl, movieFromDb, posterUrl, searchMovies as searchCatalog } from '../lib/localStore.js'
+import { getPersonMovies, searchMovies as searchTmdb, searchPeople } from '../lib/movies.js'
 
 const DEBOUNCE_MS = 250
 const LIMIT = 7
+const ACTOR_LIMIT = 40
 // TMDb's movie genres, in the order the chips show.
 const GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Drama', 'Fantasy', 'Horror', 'Mystery', 'Romance', 'Science Fiction', 'Thriller']
 
 // Header search: typing shows a dropdown of the top matches (TMDb through our
 // API, falling back to the built-in catalog), with a row of genre chips to
 // narrow them. With no text, a genre chip browses the catalog by genre.
+// Matching actors show above the movies; picking one lists their movies, and
+// the genre chips narrow those too.
 // Picking a result opens its details. Esc / click outside closes.
 export default function SearchBar({ onOpen }) {
   const [query, setQuery] = useState('')
@@ -20,6 +23,11 @@ export default function SearchBar({ onOpen }) {
   const [active, setActive] = useState(-1)
   // { query, results, live } for the latest finished search
   const [live, setLive] = useState(null)
+  // { query, list } for the latest finished actor search
+  const [people, setPeople] = useState(null)
+  // The actor whose movies are showing: { id, name }, and { id, results, failed } once loaded
+  const [person, setPerson] = useState(null)
+  const [credits, setCredits] = useState(null)
   const wrap = useRef(null)
   const input = useRef(null)
   const listId = useId()
@@ -33,12 +41,26 @@ export default function SearchBar({ onOpen }) {
         (rows) => current && setLive({ query: q, results: rows.map(movieFromDb).filter(Boolean), live: true }),
         () => current && setLive({ query: q, results: searchCatalog(q, 40), live: false }),
       )
+      searchPeople(q).then(
+        (list) => current && setPeople({ query: q, list }),
+        () => current && setPeople({ query: q, list: [] }),
+      )
     }, DEBOUNCE_MS)
     return () => {
       current = false
       clearTimeout(timer)
     }
   }, [q])
+
+  useEffect(() => {
+    if (!person) return undefined
+    let current = true
+    getPersonMovies(person.id).then(
+      (rows) => current && setCredits({ id: person.id, results: rows.map(movieFromDb).filter(Boolean) }),
+      () => current && setCredits({ id: person.id, results: [], failed: true }),
+    )
+    return () => { current = false }
+  }, [person])
 
   useEffect(() => {
     if (!open) return undefined
@@ -59,16 +81,19 @@ export default function SearchBar({ onOpen }) {
     setOpen(false)
     setActive(-1)
     setGenre(null)
+    setPerson(null)
     input.current?.blur()
   }
 
   const done = q && live?.query === q ? live : null
-  const searching = Boolean(q) && !done
-  const base = q ? (done ? done.results : live?.results ?? []) : genre ? getCatalog() : []
-  const results = base.filter((m) => !genre || m.genres?.includes(genre)).slice(0, LIMIT)
+  const doneCredits = person && credits?.id === person.id ? credits : null
+  const searching = person ? !doneCredits : Boolean(q) && !done
+  const base = person ? doneCredits?.results ?? [] : q ? (done ? done.results : live?.results ?? []) : genre ? getCatalog() : []
+  const results = base.filter((m) => !genre || m.genres?.includes(genre)).slice(0, person ? ACTOR_LIMIT : LIMIT)
+  const actors = !person && done && people?.query === q ? people.list : []
   // How many matches the genre chip is hiding, so the filter is never silent.
-  const hidden = q && genre && !searching ? base.length - base.filter((m) => m.genres?.includes(genre)).length : 0
-  const showPanel = open && (q || genre)
+  const hidden = (q || person) && genre && !searching ? base.length - base.filter((m) => m.genres?.includes(genre)).length : 0
+  const showPanel = open && (q || genre || person)
 
   function pick(movie) {
     close()
@@ -107,6 +132,7 @@ export default function SearchBar({ onOpen }) {
         spellCheck="false"
         onChange={(e) => {
           setQuery(e.target.value)
+          setPerson(null)
           setActive(-1)
           setOpen(true)
         }}
@@ -121,6 +147,7 @@ export default function SearchBar({ onOpen }) {
           onClick={() => {
             setQuery('')
             setGenre(null)
+            setPerson(null)
             input.current?.focus()
           }}
         >
@@ -153,11 +180,31 @@ export default function SearchBar({ onOpen }) {
               <button type="button" className="sbar__showall" onClick={() => { setGenre(null); setActive(-1) }}>Show all</button>
             </p>
           )}
-          <ul className={`sbar__list${searching ? ' is-stale' : ''}`} id={listId} role="listbox" aria-label="Search results">
+          {person && (
+            <p className="sbar__filter" role="status">
+              Movies with {person.name}
+              <button type="button" className="sbar__showall" onClick={() => { setPerson(null); setActive(-1) }}>Back to results</button>
+            </p>
+          )}
+          {actors.length > 0 && (
+            <div className="sbar__people" role="group" aria-label="Actors">
+              {actors.map((a) => (
+                <button key={a.id} type="button" className="sbar__item sbar__actor" onClick={() => { setPerson({ id: a.id, name: a.name }); setActive(-1) }}>
+                  <Poster title={a.name} src={imageUrl(a.profile_path, 'w92')} size="sm" />
+                  <span className="sbar__text">
+                    <span className="sbar__title">{a.name}</span>
+                    <span className="sbar__meta">Actor · see their movies</span>
+                  </span>
+                  <Icon name="chevron" size={16} className="sbar__go" />
+                </button>
+              ))}
+            </div>
+          )}
+          <ul className={`sbar__list${searching ? ' is-stale' : ''}${person ? ' sbar__list--actor' : ''}`} id={listId} role="listbox" aria-label="Search results">
             {results.length === 0 ? (
-              <li className="sbar__empty">
-                {searching ? 'Searching…' : q ? `No ${genre ? `${genre.toLowerCase()} ` : ''}movies match “${q}”.` : `No ${genre.toLowerCase()} movies in the catalog yet.`}
-                {!searching && q && genre && base.length > 0 && (
+              actors.length > 0 ? null : <li className="sbar__empty">
+                {searching ? 'Searching…' : person ? (doneCredits.failed ? `Couldn’t load ${person.name}’s movies. Try again.` : `No ${genre ? `${genre.toLowerCase()} ` : ''}movies found for ${person.name}.`) : q ? `No ${genre ? `${genre.toLowerCase()} ` : ''}movies match “${q}”.` : `No ${genre.toLowerCase()} movies in the catalog yet.`}
+                {!searching && (q || person) && genre && base.length > 0 && (
                   <>
                     {' '}
                     <button type="button" className="sbar__showall" onClick={() => { setGenre(null); setActive(-1) }}>
