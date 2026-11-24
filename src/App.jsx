@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import MovieDetails from './components/MovieDetails.jsx'
 import RecsUnlockedDialog from './components/RecsUnlockedDialog.jsx'
 import SearchDialog from './components/SearchDialog.jsx'
 import CompareView from './features/ranking/CompareView.jsx'
-import BlendDetailPage from './features/blends/BlendDetailPage.jsx'
 import { BLEND_MAX_MEMBERS } from './features/blends/blends.js'
-import BlendsPage from './features/blends/BlendsPage.jsx'
 import { justUnlockedRecs } from './features/recommendations/unlockNotice.js'
 import TopNav from './components/TopNav.jsx'
 import { PageStatus, SignInPrompt } from './components/SignInPrompt.jsx'
@@ -17,18 +15,22 @@ import { rememberReturn, takeReturn } from './lib/returnTo.js'
 import { parseHash } from './lib/route.js'
 import { loadMyList } from './lib/supabaseStore.js'
 import { useAccount } from './lib/useMyList.js'
-import CommunityPage from './pages/CommunityPage.jsx'
-import ModerationPage from './pages/ModerationPage.jsx'
 import ForYouPage from './pages/ForYouPage.jsx'
-import FriendsPage from './pages/FriendsPage.jsx'
 import HomePage from './pages/HomePage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import MyListPage from './pages/MyListPage.jsx'
-import ProfilePage from './pages/ProfilePage.jsx'
 import ReviewPage from './pages/ReviewPage.jsx'
 import UserListPage from './pages/UserListPage.jsx'
-import WatchlistPage from './pages/WatchlistPage.jsx'
 import UserProfilePage from './pages/UserProfilePage.jsx'
+import WatchlistPage from './pages/WatchlistPage.jsx'
+
+// Pages most visitors never open load on demand to keep the first download small.
+const BlendDetailPage = lazy(() => import('./features/blends/BlendDetailPage.jsx'))
+const BlendsPage = lazy(() => import('./features/blends/BlendsPage.jsx'))
+const CommunityPage = lazy(() => import('./pages/CommunityPage.jsx'))
+const ModerationPage = lazy(() => import('./pages/ModerationPage.jsx'))
+const FriendsPage = lazy(() => import('./pages/FriendsPage.jsx'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'))
 
 // Pages live in the URL hash (#/my-list, #/u/name) so refresh and
 // back/forward work without a router or any server config on Vercel.
@@ -154,6 +156,7 @@ function App() {
         onSignUp={() => navigate('signup')}
       />
       <main className="main">
+        <Suspense fallback={<PageStatus>Loading page…</PageStatus>}>
         {needsAccount && account.status === 'loading' ? (
           <PageStatus>Loading your account…</PageStatus>
         ) : needsAccount && account.status === 'signed-out' ? (
@@ -191,6 +194,7 @@ function App() {
         ) : (
           <HomePage account={account} onOpen={openDetails} onRank={openRankSearch} onNavigate={navigate} />
         )}
+        </Suspense>
         <footer className="credit">
           Movie data from <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">TMDB</a>.
           This product uses the TMDB API but is not endorsed or certified by TMDB.

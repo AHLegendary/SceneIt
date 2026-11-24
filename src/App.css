@@ -626,7 +626,7 @@
   box-shadow: var(--glow), var(--shadow-md);
   z-index: 1;
 }
-.card:focus-visible { outline: none; }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .card__img {
   position: absolute;
   inset: 0;
@@ -1177,15 +1177,15 @@
   background: var(--surface-2);
   border: 1px solid var(--line);
 }
-.stat__label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.stat__label { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
 .stat__value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--accent); }
 .stat__value small { font-size: 12px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
 .stat__value--muted { color: var(--ink-3); font-size: 16px; }
 .stat--outside .stat__value { color: var(--ink); }
-.details__label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.details__label { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
 .details__overview { font-size: 15px; line-height: 1.6; color: var(--ink-2); }
 .details__credits { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 0; }
-.details__credits dt { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+.details__credits dt { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
 .details__credits dd { margin: 0; font-size: 14px; color: var(--ink); }
 .details__actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--line); }
 .details__links { display: flex; gap: 14px; }
@@ -1469,7 +1469,7 @@ a.comment__name:hover { color: var(--accent); }
 .comment__hidden {
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1895,7 +1895,7 @@ a.comment__name:hover { color: var(--accent); }
   border: 1px solid rgb(255 255 255 / 0.12);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
 }
-.gstat__label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); line-height: 1.25; }
+.gstat__label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); line-height: 1.25; }
 .gstat__value { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--accent); white-space: nowrap; }
 .gstat__value small { font-size: 12px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
 .gstat__value--muted { color: var(--ink-3); font-size: 14px; }
@@ -2145,3 +2145,13 @@ a.comment__name:hover { color: var(--accent); }
 .watchwhere__logos img { display: block; width: 36px; height: 36px; }
 .watchwhere__logos a > span { display: block; padding: 6px 10px; font-size: 13px; background: rgb(255 255 255 / 0.08); border-radius: 8px; }
 .watchwhere__credit { margin: 0; font-size: 11.5px; color: var(--ink-3); }
+
+/* Finger-sized targets on touch screens. */
+@media (pointer: coarse) {
+  .row__btn { min-height: 44px; }
+  /* Text links and small buttons: grow the tap area, not the look. */
+  .rcard__author, .rcard__comments, .rcard__title, .row__link, .credit a { position: relative; }
+  .rcard__author::after, .rcard__comments::after, .rcard__title::after, .row__link::after, .credit a::after {
+    content: ''; position: absolute; inset: -12px -4px;
+  }
+}

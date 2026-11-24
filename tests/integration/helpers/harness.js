@@ -10,7 +10,7 @@
 import { createElement } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { vi } from 'vitest'
+import { expect, vi } from 'vitest'
 import { FakeBackend, OMDB_KEY, PUBLISHABLE_KEY, SERVICE_KEY, SUPABASE_URL, TMDB_TOKEN } from './fakeBackend.js'
 
 export { act, screen, waitFor, within }
@@ -48,6 +48,7 @@ export async function launch({ hash = '', as = null, backend = new FakeBackend()
 
   const user = userEvent.setup()
   const view = render(createElement(App))
+  await pageLoaded()
   return { backend, user, view, store, friends }
 }
 
@@ -64,6 +65,14 @@ export async function relaunch(previous, options = {}) {
 export async function ready({ loggedIn }) {
   if (loggedIn) await screen.findByRole('button', { name: /^profile/i }, { timeout: 4000 })
   else await screen.findByRole('button', { name: /^log in$/i }, { timeout: 4000 })
+  await pageLoaded()
+}
+
+// Waits out the app's "Loading page…" placeholder, shown while a lazily loaded
+// page's code downloads (App.jsx), so tests can look at the page right away.
+async function pageLoaded() {
+  if (!screen.queryByText('Loading page…')) return
+  await waitFor(() => expect(screen.queryByText('Loading page…')).toBeNull(), { timeout: 4000 })
 }
 
 // Changes the URL hash the way a link or the back button does.
@@ -72,6 +81,7 @@ export async function goTo(hash) {
     window.location.hash = hash
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
+  await pageLoaded()
 }
 
 // Opens the Profile menu and clicks one of its shortcuts.

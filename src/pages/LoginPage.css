@@ -140,3 +140,9 @@
   .versus { inset: 0 0 40%; }
   .versus-side .poster { width: 96px; height: 144px; }
 }
+
+@media (pointer: coarse) {
+  .password-toggle { height: 44px; }
+  .link-button { position: relative; }
+  .link-button::after { content: ''; position: absolute; inset: -14px -4px; }
+}
