@@ -480,3 +480,55 @@ describe('from the Profile menu', () => {
     expect(await screen.findByRole('dialog', { name: 'Rank a movie' })).toBeTruthy()
   })
 })
+
+describe('header search actors', () => {
+  beforeEach(() => {
+    const drama = backend.addTmdbMovie({ id: 920101, title: 'Heart of Salt', year: 2012, genres: ['Drama'] })
+    const horror = backend.addTmdbMovie({ id: 920102, title: 'Salt Ghost', year: 2018, genres: ['Horror'] })
+    backend.addTmdbPerson({ id: 7001, name: 'Odette Quill', movies: [{ ...drama, popularity: 10 }, { ...horror, popularity: 50 }] })
+  })
+  const actorButton = () => within(screen.getByRole('group', { name: 'Actors' })).getByRole('button', { name: /Odette Quill/ })
+
+  it('shows a matching actor above the movies', async () => {
+    const { user } = await open()
+    await user.type(box(), 'odette')
+
+    expect(await screen.findByRole('group', { name: 'Actors' })).toBeTruthy()
+    expect(actorButton()).toBeTruthy()
+  })
+
+  it("lists the actor's movies when you pick them, narrowed by genre", async () => {
+    const { user } = await open()
+    await user.type(box(), 'odette')
+    await user.click(await waitFor(() => actorButton()))
+
+    await waitFor(() => expect(optionTitles()).toEqual(['Salt Ghost', 'Heart of Salt']))
+    expect(screen.getByText('Movies with Odette Quill')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Drama' }))
+    expect(optionTitles()).toEqual(['Heart of Salt'])
+  })
+
+  it('goes back to the search results, and opens a movie from the actor\'s list', async () => {
+    const { user } = await open()
+    await user.type(box(), 'odette')
+    await user.click(await waitFor(() => actorButton()))
+    await waitFor(() => expect(options()).toHaveLength(2))
+
+    await user.click(screen.getByRole('button', { name: 'Back to results' }))
+    expect(await waitFor(() => actorButton())).toBeTruthy()
+
+    await user.click(actorButton())
+    await waitFor(() => expect(options()).toHaveLength(2))
+    await user.click(options()[1])
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+  })
+
+  it('still finds movies when the actor lookup fails', async () => {
+    backend.failApi('GET /api/movies/actors', { status: 502, body: { error: 'down' } })
+    const { user } = await open()
+    await user.type(box(), 'zebra')
+    await waitFor(() => expect(optionTitles()).toEqual(['Zebra Crossing', 'Zebra Nights']))
+    expect(screen.queryByRole('group', { name: 'Actors' })).toBeNull()
+  })
+})

@@ -290,6 +290,56 @@ describe('GET /api/movies/search', () => {
   })
 })
 
+describe('GET /api/movies/actors', () => {
+  beforeEach(() => {
+    const [a, b, c] = [
+      backend.addTmdbMovie({ id: 984001, title: 'Quiet Role', year: 2010, genres: ['Drama'] }),
+      backend.addTmdbMovie({ id: 984002, title: 'Big Hit', year: 2015, genres: ['Action'] }),
+      backend.addTmdbMovie({ id: 984003, title: 'Adult Only', year: 2012, genres: ['Drama'] }),
+    ]
+    backend.addTmdbPerson({ id: 5001, name: 'Wanda Wombat', movies: [{ ...a, popularity: 5 }, { ...b, popularity: 90 }, { ...b, popularity: 90 }, { ...c, adult: true, popularity: 99 }] })
+    backend.addTmdbPerson({ id: 5002, name: 'Wally Director', department: 'Directing' })
+  })
+
+  it('finds actors by name, and leaves out other departments', async () => {
+    const { status, body } = await call('GET', '/api/movies/actors?q=w')
+    expect(status).toBe(200)
+    expect(body.people).toEqual([{ id: 5001, name: 'Wanda Wombat', profile_path: '/person5001.jpg' }])
+  })
+
+  it('drops obscure namesakes but keeps the best match', async () => {
+    backend.addTmdbPerson({ id: 5003, name: 'Wanda Wombat', popularity: 0.2 })
+    backend.addTmdbPerson({ id: 5004, name: 'Wanda Wombat Jr', popularity: 3 })
+    const { body } = await call('GET', '/api/movies/actors?q=wanda')
+    expect(body.people.map((p) => p.id)).toEqual([5001, 5004])
+  })
+
+  it("lists an actor's movies most popular first, without duplicates or adult titles", async () => {
+    const { status, body } = await call('GET', '/api/movies/actors?id=5001')
+    expect(status).toBe(200)
+    expect(body.results.map((m) => m.title)).toEqual(['Big Hit', 'Quiet Role'])
+    expect(body.results[0]).toMatchObject({ tmdb_id: 984002, year: 2015, genres: ['Action'] })
+  })
+
+  it.each([
+    ['no query', '/api/movies/actors'],
+    ['a blank query', '/api/movies/actors?q=%20'],
+    ['a query over 100 characters', `/api/movies/actors?q=${'a'.repeat(101)}`],
+    ['a non-numeric id', '/api/movies/actors?id=abc'],
+    ['an id with a path in it', '/api/movies/actors?id=1%2F..%2Fx'],
+  ])('rejects %s without asking TMDb', async (_label, path) => {
+    expect((await call('GET', path)).status).toBe(400)
+    expect(backend.calls.filter((c) => c.key.startsWith('tmdb:'))).toHaveLength(0)
+  })
+
+  it('answers 502 when TMDb is down, and only accepts GET', async () => {
+    backend.tmdbDown()
+    expect((await call('GET', '/api/movies/actors?q=wanda')).status).toBe(502)
+    expect((await call('GET', '/api/movies/actors?id=5001')).status).toBe(502)
+    expect((await call('POST', '/api/movies/actors?q=wanda')).status).toBe(405)
+  })
+})
+
 describe('GET /api/movies/trending', () => {
   it('returns what TMDb says is trending', async () => {
     backend.addTmdbMovie({ id: 982001, title: 'Hot Right Now', year: 2025, trending: true })

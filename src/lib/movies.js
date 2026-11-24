@@ -82,3 +82,15 @@ export async function saveMovie(tmdbId, accessToken) {
   if (!response.ok) throw new Error(body.error || 'Something went wrong, try again later.');
   return body.movie;
 }
+
+// Actors whose name matches the query: [{ id, name, profile_path }].
+export async function searchPeople(query) {
+  const { people } = await getJson(`/api/movies/actors?q=${encodeURIComponent(query)}`);
+  return people;
+}
+
+// An actor's movies, most popular first, in the `movies` table shape.
+export async function getPersonMovies(personId) {
+  const { results } = await getJson(`/api/movies/actors?id=${encodeURIComponent(personId)}`);
+  return results;
+}
