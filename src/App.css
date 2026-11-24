@@ -2146,12 +2146,119 @@ a.comment__name:hover { color: var(--accent); }
 .watchwhere__logos a > span { display: block; padding: 6px 10px; font-size: 13px; background: rgb(255 255 255 / 0.08); border-radius: 8px; }
 .watchwhere__credit { margin: 0; font-size: 11.5px; color: var(--ink-3); }
 
+/* ------------------------------------------------------------------ phones */
+@media (max-width: 760px) {
+  /* Nav icons share the row beside the logo instead of spilling over it. */
+  .nav__links > * { flex: 1 1 0; min-width: 0; max-width: 48px; }
+  .nav__links .nav__link { width: 100%; padding: 0; justify-content: center; }
+  /* Counts ride on the icon's corner so they take no width. */
+  .nav__link > .badge {
+    position: absolute;
+    top: 2px;
+    right: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+  /* "3/15" is wider than the icon, so it sits under it instead of covering it. */
+  .nav__link:has(> .badge--progress) { padding-bottom: 12px; }
+  .nav__link > .badge--progress {
+    top: auto;
+    bottom: 2px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    min-width: 0;
+    height: 14px;
+    font-size: 9px;
+    box-shadow: none;
+  }
+
+  /* Profile menu: a list sheet, so nothing overlaps and every row is a full-size tap target. */
+  .wheel,
+  .wheel[hidden] { --w: auto; }
+  .wheel[hidden] { display: none; }
+  .wheel {
+    display: flex;
+    flex-direction: column;
+    left: 12px;
+    right: 12px;
+    top: calc(var(--nav-h) + 8px);
+    width: auto;
+    max-width: 340px;
+    margin-left: auto;
+    height: auto;
+    padding: 6px 8px 8px;
+    border-radius: var(--r-lg);
+    border-top-color: rgb(var(--accent-rgb) / 0.85);
+  }
+  .wheel__lines, .wheel__avatar { display: none; }
+  .wheel .wheel__name {
+    position: static;
+    transform: none;
+    max-width: none;
+    padding: 8px 8px 6px;
+    font-size: 13px;
+    order: 0;
+  }
+  .wheel .wheel__item {
+    position: static;
+    transform: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    width: 100%;
+    min-height: 52px;
+    padding: 3px 8px;
+    order: 1;
+  }
+  .wheel .wheel__icon { width: 40px; height: 40px; }
+  .wheel .wheel__label { font-size: 16px; text-align: left; white-space: nowrap; }
+  .wheel .wheel__mod,
+  .wheel .wheel__logout {
+    position: static;
+    transform: none;
+    justify-content: flex-start;
+    gap: 12px;
+    width: 100%;
+    height: 48px;
+    padding: 0 12px;
+    border-radius: 12px;
+    font-size: 16px;
+    background: transparent;
+  }
+  .wheel .wheel__mod { order: 2; }
+  .wheel .wheel__logout { order: 3; margin-top: 4px; border-top: 1px solid var(--line-2); border-radius: 0 0 12px 12px; }
+  .wheel .wheel__error { position: static; transform: none; order: 4; padding: 6px 12px; white-space: normal; }
+}
+
+@media (max-width: 600px) {
+  /* Unlock card: text first, button under it, instead of a narrow text column. */
+  .row-unlock { flex-direction: column; align-items: stretch; gap: 14px; }
+  .row-unlock > .btn { align-self: flex-start; }
+}
+
 /* Finger-sized targets on touch screens. */
 @media (pointer: coarse) {
+  .seg__opt { height: 44px; }
+  .btn--sm { height: 44px; }
   .row__btn { min-height: 44px; }
   /* Text links and small buttons: grow the tap area, not the look. */
   .rcard__author, .rcard__comments, .rcard__title, .row__link, .credit a { position: relative; }
   .rcard__author::after, .rcard__comments::after, .rcard__title::after, .row__link::after, .credit a::after {
     content: ''; position: absolute; inset: -12px -4px;
+  }
+  .uprofile__back { padding: 14px 0; margin-bottom: 0; }
+  /* Same look, bigger hit area. */
+  .profile-hero__avatar-btn::after { content: ''; position: absolute; inset: -8px; }
+}
+
+/* Phones repaint the burn's filter every frame, which stutters the pick.
+   Keep the mask and the flames, skip the filter. */
+@media (pointer: coarse) {
+  @keyframes burn-away {
+    0% { -webkit-mask-position: 0 0; mask-position: 0 0; }
+    100% { -webkit-mask-position: 0 100%; mask-position: 0 100%; transform: translateY(-10px) scale(0.98); }
   }
 }

@@ -116,7 +116,7 @@ describe('Profile menu', () => {
 
     expect(button.getAttribute('aria-expanded')).toBe('true')
     const items = within(screen.getByRole('menu', { name: 'Profile menu' }))
-    expect(items.getAllByRole('menuitem').map((el) => el.textContent.trim())).toEqual(['Friends', 'My List', 'Watchlist', 'Rank Movies', 'Bio', 'Log out'])
+    expect(items.getAllByRole('menuitem').map((el) => el.textContent.trim())).toEqual(['Friends', 'My List', 'Watchlist', 'Rank Movies', 'Profile', 'Log out'])
     expect(items.getByText('Alice_99')).toBeTruthy()
   })
 
@@ -124,7 +124,7 @@ describe('Profile menu', () => {
     ['Friends', '#/friends', { level: 1, name: 'Friends' }],
     ['My List', '#/my-list', { level: 1, name: 'My List' }],
     ['Watchlist', '#/watchlist', { level: 1, name: 'Your watchlist' }],
-    ['Bio', '#/profile', { level: 1, name: 'Alice_99' }],
+    ['Profile', '#/profile', { level: 1, name: 'Alice_99' }],
   ])('takes you to %s and closes', async (label, hash, heading) => {
     const { user } = await open({ hash: '#/home' })
     await ready({ loggedIn: true })
