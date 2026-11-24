@@ -3,6 +3,7 @@ import { tmdbFetch, toMovie } from '../_lib/tmdb.js';
 const MAX_QUERY_LENGTH = 100;
 const MAX_PEOPLE = 3;
 const MAX_MOVIES = 40;
+const MIN_POPULARITY = 1;
 
 // GET /api/movies/actors?q=tom hanks   -> { people: [{ id, name, profile_path }] }
 // GET /api/movies/actors?id=31         -> { results: [movie] } the person's acting credits, most popular first
@@ -31,6 +32,8 @@ export default async function handler(req, res) {
     const data = await tmdbFetch('/search/person', { query, include_adult: 'false', page: '1' });
     const people = (data.results ?? [])
       .filter((p) => p && p.id && p.name && !p.adult && p.known_for_department === 'Acting')
+      // TMDb lists obscure namesakes ("Tom Holland" x3); keep the best match, and others only if they have some following.
+      .filter((p, i) => i === 0 || (p.popularity ?? 0) >= MIN_POPULARITY)
       .slice(0, MAX_PEOPLE)
       .map((p) => ({ id: p.id, name: p.name, profile_path: p.profile_path || null }));
     return res.status(200).json({ people });

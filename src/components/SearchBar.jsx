@@ -200,7 +200,7 @@ export default function SearchBar({ onOpen }) {
               ))}
             </div>
           )}
-          <ul className={`sbar__list${searching ? ' is-stale' : ''}${person ? ' sbar__list--actor' : ''}`} id={listId} role="listbox" aria-label="Search results">
+          <ul className={`sbar__list${searching ? ' is-stale' : ''}`} id={listId} role="listbox" aria-label="Search results">
             {results.length === 0 ? (
               actors.length > 0 ? null : <li className="sbar__empty">
                 {searching ? 'Searching…' : person ? (doneCredits.failed ? `Couldn’t load ${person.name}’s movies. Try again.` : `No ${genre ? `${genre.toLowerCase()} ` : ''}movies found for ${person.name}.`) : q ? `No ${genre ? `${genre.toLowerCase()} ` : ''}movies match “${q}”.` : `No ${genre.toLowerCase()} movies in the catalog yet.`}

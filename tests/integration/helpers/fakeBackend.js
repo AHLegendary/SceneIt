@@ -251,8 +251,8 @@ export class FakeBackend {
   }
 
   // An actor TMDb knows, with the movies (from addTmdbMovie) they appear in.
-  addTmdbPerson({ id, name, department = 'Acting', movies = [], profile_path = `/person${id}.jpg` }) {
-    this.tmdb.people.push({ id, name, known_for_department: department, profile_path, adult: false, credits: movies })
+  addTmdbPerson({ id, name, department = 'Acting', movies = [], profile_path = `/person${id}.jpg`, popularity = 10 }) {
+    this.tmdb.people.push({ id, name, known_for_department: department, profile_path, adult: false, popularity, credits: movies })
   }
 
   rawFromCatalog(id, extra = {}) {

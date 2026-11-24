@@ -307,6 +307,13 @@ describe('GET /api/movies/actors', () => {
     expect(body.people).toEqual([{ id: 5001, name: 'Wanda Wombat', profile_path: '/person5001.jpg' }])
   })
 
+  it('drops obscure namesakes but keeps the best match', async () => {
+    backend.addTmdbPerson({ id: 5003, name: 'Wanda Wombat', popularity: 0.2 })
+    backend.addTmdbPerson({ id: 5004, name: 'Wanda Wombat Jr', popularity: 3 })
+    const { body } = await call('GET', '/api/movies/actors?q=wanda')
+    expect(body.people.map((p) => p.id)).toEqual([5001, 5004])
+  })
+
   it("lists an actor's movies most popular first, without duplicates or adult titles", async () => {
     const { status, body } = await call('GET', '/api/movies/actors?id=5001')
     expect(status).toBe(200)
