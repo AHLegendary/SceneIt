@@ -7,7 +7,7 @@
 // movieFromDb turns a database or API movie into one of these, preferring
 // the catalog version, so the same movie always gets the same id and object.
 
-import MOVIES from '../data/movies.json'
+import MOVIES from '../data/movies.json' with { type: 'json' }
 
 const POSTER_BASE = 'https://image.tmdb.org/t/p/'
 const BY_ID = new Map(MOVIES.map((m) => [m.id, m]))
