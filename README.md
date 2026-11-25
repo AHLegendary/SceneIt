@@ -132,7 +132,7 @@ Everything a developer needs to build, test, and change SceneIt. `coding-guideli
 - **Backend:** Vercel serverless functions (`api/`)
 - **Database and Auth:** Supabase (PostgreSQL)
 - **Movie Data:** TMDb API (OMDb for IMDb / Rotten Tomatoes scores)
-- **Testing and CI:** Vitest and GitHub Actions
+- **Testing and CI:** Vitest, Playwright (browser e2e) and GitHub Actions
 - **Deployment:** Vercel
 - **Version Control and Bug Tracking:** Git, GitHub, and GitHub Issues
 
@@ -175,7 +175,8 @@ SceneIt/
 │
 ├── tests/
 │   ├── unit/                      # Unit tests (Vitest)
-│   └── integration/               # Page-level tests in jsdom with a fake backend (Vitest)
+│   ├── integration/               # Page-level tests in jsdom with a fake backend (Vitest)
+│   └── e2e/                       # Browser tests in Chromium with mocked network (Playwright)
 │
 ├── .gitignore                     # Files Git should ignore
 ├── .env.example                   # Template for required environment variables
@@ -201,7 +202,7 @@ SceneIt/
 - **`.github/workflows/`**: Automated GitHub Actions workflows for testing and other development tasks.
 - **`supabase/`**: Database migrations and seed files. See `supabase/README.md` for the tables and database functions.
 
-**Planned:** `tests/e2e/` for browser tests (for example, with Playwright) that click through complete user workflows against a real deployment.
+- **`tests/e2e/`**: Browser tests (Playwright, Chromium) that drive the real app on a vite dev server. Supabase and `/api/*` requests are mocked in `tests/e2e/helpers.js`, so no backend or keys are needed. Today they cover logged-out flows only: home, navigation, login prompts, login/sign-up forms and search.
 
 ## Getting Started
 
@@ -249,6 +250,7 @@ npm run build      # builds the app for production into dist/
 
 - **`npm run test:run`** — Runs all tests once and prints the results.
 - **`npm run test:unit`** / **`npm run test:integration`** — Run just one of the two suites.
+- **`npm run test:e2e`** — Runs the Playwright browser tests. First time only: `npx playwright install chromium`. It starts its own dev server on port 5199 (reuses one already running there).
 - **`npm test`** — Runs the tests in watch mode (reruns on file changes) while you develop.
 - **`npm run build`** — Checks that the application compiles for deployment.
 - **`npm run lint`** — Runs the oxlint linter. CI fails on lint errors.
@@ -327,7 +329,7 @@ Open the URL printed in the terminal, usually `http://localhost:5173`. The dev s
 
 ## Adding a Test
 
-Tests live in `tests/` and run with Vitest. Any file named `*.test.js` or `*.test.jsx` in `tests/unit/` or `tests/integration/` is picked up automatically (see `vite.config.js`); no registration needed.
+Tests live in `tests/`. Unit and integration tests run with Vitest; browser tests run with Playwright. Any file named `*.test.js` or `*.test.jsx` in `tests/unit/` or `tests/integration/` is picked up automatically (see `vite.config.js`); no registration needed.
 
 **A unit test** (one function or module, runs in Node):
 
@@ -349,14 +351,17 @@ Tests live in `tests/` and run with Vitest. Any file named `*.test.js` or `*.tes
 
 **An integration test** (a whole page in jsdom against a fake backend): create `tests/integration/<page>.test.jsx`, seed a `FakeBackend`, `launch()` the app, and click through it like a user. `tests/integration/README.md` explains the harness with an example.
 
-Run it with `npm run test:unit` or `npm run test:integration` (or `npx vitest run tests/unit/<file>` for one file). Check that a new test **fails** when the code it tests is broken, then passes when it's fixed. Every bug fix should come with a test that would have caught it.
+**An e2e test** (the real app in Chromium): add `tests/e2e/<flow>.spec.js`, import `test` and `expect` from `./helpers.js` (not from `@playwright/test`, so Supabase and `/api/*` stay mocked), and use `page.goto('/#/<page>')`. Run with `npm run test:e2e`.
+
+Run a unit or integration test with `npm run test:unit` or `npm run test:integration` (or `npx vitest run tests/unit/<file>` for one file). Check that a new test **fails** when the code it tests is broken, then passes when it's fixed. Every bug fix should come with a test that would have caught it.
 
 ## Automated Testing and CI
 
 SceneIt uses Vitest for unit testing and GitHub Actions for continuous integration (CI).
 
 - **Vitest:** Unit tests in `tests/unit/` cover the ranking logic, recommendations (personal and Movie Blend), leaderboard, friends, reviews, login, validation, API handlers, and Supabase queries (with the network mocked). Integration tests in `tests/integration/` render each page in jsdom against a fake backend and exercise real user flows (search, ranking, friends, profile, leaderboard, Movie Blend, reviews and the Community page).
-- **GitHub Actions:** `.github/workflows/ci.yml` installs dependencies, then runs `npm run test:unit`, `npm run test:integration`, `npm run build`, and `npm run lint` on every pull request that targets `main` and on every push to `main`.
+- **Playwright:** `tests/e2e/` runs the app in headless Chromium with the network mocked and checks logged-out flows (navigation, login prompts, auth form validation, search).
+- **GitHub Actions:** `.github/workflows/ci.yml` installs dependencies, then runs `npm run test:unit`, `npm run test:integration`, `npm run test:e2e` (after installing Chromium), `npm run build`, and `npm run lint` on every pull request that targets `main` and on every push to `main`.
 - **Production build:** Verifies that the application can be compiled for deployment.
 
 **Build history:** every CI run is listed under the repository's [Actions tab](https://github.com/AHLegendary/SceneIt/actions) (workflow "SceneIt CI"), and each pull request shows its checks at the bottom of the PR page. Vercel also posts a preview deployment link on each pull request.
