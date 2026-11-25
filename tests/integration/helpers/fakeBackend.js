@@ -910,6 +910,85 @@ export class FakeBackend {
       })
   }
 
+  // Pending, unexpired invites for uid (get_my_blend_invites).
+  getMyBlendInvites(uid) {
+    const username = (id) => this.profiles.find((p) => p.id === id)?.username ?? null
+    return this.blend_invites
+      .filter((i) => i.invitee_id === uid && i.status === 'pending' && new Date(i.expires_at) > new Date())
+      .map((i) => ({
+        invite_id: i.id,
+        blend_id: i.blend_id,
+        inviter_username: username(i.inviter_id),
+        member_count: this.blend_members.filter((m) => m.blend_id === i.blend_id).length,
+        expires_at: i.expires_at,
+      }))
+  }
+
+  // get_blend_sent_invites: the owner's invites for one blend (any status).
+  getBlendSentInvites(uid, blendId) {
+    if (this.blends.find((b) => b.id === blendId)?.owner_id !== uid) return []
+    return this.blend_invites
+      .filter((i) => i.blend_id === blendId)
+      .map((i) => ({
+        invite_id: i.id,
+        invitee_id: i.invitee_id,
+        invitee_username: this.profiles.find((p) => p.id === i.invitee_id)?.username ?? null,
+        status: i.status,
+      }))
+  }
+
+  // invite_to_blend: owner invites a friend to a blend with room.
+  inviteToBlend(uid, blendId, inviteeId) {
+    const blend = this.blends.find((b) => b.id === blendId)
+    if (!blend) throw pgError('blend_not_found', 'P0001')
+    if (blend.owner_id !== uid) throw pgError('not_blend_owner', 'P0001')
+    if (this.blend_members.filter((m) => m.blend_id === blendId).length >= 5) throw pgError('blend_full', 'P0001')
+    if (this.blend_invites.some((i) => i.blend_id === blendId && i.invitee_id === inviteeId && i.status === 'pending')) {
+      throw pgError('already_invited', 'P0001')
+    }
+    const friends = this.getFriendships(uid).filter((f) => f.direction === 'friends').map((f) => f.user_id)
+    if (!friends.includes(inviteeId)) throw pgError('not_friends', 'P0001')
+    return this.addBlendInvite(blendId, this.profiles.find((p) => p.id === uid), { id: inviteeId }).id
+  }
+
+  // leave_blend: a member leaves; the owner leaving disbands the blend.
+  leaveBlend(uid, blendId) {
+    const blend = this.blends.find((b) => b.id === blendId)
+    if (!blend || !this.isBlendMember(uid, blendId)) throw pgError('blend_not_found', 'P0001')
+    if (blend.owner_id === uid) {
+      this.blends = this.blends.filter((b) => b.id !== blendId)
+      this.blend_members = this.blend_members.filter((m) => m.blend_id !== blendId)
+    } else {
+      this.blend_members = this.blend_members.filter((m) => !(m.blend_id === blendId && m.user_id === uid))
+    }
+    return null
+  }
+
+  // create_blend: needs friends, 15 rankings, friend-only invitees. Returns the blend id.
+  createBlend(uid, friendIds) {
+    if (!friendIds?.length) throw pgError('friend_required', 'P0001')
+    if (this.rankings.filter((r) => r.user_id === uid).length < 15) throw pgError('not_enough_rankings', 'P0001')
+    const friends = new Set(this.getFriendships(uid).filter((f) => f.direction === 'friends').map((f) => f.user_id))
+    if (!friendIds.every((id) => friends.has(id))) throw pgError('not_friends', 'P0001')
+    const owner = this.profiles.find((p) => p.id === uid)
+    const id = this.addBlend(owner)
+    for (const friendId of friendIds) this.addBlendInvite(id, owner, { id: friendId })
+    return id
+  }
+
+  // respond_to_blend_invite: accepting joins the blend. Returns the blend id.
+  respondToBlendInvite(uid, inviteId, accept) {
+    const invite = this.blend_invites.find((i) => i.id === inviteId && i.invitee_id === uid && i.status === 'pending')
+    if (!invite) throw pgError('invite_invalid', 'P0001')
+    if (new Date(invite.expires_at) <= new Date()) throw pgError('invite_expired', 'P0001')
+    if (accept) {
+      if (this.blend_members.filter((m) => m.blend_id === invite.blend_id).length >= 5) throw pgError('blend_full', 'P0001')
+      this.blend_members.push({ blend_id: invite.blend_id, user_id: uid, joined_at: this.now() })
+    }
+    this.setBlendInviteStatus(invite, accept ? 'accepted' : 'declined')
+    return invite.blend_id
+  }
+
   getBlendMembers(uid, blendId) {
     if (!this.isBlendMember(uid, blendId)) return []
     const owner = this.blends.find((b) => b.id === blendId)?.owner_id
@@ -1300,8 +1379,17 @@ class FakeClient {
         case 'get_blend_members':
           return { data: b.getBlendMembers(uid, args.p_blend_id), error: null }
         case 'get_my_blend_invites':
+          return { data: b.getMyBlendInvites(uid), error: null }
         case 'get_blend_sent_invites':
-          return { data: [], error: null }
+          return { data: b.getBlendSentInvites(uid, args.p_blend_id), error: null }
+        case 'invite_to_blend':
+          return { data: b.inviteToBlend(uid, args.p_blend_id, args.p_user_id), error: null }
+        case 'leave_blend':
+          return { data: b.leaveBlend(uid, args.p_blend_id), error: null }
+        case 'create_blend':
+          return { data: b.createBlend(uid, args.p_friend_ids), error: null }
+        case 'respond_to_blend_invite':
+          return { data: b.respondToBlendInvite(uid, args.p_invite_id, args.p_accept), error: null }
         case 'get_notifications':
           return { data: b.getNotifications(uid, args.p_limit ?? 30), error: null }
         case 'open_notification':

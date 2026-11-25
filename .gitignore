@@ -28,3 +28,4 @@ graphify-out
 *.sw?
 .vercel
 .env*
+coverage

@@ -36,6 +36,9 @@ async function startRanking(user, id) {
   await user.click(await within(dialog).findByRole('button', { name: `Rank ${title(id)}` }))
 }
 const feeling = (user, label) => user.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }))
+// Confirms the "Remove …?" dialog.
+const confirmRemove = (user) =>
+  user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' }))
 const compare = () => document.querySelector('.compare')
 
 // Answers the head-to-head questions: 'new' (←), 'old' (→) or 'tie' (space).
@@ -219,12 +222,55 @@ describe('the tier list before scores unlock', () => {
 })
 
 describe('removing a movie', () => {
+  it('asks first, naming the movie and warning that its review goes too', async () => {
+    backend.seedList(alice, ids(2))
+    const { user } = await open()
+    await waitFor(() => expect(rowTitles()).toHaveLength(2))
+
+    await user.click(screen.getByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+
+    const dialog = await screen.findByRole('alertdialog', { name: `Remove ${title(ids(1)[0])}?` })
+    expect(dialog.textContent).toContain('deletes your review')
+    expect(backend.listOf(alice)).toHaveLength(2)
+  })
+
+  it.each([
+    ['Cancel button', (user) => user.click(screen.getByRole('button', { name: 'Cancel' }))],
+    ['Escape', (user) => user.keyboard('{Escape}')],
+  ])('keeps the movie and its review when you back out with %s', async (_name, back) => {
+    backend.seedList(alice, ids(2))
+    const { user } = await open()
+    await waitFor(() => expect(rowTitles()).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+    await screen.findByRole('alertdialog')
+
+    await back(user)
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(rowTitles()).toHaveLength(2)
+    expect(backend.calls.some((c) => c.key === 'rpc:remove_ranking')).toBe(false)
+  })
+
+  it('deletes your review of the movie along with it', async () => {
+    backend.seedList(alice, ids(2))
+    backend.addReview(alice, ids(1)[0], { body: 'Loved it.' })
+    const { user } = await open()
+    await waitFor(() => expect(rowTitles()).toHaveLength(2))
+
+    await user.click(screen.getByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+    await confirmRemove(user)
+
+    await waitFor(() => expect(rowTitles()).toHaveLength(1))
+    expect(backend.reviews).toHaveLength(0)
+  })
+
   it('removes it and closes the gap', async () => {
     backend.seedList(alice, ids(3))
     const { user } = await open()
     await waitFor(() => expect(rowTitles()).toHaveLength(3))
 
     await user.click(screen.getByRole('button', { name: `Remove ${title(ids(2)[1])}` }))
+    await confirmRemove(user)
 
     await waitFor(() => expect(rowTitles()).toEqual([title(ids(1)[0]), title(ids(3)[2])]))
     expect(ranks()).toEqual(['1', '2'])
@@ -239,6 +285,7 @@ describe('removing a movie', () => {
     await waitFor(() => expect(rowTitles()).toHaveLength(2))
 
     await user.click(screen.getByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+    await confirmRemove(user)
 
     expect(await screen.findByRole('button', { name: `Remove ${title(ids(1)[0])}` })).toHaveProperty('textContent', 'Removing…')
     expect(screen.getByRole('button', { name: `Remove ${title(ids(2)[1])}` }).disabled).toBe(true)
@@ -253,6 +300,7 @@ describe('removing a movie', () => {
     await waitFor(() => expect(rowTitles()).toHaveLength(2))
 
     await user.click(screen.getByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+    await confirmRemove(user)
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain(REMOVE_ERROR)
@@ -265,6 +313,7 @@ describe('removing a movie', () => {
     backend.seedList(alice, ids(1))
     const { user } = await open()
     await user.click(await screen.findByRole('button', { name: `Remove ${title(ids(1)[0])}` }))
+    await confirmRemove(user)
     expect(await screen.findByRole('heading', { name: 'Your list is empty' })).toBeTruthy()
   })
 })
@@ -819,5 +868,22 @@ describe('movies that are not in the built-in catalog (live search)', () => {
     await user.click(within(alert).getByRole('button', { name: 'Try again' }))
     await waitSaved()
     expect(backend.rankingOf(alice, 910001)).not.toBeNull()
+  })
+})
+
+describe('tier list', () => {
+  it('puts every ranked movie in an S–F row, best first, and opens a movie on click', async () => {
+    backend.seedList(alice, ids(4))
+    const { user } = await open()
+    await waitFor(() => expect(rowTitles()).toHaveLength(4))
+    await user.click(within(screen.getByRole('radiogroup')).getByRole('radio', { name: 'Tier list' }))
+
+    const rows = within(screen.getByRole('list', { name: 'Tier list' })).getAllByRole('listitem')
+    expect(rows.map((r) => r.querySelector('.tierlist__label').textContent)).toEqual(['S', 'A', 'B', 'C', 'D', 'F'])
+    const shown = rows.flatMap((r) => [...r.querySelectorAll('.tierlist__movie')].map((b) => b.getAttribute('aria-label')))
+    expect(shown).toEqual(ids(4).map(title))
+
+    await user.click(screen.getByRole('button', { name: title(ids(1)[0]) }))
+    expect(await screen.findByRole('dialog', { name: title(ids(1)[0]) })).toBeTruthy()
   })
 })
