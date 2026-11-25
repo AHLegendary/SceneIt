@@ -153,7 +153,8 @@ SceneIt/
 │   └── health.js                  # Health check
 │
 ├── public/                        # Static files served directly
-│   ├── favicon.svg                # Browser tab icon
+│   ├── logo.png                   # SceneIt logo (nav)
+│   ├── logo-mark.png              # Film-strip "S" mark (browser tab icon)
 │   └── icons.svg                  # Reusable SVG icon library for the UI
 │
 ├── scripts/                       # Data and dev scripts (movie data, ratings, demo users, dev API)
