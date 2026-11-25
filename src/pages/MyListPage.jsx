@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ConfirmRemoveDialog from '../components/ConfirmRemoveDialog.jsx'
 import Icon from '../components/Icon.jsx'
 import Poster from '../components/Poster.jsx'
 import { tierRanks } from '../features/ranking/binaryInsertion.js'
@@ -29,6 +30,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
   const toUnlock = moviesUntilScores(count)
   const [removing, setRemoving] = useState(null) // id of the movie being removed
   const [removeError, setRemoveError] = useState(null)
+  const [confirming, setConfirming] = useState(null) // movie awaiting remove confirmation
   // 'all' | a category id | 'tiers'
   const [view, setView] = useState('all')
   // Categories need scores (10+ movies); without them only All and Tier list apply.
@@ -73,6 +75,17 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
           </button>
         )}
       </header>
+
+      {confirming && (
+        <ConfirmRemoveDialog
+          title={confirming.title}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            remove(confirming)
+            setConfirming(null)
+          }}
+        />
+      )}
 
       {removeError && (
         <div className="notice notice--error" role="alert">
@@ -164,7 +177,7 @@ export default function MyListPage({ onAdd, onRerank, onOpen, highlightId }) {
                       <button
                         type="button"
                         className="row__btn"
-                        onClick={() => remove(movie)}
+                        onClick={() => setConfirming(movie)}
                         disabled={removing !== null}
                         aria-label={`Remove ${movie.title}`}
                       >
